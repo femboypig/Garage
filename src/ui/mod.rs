@@ -1436,8 +1436,8 @@ impl UiState {
                 );
             }
 
+            // Pass 1: Draw all item highlights (hover & active states)
             for (idx, node) in self.visible_nodes.iter().enumerate() {
-                // Shift down by 1 row to accommodate the sidebar header
                 let row_y = main_y + (idx + 1) as f32 * self.ui_line_height;
                 if row_y + self.ui_line_height > main_y + main_height {
                     break;
@@ -1457,6 +1457,14 @@ impl UiState {
                         white_uv,
                         if is_selected { self.config.theme.sidebar_selected_bg } else { self.config.theme.sidebar_hover_bg },
                     );
+                }
+            }
+
+            // Pass 2: Draw all guide lines, icons, and text labels
+            for (idx, node) in self.visible_nodes.iter().enumerate() {
+                let row_y = main_y + (idx + 1) as f32 * self.ui_line_height;
+                if row_y + self.ui_line_height > main_y + main_height {
+                    break;
                 }
 
                 let effective_depth = node.depth + 1;
@@ -1954,6 +1962,10 @@ impl UiState {
             if self.config.show_git_blame && line_idx == cursor.line {
                 if let Some(blame_str) = self.get_or_update_blame(active_file_path, line_idx) {
                     let mut blame_pen_x = pen_x + self.buffer_char_width * 4.0;
+                    let blame_width = blame_str.chars().count() as f32 * self.buffer_char_width;
+                    if blame_pen_x + blame_width > minimap_x {
+                        blame_pen_x = (minimap_x - blame_width - 8.0).max(pen_x + self.buffer_char_width * 2.0);
+                    }
                     for c in blame_str.chars() {
                         if blame_pen_x + self.buffer_char_width > minimap_x {
                             break;
