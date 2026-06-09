@@ -245,6 +245,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     UiAction::CloseModal => {
                                         ui.active_modal = None;
                                     }
+                                    UiAction::ShowCommandPalette => {
+                                        ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
+                                        ui.command_palette_query.clear();
+                                        ui.command_palette_selected = 0;
+                                    }
                                     UiAction::ChangeBufferFontSize(delta) => {
                                         let new_size = (ui.buffer_font_size + delta).clamp(8.0, 36.0);
                                         ui.update_buffer_font_size(&atlas.font, new_size);
@@ -405,6 +410,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         }
                                         UiAction::ShowAbout => {
                                             ui.active_modal = Some(crate::ui::ModalType::About);
+                                        }
+                                        UiAction::ShowCommandPalette => {
+                                            ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
+                                            ui.command_palette_query.clear();
+                                            ui.command_palette_selected = 0;
                                         }
                                         UiAction::CloseModal => {
                                             ui.active_modal = None;
