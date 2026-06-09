@@ -961,6 +961,25 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         return;
                     }
 
+                    // Handle Sidebar Scroll
+                    let size = window.inner_size();
+                    let sidebar_top = ui.titlebar_height;
+                    let sidebar_bottom = size.height as f32 - ui.status_height;
+                    if ui.sidebar_width > 0.0 && mouse_x >= 0.0 && mouse_x < ui.sidebar_width && mouse_y >= sidebar_top && mouse_y < sidebar_bottom {
+                        let scroll_lines = match delta {
+                            MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
+                            MouseScrollDelta::PixelDelta(pos) => ((pos.y / (ui.ui_line_height as f64)) * 3.0) as isize * -1,
+                        };
+                        let total_rows = 1 + ui.visible_nodes.len();
+                        let main_height = sidebar_bottom - sidebar_top;
+                        let visible_rows = (main_height / ui.ui_line_height).floor() as usize;
+                        let max_scroll = (total_rows as isize - visible_rows as isize).max(0);
+                        let new_scroll = ui.sidebar_scroll as isize + scroll_lines;
+                        ui.sidebar_scroll = new_scroll.clamp(0, max_scroll) as usize;
+                        window.request_redraw();
+                        return;
+                    }
+
                     let is_shift = modifiers.shift_key();
                     if is_shift {
                         let scroll_cols = match delta {
