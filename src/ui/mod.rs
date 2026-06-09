@@ -235,6 +235,12 @@ impl UiState {
         self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
     }
 
+    pub fn is_tiling_wm(&self) -> bool {
+        std::env::var("I3SOCK").is_ok()
+            || std::env::var("SWAYSOCK").is_ok()
+            || std::env::var("XDG_CURRENT_DESKTOP").map(|s| s.to_lowercase().contains("i3") || s.to_lowercase().contains("sway")).unwrap_or(false)
+    }
+
     pub fn scroll_to_cursor(&mut self, cursor: &Cursor, buffer_len: usize, width: f32, height: f32) {
         let editor_height = height - self.titlebar_height - self.status_height - self.tabbar_height - self.breadcrumb_height - 14.0;
         let visible_lines = (editor_height / self.buffer_line_height).floor() as usize;
@@ -366,7 +372,7 @@ impl UiState {
                     let row_height = (self.ui_line_height * 2.2).round();
                     (row_height * 8.2).max(430.0).round()
                 }
-                ModalType::About => 160.0,
+                ModalType::About => 190.0,
                 ModalType::CommandPalette => {
                     let item_height = (self.ui_line_height * 1.6).round().max(26.0);
                     let filtered_len = self.get_filtered_commands().len();
@@ -575,13 +581,15 @@ impl UiState {
 
         // 1. Check Titlebar Menu Clicks (Contiguous adjacent layout)
         if my < self.titlebar_height {
-            let btn_w = 45.0f32;
-            if mx >= width - btn_w {
-                return UiAction::Exit;
-            } else if mx >= width - btn_w * 2.0 && mx < width - btn_w {
-                return UiAction::MaximizeWindow;
-            } else if mx >= width - btn_w * 3.0 && mx < width - btn_w * 2.0 {
-                return UiAction::MinimizeWindow;
+            if !self.is_tiling_wm() {
+                let btn_w = 45.0f32;
+                if mx >= width - btn_w {
+                    return UiAction::Exit;
+                } else if mx >= width - btn_w * 2.0 && mx < width - btn_w {
+                    return UiAction::MaximizeWindow;
+                } else if mx >= width - btn_w * 3.0 && mx < width - btn_w * 2.0 {
+                    return UiAction::MinimizeWindow;
+                }
             }
 
             let menu_items_raw = [
@@ -782,7 +790,7 @@ impl UiState {
         }
         let dock_tabbar_h = 28.0f32;
         if self.show_dock && my >= dock_start_y && my < dock_start_y + dock_tabbar_h {
-            let mut cur_x = 10.0f32;
+            let mut cur_x = self.sidebar_width + 10.0f32;
             let tab_y = dock_start_y + 1.0;
             let tab_h = dock_tabbar_h - 1.0;
             
@@ -824,18 +832,9 @@ impl UiState {
         let status_y = height - self.status_height;
         if my >= status_y {
             let sb_btn_w = 26.0f32;
-            let info_btn_x = width - 10.0 - sb_btn_w;
-            let settings_btn_x = info_btn_x - sb_btn_w;
-            let bug_btn_x = settings_btn_x - sb_btn_w;
-            let term_btn_x = bug_btn_x - sb_btn_w;
+            let term_btn_x = width - 10.0 - sb_btn_w;
 
-            if mx >= info_btn_x && mx < info_btn_x + sb_btn_w {
-                return UiAction::ShowAbout;
-            } else if mx >= settings_btn_x && mx < settings_btn_x + sb_btn_w {
-                return UiAction::ShowSettings;
-            } else if mx >= bug_btn_x && mx < bug_btn_x + sb_btn_w {
-                return UiAction::None;
-            } else if mx >= term_btn_x && mx < term_btn_x + sb_btn_w {
+            if mx >= term_btn_x && mx < term_btn_x + sb_btn_w {
                 return UiAction::ToggleDock;
             }
         }
@@ -1463,94 +1462,96 @@ impl UiState {
             );
         }
 
-        // --- Window Controls (Client-Side Decorations) ---
-        // Minimize, Maximize, Close buttons on the top right
-        let btn_w = 45.0f32;
-        let btn_h = self.titlebar_height - 1.0;
-        let control_y = 0.0f32;
-        
-        let close_x = width - btn_w;
-        let max_x = width - btn_w * 2.0;
-        let min_x = width - btn_w * 3.0;
+        if !self.is_tiling_wm() {
+            // --- Window Controls (Client-Side Decorations) ---
+            // Minimize, Maximize, Close buttons on the top right
+            let btn_w = 45.0f32;
+            let btn_h = self.titlebar_height - 1.0;
+            let control_y = 0.0f32;
+            
+            let close_x = width - btn_w;
+            let max_x = width - btn_w * 2.0;
+            let min_x = width - btn_w * 3.0;
 
-        // Check hovers
-        let is_close_hover = self.active_modal.is_none() && mouse_y >= control_y && mouse_y < control_y + btn_h && mouse_x >= close_x && mouse_x < width;
-        let is_max_hover = self.active_modal.is_none() && mouse_y >= control_y && mouse_y < control_y + btn_h && mouse_x >= max_x && mouse_x < close_x;
-        let is_min_hover = self.active_modal.is_none() && mouse_y >= control_y && mouse_y < control_y + btn_h && mouse_x >= min_x && mouse_x < max_x;
+            // Check hovers
+            let is_close_hover = self.active_modal.is_none() && mouse_y >= control_y && mouse_y < control_y + btn_h && mouse_x >= close_x && mouse_x < width;
+            let is_max_hover = self.active_modal.is_none() && mouse_y >= control_y && mouse_y < control_y + btn_h && mouse_x >= max_x && mouse_x < close_x;
+            let is_min_hover = self.active_modal.is_none() && mouse_y >= control_y && mouse_y < control_y + btn_h && mouse_x >= min_x && mouse_x < max_x;
 
-        let hover_sz = 24.0f32;
-        let hover_y = control_y + ((btn_h - hover_sz) / 2.0).round();
+            let hover_sz = 24.0f32;
+            let hover_y = control_y + ((btn_h - hover_sz) / 2.0).round();
 
-        // Draw Close button hover
-        if is_close_hover {
-            let close_bg = [0.85, 0.25, 0.25, 1.0]; // beautiful red hover
-            let hover_x = close_x + ((btn_w - hover_sz) / 2.0).round();
-            self.push_quad(vertices, indices, hover_x, hover_y, hover_sz, hover_sz, white_uv, close_bg);
+            // Draw Close button hover
+            if is_close_hover {
+                let close_bg = [0.85, 0.25, 0.25, 1.0]; // beautiful red hover
+                let hover_x = close_x + ((btn_w - hover_sz) / 2.0).round();
+                self.push_quad(vertices, indices, hover_x, hover_y, hover_sz, hover_sz, white_uv, close_bg);
+            }
+            
+            // Draw Maximize button hover
+            if is_max_hover {
+                let max_bg = self.config.theme.titlebar_hover_bg;
+                let hover_x = max_x + ((btn_w - hover_sz) / 2.0).round();
+                self.push_quad(vertices, indices, hover_x, hover_y, hover_sz, hover_sz, white_uv, max_bg);
+            }
+
+            // Draw Minimize button hover
+            if is_min_hover {
+                let min_bg = self.config.theme.titlebar_hover_bg;
+                let hover_x = min_x + ((btn_w - hover_sz) / 2.0).round();
+                self.push_quad(vertices, indices, hover_x, hover_y, hover_sz, hover_sz, white_uv, min_bg);
+            }
+
+            // Draw Icons
+            let icon_sz = 14.0f32;
+            let icon_y = (btn_h / 2.0 - icon_sz / 2.0).round();
+            
+            // Minimize icon
+            let min_color = self.config.theme.titlebar_text;
+            self.push_icon(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                "minimize",
+                (min_x + (btn_w - icon_sz) / 2.0).round(),
+                icon_y,
+                min_color,
+                icon_sz,
+            );
+
+            // Maximize icon
+            let max_color = self.config.theme.titlebar_text;
+            self.push_icon(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                "maximize",
+                (max_x + (btn_w - icon_sz) / 2.0).round(),
+                icon_y,
+                max_color,
+                icon_sz,
+            );
+
+            // Close icon
+            let close_color = if is_close_hover {
+                [1.0, 1.0, 1.0, 1.0] // White on red bg
+            } else {
+                self.config.theme.titlebar_text
+            };
+            self.push_icon(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                "close",
+                (close_x + (btn_w - icon_sz) / 2.0).round(),
+                icon_y,
+                close_color,
+                icon_sz,
+            );
         }
-        
-        // Draw Maximize button hover
-        if is_max_hover {
-            let max_bg = self.config.theme.titlebar_hover_bg;
-            let hover_x = max_x + ((btn_w - hover_sz) / 2.0).round();
-            self.push_quad(vertices, indices, hover_x, hover_y, hover_sz, hover_sz, white_uv, max_bg);
-        }
-
-        // Draw Minimize button hover
-        if is_min_hover {
-            let min_bg = self.config.theme.titlebar_hover_bg;
-            let hover_x = min_x + ((btn_w - hover_sz) / 2.0).round();
-            self.push_quad(vertices, indices, hover_x, hover_y, hover_sz, hover_sz, white_uv, min_bg);
-        }
-
-        // Draw Icons
-        let icon_sz = 14.0f32;
-        let icon_y = (btn_h / 2.0 - icon_sz / 2.0).round();
-        
-        // Minimize icon
-        let min_color = self.config.theme.titlebar_text;
-        self.push_icon(
-            vertices,
-            indices,
-            atlas,
-            queue,
-            "minimize",
-            (min_x + (btn_w - icon_sz) / 2.0).round(),
-            icon_y,
-            min_color,
-            icon_sz,
-        );
-
-        // Maximize icon
-        let max_color = self.config.theme.titlebar_text;
-        self.push_icon(
-            vertices,
-            indices,
-            atlas,
-            queue,
-            "maximize",
-            (max_x + (btn_w - icon_sz) / 2.0).round(),
-            icon_y,
-            max_color,
-            icon_sz,
-        );
-
-        // Close icon
-        let close_color = if is_close_hover {
-            [1.0, 1.0, 1.0, 1.0] // White on red bg
-        } else {
-            self.config.theme.titlebar_text
-        };
-        self.push_icon(
-            vertices,
-            indices,
-            atlas,
-            queue,
-            "close",
-            (close_x + (btn_w - icon_sz) / 2.0).round(),
-            icon_y,
-            close_color,
-            icon_sz,
-        );
 
         // --- 2. Draw Sidebar Panel (Light Theme) ---
         if self.sidebar_width > 0.0 {
@@ -2439,14 +2440,14 @@ impl UiState {
 
         // --- 4.5. Draw Bottom Dock ---
         if self.show_dock {
-            let dock_w = width;
+            let dock_w = width - self.sidebar_width;
             let dock_h = (height - self.status_height - dock_start_y).max(0.0);
             
             // 1. Draw top border
             self.push_quad(
                 vertices,
                 indices,
-                0.0,
+                self.sidebar_width,
                 dock_start_y,
                 dock_w,
                 1.0,
@@ -2459,7 +2460,7 @@ impl UiState {
             self.push_quad(
                 vertices,
                 indices,
-                0.0,
+                self.sidebar_width,
                 dock_start_y + 1.0,
                 dock_w,
                 dock_tabbar_h - 1.0,
@@ -2469,7 +2470,7 @@ impl UiState {
             self.push_quad(
                 vertices,
                 indices,
-                0.0,
+                self.sidebar_width,
                 dock_start_y + dock_tabbar_h,
                 dock_w,
                 1.0,
@@ -2478,7 +2479,7 @@ impl UiState {
             );
 
             // 3. Draw active/inactive terminal tabs
-            let mut cur_x = 10.0f32;
+            let mut cur_x = self.sidebar_width + 10.0f32;
             let tab_y = dock_start_y + 1.0;
             let tab_h = dock_tabbar_h - 1.0;
             let tab_font_sz = self.ui_font_size * 0.9;
@@ -2594,7 +2595,7 @@ impl UiState {
 
             // Draw Close dock button
             let close_dock_w = 28.0f32;
-            let close_dock_x = dock_w - 10.0 - close_dock_w;
+            let close_dock_x = width - 10.0 - close_dock_w;
             let is_close_dock_hover = self.active_modal.is_none() && mouse_x >= close_dock_x && mouse_x < close_dock_x + close_dock_w && mouse_y >= tab_y && mouse_y < tab_y + tab_h;
             let close_dock_bg = if is_close_dock_hover {
                 self.config.theme.titlebar_hover_bg
@@ -2620,7 +2621,7 @@ impl UiState {
             self.push_quad(
                 vertices,
                 indices,
-                0.0,
+                self.sidebar_width,
                 content_y,
                 dock_w,
                 content_h,
@@ -2650,8 +2651,8 @@ impl UiState {
                     let cell_baseline = (cell_y + term_font_ascent).round();
 
                     for tx in 0..grid.cols {
-                        let cell_x = term_pad_x + tx as f32 * term_char_w;
-                        if cell_x + term_char_w > dock_w {
+                        let cell_x = self.sidebar_width + term_pad_x + tx as f32 * term_char_w;
+                        if cell_x + term_char_w > width {
                             break;
                         }
 
@@ -2698,10 +2699,10 @@ impl UiState {
                 }
 
                 // Draw Cursor
-                let cursor_x = term_pad_x + grid.cursor_x as f32 * term_char_w;
+                let cursor_x = self.sidebar_width + term_pad_x + grid.cursor_x as f32 * term_char_w;
                 let cursor_y = content_y + term_pad_y + grid.cursor_y as f32 * term_line_h;
                 
-                if cursor_x + term_char_w <= dock_w && cursor_y + term_line_h <= content_y + content_h {
+                if cursor_x + term_char_w <= width && cursor_y + term_line_h <= content_y + content_h {
                     if terminal_focus {
                         self.push_quad(
                             vertices,
@@ -2836,15 +2837,9 @@ impl UiState {
         let icon_sz = 14.0f32;
         let icon_y = status_y + (sb_btn_h - icon_sz) / 2.0;
 
-        let info_btn_x = width - 10.0 - sb_btn_w;
-        let settings_btn_x = info_btn_x - sb_btn_w;
-        let bug_btn_x = settings_btn_x - sb_btn_w;
-        let term_btn_x = bug_btn_x - sb_btn_w;
+        let term_btn_x = width - 10.0 - sb_btn_w;
 
         // Check hovers
-        let is_info_hover = self.active_modal.is_none() && mouse_y >= status_y && mouse_x >= info_btn_x && mouse_x < info_btn_x + sb_btn_w;
-        let is_settings_hover = self.active_modal.is_none() && mouse_y >= status_y && mouse_x >= settings_btn_x && mouse_x < settings_btn_x + sb_btn_w;
-        let is_bug_hover = self.active_modal.is_none() && mouse_y >= status_y && mouse_x >= bug_btn_x && mouse_x < bug_btn_x + sb_btn_w;
         let is_term_hover = self.active_modal.is_none() && mouse_y >= status_y && mouse_x >= term_btn_x && mouse_x < term_btn_x + sb_btn_w;
 
         // 1. Terminal Button
@@ -2858,33 +2853,6 @@ impl UiState {
         self.push_quad(vertices, indices, term_btn_x, status_y + 1.0, sb_btn_w, sb_btn_h, white_uv, term_bg);
         let term_color = if self.show_dock { [0.3, 0.6, 0.95, 1.0] } else { self.config.theme.statusbar_text };
         self.push_icon(vertices, indices, atlas, queue, "terminal", term_btn_x + (sb_btn_w - icon_sz) / 2.0, icon_y, term_color, icon_sz);
-
-        // 2. Bug Button
-        let bug_bg = if is_bug_hover {
-            self.config.theme.titlebar_hover_bg
-        } else {
-            self.config.theme.statusbar_bg
-        };
-        self.push_quad(vertices, indices, bug_btn_x, status_y + 1.0, sb_btn_w, sb_btn_h, white_uv, bug_bg);
-        self.push_icon(vertices, indices, atlas, queue, "bug", bug_btn_x + (sb_btn_w - icon_sz) / 2.0, icon_y, self.config.theme.statusbar_text, icon_sz);
-
-        // 3. Settings Button
-        let settings_bg = if is_settings_hover {
-            self.config.theme.titlebar_hover_bg
-        } else {
-            self.config.theme.statusbar_bg
-        };
-        self.push_quad(vertices, indices, settings_btn_x, status_y + 1.0, sb_btn_w, sb_btn_h, white_uv, settings_bg);
-        self.push_icon(vertices, indices, atlas, queue, "settings", settings_btn_x + (sb_btn_w - icon_sz) / 2.0, icon_y, self.config.theme.statusbar_text, icon_sz);
-
-        // 4. Info Button (About)
-        let info_bg = if is_info_hover {
-            self.config.theme.titlebar_hover_bg
-        } else {
-            self.config.theme.statusbar_bg
-        };
-        self.push_quad(vertices, indices, info_btn_x, status_y + 1.0, sb_btn_w, sb_btn_h, white_uv, info_bg);
-        self.push_icon(vertices, indices, atlas, queue, "info", info_btn_x + (sb_btn_w - icon_sz) / 2.0, icon_y, self.config.theme.statusbar_text, icon_sz);
 
         // --- 6. Draw Context Dropdown Menus (On top of everything) ---
         if let Some(menu) = self.active_menu {
@@ -3028,7 +2996,7 @@ impl UiState {
                     let row_height = (self.ui_line_height * 2.2).round();
                     (row_height * 8.2).max(430.0).round()
                 }
-                ModalType::About => 160.0,
+                ModalType::About => 190.0,
                 ModalType::CommandPalette => {
                     let item_height = (self.ui_line_height * 1.6).round().max(26.0);
                     let filtered_len = self.get_filtered_commands().len();
