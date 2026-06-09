@@ -143,6 +143,212 @@ impl Default for Theme {
     }
 }
 
+impl Theme {
+    pub fn get_by_name(name: &str) -> Self {
+        match name {
+            "Dark Theme" => Self::dark(),
+            "Solarized Dark" => Self::solarized_dark(),
+            "Cyberpunk" => Self::cyberpunk(),
+            _ => Self::default(), // "Light Theme"
+        }
+    }
+
+    pub fn dark() -> Self {
+        Self {
+            name: "Dark Theme".to_string(),
+            titlebar_bg: [0.11, 0.11, 0.11, 1.0],
+            titlebar_border: [0.18, 0.18, 0.18, 1.0],
+            titlebar_text: [0.85, 0.85, 0.85, 1.0],
+            titlebar_hover_bg: [0.22, 0.22, 0.22, 1.0],
+            titlebar_brand_text: [0.95, 0.95, 0.95, 1.0],
+            
+            sidebar_bg: [0.13, 0.13, 0.13, 1.0],
+            sidebar_border: [0.18, 0.18, 0.18, 1.0],
+            sidebar_text_dir: [0.8, 0.8, 0.85, 1.0],
+            sidebar_text_file: [0.75, 0.75, 0.75, 1.0],
+            sidebar_selected_bg: [0.26, 0.26, 0.26, 1.0],
+            sidebar_hover_bg: [0.2, 0.2, 0.2, 1.0],
+            
+            tabbar_bg: [0.11, 0.11, 0.11, 1.0],
+            tabbar_border: [0.18, 0.18, 0.18, 1.0],
+            tab_active_bg: [0.18, 0.18, 0.18, 1.0],
+            tab_inactive_bg: [0.14, 0.14, 0.14, 1.0],
+            tab_text: [0.85, 0.85, 0.85, 1.0],
+            
+            breadcrumb_bg: [0.16, 0.16, 0.16, 1.0],
+            breadcrumb_border: [0.18, 0.18, 0.18, 1.0],
+            breadcrumb_text: [0.65, 0.65, 0.65, 1.0],
+            
+            editor_bg: [0.18, 0.18, 0.18, 1.0],
+            gutter_bg: [0.15, 0.15, 0.15, 1.0],
+            gutter_border: [0.22, 0.22, 0.22, 1.0],
+            active_line_bg: [0.22, 0.22, 0.22, 1.0],
+            line_number_active: [0.9, 0.9, 0.9, 1.0],
+            line_number_inactive: [0.5, 0.5, 0.5, 1.0],
+            selection_bg: [0.15, 0.35, 0.6, 0.5],
+            cursor_color: [0.0, 0.48, 0.8, 1.0],
+            
+            syntax_default: [0.85, 0.85, 0.85, 1.0],
+            syntax_keyword: [0.35, 0.61, 0.92, 1.0],
+            syntax_type: [0.3, 0.78, 0.63, 1.0],
+            syntax_number: [0.71, 0.8, 0.52, 1.0],
+            syntax_string: [0.81, 0.56, 0.44, 1.0],
+            syntax_comment: [0.4, 0.6, 0.4, 1.0],
+            syntax_attribute: [0.86, 0.86, 0.6, 1.0],
+            
+            scrollbar_track: [0.16, 0.16, 0.16, 1.0],
+            scrollbar_border: [0.22, 0.22, 0.22, 1.0],
+            scrollbar_thumb: [0.3, 0.3, 0.3, 1.0],
+            scrollbar_thumb_hover: [0.4, 0.4, 0.4, 1.0],
+            
+            statusbar_bg: [0.11, 0.11, 0.11, 1.0],
+            statusbar_border: [0.18, 0.18, 0.18, 1.0],
+            statusbar_text: [0.75, 0.75, 0.75, 1.0],
+            
+            modal_bg: [0.15, 0.15, 0.15, 1.0],
+            modal_border: [0.25, 0.25, 0.25, 1.0],
+            modal_text_title: [0.95, 0.95, 0.95, 1.0],
+            modal_text_normal: [0.85, 0.85, 0.85, 1.0],
+            modal_text_muted: [0.55, 0.55, 0.55, 1.0],
+            button_bg: [0.22, 0.22, 0.22, 1.0],
+            button_hover_bg: [0.28, 0.28, 0.28, 1.0],
+            button_border: [0.3, 0.3, 0.3, 1.0],
+            button_text: [0.85, 0.85, 0.85, 1.0],
+            dropdown_hover_bg: [0.25, 0.25, 0.25, 1.0],
+        }
+    }
+
+    pub fn solarized_dark() -> Self {
+        Self {
+            name: "Solarized Dark".to_string(),
+            titlebar_bg: [0.027, 0.212, 0.259, 1.0],
+            titlebar_border: [0.0, 0.169, 0.212, 1.0],
+            titlebar_text: [0.576, 0.631, 0.631, 1.0],
+            titlebar_hover_bg: [0.0, 0.169, 0.212, 1.0],
+            titlebar_brand_text: [0.165, 0.631, 0.596, 1.0],
+            
+            sidebar_bg: [0.027, 0.212, 0.259, 1.0],
+            sidebar_border: [0.0, 0.169, 0.212, 1.0],
+            sidebar_text_dir: [0.576, 0.631, 0.631, 1.0],
+            sidebar_text_file: [0.514, 0.58, 0.588, 1.0],
+            sidebar_selected_bg: [0.0, 0.169, 0.212, 1.0],
+            sidebar_hover_bg: [0.345, 0.431, 0.459, 0.5],
+            
+            tabbar_bg: [0.027, 0.212, 0.259, 1.0],
+            tabbar_border: [0.0, 0.169, 0.212, 1.0],
+            tab_active_bg: [0.0, 0.169, 0.212, 1.0],
+            tab_inactive_bg: [0.027, 0.212, 0.259, 1.0],
+            tab_text: [0.576, 0.631, 0.631, 1.0],
+            
+            breadcrumb_bg: [0.027, 0.212, 0.259, 1.0],
+            breadcrumb_border: [0.0, 0.169, 0.212, 1.0],
+            breadcrumb_text: [0.514, 0.58, 0.588, 1.0],
+            
+            editor_bg: [0.0, 0.169, 0.212, 1.0],
+            gutter_bg: [0.0, 0.169, 0.212, 1.0],
+            gutter_border: [0.027, 0.212, 0.259, 1.0],
+            active_line_bg: [0.027, 0.212, 0.259, 0.4],
+            line_number_active: [0.576, 0.631, 0.631, 1.0],
+            line_number_inactive: [0.345, 0.431, 0.459, 1.0],
+            selection_bg: [0.027, 0.212, 0.259, 0.8],
+            cursor_color: [0.827, 0.212, 0.51, 1.0],
+            
+            syntax_default: [0.576, 0.631, 0.631, 1.0],
+            syntax_keyword: [0.522, 0.6, 0.0, 1.0],
+            syntax_type: [0.71, 0.537, 0.0, 1.0],
+            syntax_number: [0.165, 0.631, 0.596, 1.0],
+            syntax_string: [0.149, 0.545, 0.824, 1.0],
+            syntax_comment: [0.345, 0.431, 0.459, 1.0],
+            syntax_attribute: [0.424, 0.443, 0.769, 1.0],
+            
+            scrollbar_track: [0.0, 0.169, 0.212, 1.0],
+            scrollbar_border: [0.027, 0.212, 0.259, 1.0],
+            scrollbar_thumb: [0.345, 0.431, 0.459, 0.6],
+            scrollbar_thumb_hover: [0.345, 0.431, 0.459, 0.9],
+            
+            statusbar_bg: [0.027, 0.212, 0.259, 1.0],
+            statusbar_border: [0.0, 0.169, 0.212, 1.0],
+            statusbar_text: [0.576, 0.631, 0.631, 1.0],
+            
+            modal_bg: [0.027, 0.212, 0.259, 1.0],
+            modal_border: [0.0, 0.169, 0.212, 1.0],
+            modal_text_title: [0.992, 0.965, 0.89, 1.0],
+            modal_text_normal: [0.576, 0.631, 0.631, 1.0],
+            modal_text_muted: [0.345, 0.431, 0.459, 1.0],
+            button_bg: [0.0, 0.169, 0.212, 1.0],
+            button_hover_bg: [0.027, 0.212, 0.259, 1.0],
+            button_border: [0.345, 0.431, 0.459, 1.0],
+            button_text: [0.576, 0.631, 0.631, 1.0],
+            dropdown_hover_bg: [0.0, 0.169, 0.212, 1.0],
+        }
+    }
+
+    pub fn cyberpunk() -> Self {
+        Self {
+            name: "Cyberpunk".to_string(),
+            titlebar_bg: [0.05, 0.02, 0.08, 1.0],
+            titlebar_border: [0.11, 0.05, 0.18, 1.0],
+            titlebar_text: [0.0, 0.94, 1.0, 1.0],
+            titlebar_hover_bg: [0.18, 0.08, 0.27, 1.0],
+            titlebar_brand_text: [1.0, 0.0, 0.5, 1.0],
+            
+            sidebar_bg: [0.05, 0.02, 0.08, 1.0],
+            sidebar_border: [0.11, 0.05, 0.18, 1.0],
+            sidebar_text_dir: [0.0, 0.94, 1.0, 1.0],
+            sidebar_text_file: [0.85, 0.8, 0.9, 1.0],
+            sidebar_selected_bg: [0.18, 0.08, 0.27, 1.0],
+            sidebar_hover_bg: [0.11, 0.05, 0.18, 1.0],
+            
+            tabbar_bg: [0.05, 0.02, 0.08, 1.0],
+            tabbar_border: [0.11, 0.05, 0.18, 1.0],
+            tab_active_bg: [0.11, 0.05, 0.18, 1.0],
+            tab_inactive_bg: [0.05, 0.02, 0.08, 1.0],
+            tab_text: [0.85, 0.8, 0.9, 1.0],
+            
+            breadcrumb_bg: [0.08, 0.04, 0.13, 1.0],
+            breadcrumb_border: [0.11, 0.05, 0.18, 1.0],
+            breadcrumb_text: [0.0, 0.94, 1.0, 1.0],
+            
+            editor_bg: [0.08, 0.04, 0.13, 1.0],
+            gutter_bg: [0.05, 0.02, 0.08, 1.0],
+            gutter_border: [0.11, 0.05, 0.18, 1.0],
+            active_line_bg: [0.18, 0.08, 0.27, 0.4],
+            line_number_active: [1.0, 0.0, 0.5, 1.0],
+            line_number_inactive: [0.4, 0.2, 0.5, 1.0],
+            selection_bg: [1.0, 0.0, 0.5, 0.35],
+            cursor_color: [0.0, 0.94, 1.0, 1.0],
+            
+            syntax_default: [0.85, 0.8, 0.9, 1.0],
+            syntax_keyword: [1.0, 0.0, 0.5, 1.0],
+            syntax_type: [0.0, 0.94, 1.0, 1.0],
+            syntax_number: [1.0, 0.93, 0.0, 1.0],
+            syntax_string: [0.22, 1.0, 0.08, 1.0],
+            syntax_comment: [0.4, 0.3, 0.5, 1.0],
+            syntax_attribute: [0.54, 0.0, 1.0, 1.0],
+            
+            scrollbar_track: [0.05, 0.02, 0.08, 1.0],
+            scrollbar_border: [0.11, 0.05, 0.18, 1.0],
+            scrollbar_thumb: [0.18, 0.08, 0.27, 1.0],
+            scrollbar_thumb_hover: [1.0, 0.0, 0.5, 0.7],
+            
+            statusbar_bg: [0.05, 0.02, 0.08, 1.0],
+            statusbar_border: [0.11, 0.05, 0.18, 1.0],
+            statusbar_text: [0.0, 0.94, 1.0, 1.0],
+            
+            modal_bg: [0.08, 0.04, 0.13, 1.0],
+            modal_border: [1.0, 0.0, 0.5, 1.0],
+            modal_text_title: [1.0, 0.0, 0.5, 1.0],
+            modal_text_normal: [0.0, 0.94, 1.0, 1.0],
+            modal_text_muted: [0.4, 0.3, 0.5, 1.0],
+            button_bg: [0.11, 0.05, 0.18, 1.0],
+            button_hover_bg: [0.18, 0.08, 0.27, 1.0],
+            button_border: [0.0, 0.94, 1.0, 1.0],
+            button_text: [0.0, 0.94, 1.0, 1.0],
+            dropdown_hover_bg: [0.18, 0.08, 0.27, 1.0],
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppConfig {
     pub ui_font_size: f32,
