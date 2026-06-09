@@ -447,7 +447,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             terminal_focus = false;
                         } else if !dock_terminals.is_empty() {
                             let size = window.inner_size();
-                            let width_content = size.width as f32 - 16.0;
+                            let width_content = size.width as f32 - ui.sidebar_width - 16.0;
                             let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
                             let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
                             let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
@@ -458,7 +458,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     }
                     UiAction::NewTerminal => {
                         let size = window.inner_size();
-                        let width_content = size.width as f32 - 16.0;
+                        let width_content = size.width as f32 - ui.sidebar_width - 16.0;
                         let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
                         let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
                         let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
@@ -473,7 +473,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             dock_terminals.remove(idx);
                             if dock_terminals.is_empty() {
                                 let size = window.inner_size();
-                                let width_content = size.width as f32 - 16.0;
+                                let width_content = size.width as f32 - ui.sidebar_width - 16.0;
                                 let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
                                 let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
                                 let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
@@ -516,7 +516,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 WindowEvent::RedrawRequested => {
                     let size = window.inner_size();
                     if ui.show_dock && !dock_terminals.is_empty() {
-                        let width_content = size.width as f32 - 16.0;
+                        let width_content = size.width as f32 - ui.sidebar_width - 16.0;
                         let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
                         let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
                         let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
@@ -605,7 +605,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         
                         // Resize active terminal PTY
                         if !dock_terminals.is_empty() {
-                            let width_content = size.width as f32 - 16.0;
+                            let width_content = size.width as f32 - ui.sidebar_width - 16.0;
                             let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
                             let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
                             let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
@@ -714,9 +714,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 menu_width += text_w + left_pad + right_pad;
                             }
                             
+                            let max_drag_x = if ui.is_tiling_wm() {
+                                size.width as f32
+                            } else {
+                                size.width as f32 - 135.0
+                            };
                             let is_titlebar_drag_zone = mouse_y < ui.titlebar_height
                                 && mouse_x >= menu_width
-                                && mouse_x < size.width as f32 - 135.0;
+                                && mouse_x < max_drag_x;
 
                             if is_titlebar_drag_zone {
                                 let now = std::time::Instant::now();
@@ -744,7 +749,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             }
                             
                             // Check if focus changes
-                            if ui.show_dock && mouse_y >= dock_start_y {
+                            if ui.show_dock && mouse_x >= ui.sidebar_width && mouse_y >= dock_start_y {
                                 terminal_focus = true;
                             } else {
                                 terminal_focus = false;
@@ -1017,6 +1022,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     }
                                 }
                                 Key::Named(NamedKey::Enter) => Some(vec![b'\r']),
+                                Key::Named(NamedKey::Space) => Some(vec![b' ']),
                                 Key::Named(NamedKey::Backspace) => Some(vec![127]),
                                 Key::Named(NamedKey::Tab) => Some(vec![b'\t']),
                                 Key::Named(NamedKey::Escape) => Some(vec![27]),
@@ -1474,6 +1480,16 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 }
                 _ => {}
             },
+            Event::AboutToWait => {
+                if terminal_focus {
+                    elwt.set_control_flow(ControlFlow::WaitUntil(
+                        std::time::Instant::now() + std::time::Duration::from_millis(15)
+                    ));
+                    window.request_redraw();
+                } else {
+                    elwt.set_control_flow(ControlFlow::Wait);
+                }
+            }
             _ => {}
         }
     })?;
