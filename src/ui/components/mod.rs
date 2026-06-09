@@ -1,1 +1,3 @@
 pub mod sidebar;
+pub mod titlebar;
+
