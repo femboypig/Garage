@@ -337,7 +337,7 @@ pub struct TerminalInstance {
 }
 
 impl TerminalInstance {
-    pub fn new(cols: usize, rows: usize) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(cols: usize, rows: usize, window: std::sync::Arc<winit::window::Window>) -> Result<Self, Box<dyn std::error::Error>> {
         let pty_system = native_pty_system();
         let pty_pair = pty_system.openpty(PtySize {
             rows: rows as u16,
@@ -361,6 +361,7 @@ impl TerminalInstance {
         let (tx, rx) = channel();
 
         // Background reader thread
+        let win = window.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             while let Ok(n) = pty_reader.read(&mut buf) {
@@ -370,6 +371,7 @@ impl TerminalInstance {
                 if tx.send(buf[..n].to_vec()).is_err() {
                     break;
                 }
+                win.request_redraw();
             }
         });
 
