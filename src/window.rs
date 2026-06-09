@@ -10,7 +10,7 @@ use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::gpu::{GpuContext, Vertex};
-use crate::ui::UiState;
+use crate::ui::{UiState, UiAction};
 
 pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     // Initialize env_logger (warn level by default to not pollute output)
@@ -44,7 +44,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
     // Initialize text buffer and load file if provided
     let mut buffer = Buffer::new();
-    let save_path = if let Some(ref path) = file_path {
+    let mut save_path = if let Some(ref path) = file_path {
         if let Err(e) = buffer.load_file(path) {
             log::warn!("Failed to load file '{}': {}. Starting with empty buffer.", path, e);
         }
@@ -104,6 +104,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         &cursor,
                         size.width as f32,
                         size.height as f32,
+                        mouse_x,
+                        mouse_y,
                     );
 
                     // Render to swapchain
@@ -124,14 +126,19 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         // Calculate dynamic line number gutter width
                         let max_line_digits = buffer.len().to_string().len().max(3);
                         let gutter_width = (max_line_digits as f32 + 2.0) * ui.char_width;
+                        let text_area_x = ui.sidebar_width + gutter_width;
 
                         // Calculate line under mouse pointer
-                        let line_idx = (mouse_y / ui.line_height).floor() as usize + ui.scroll_y;
+                        let line_idx = if mouse_y >= ui.titlebar_height {
+                            ((mouse_y - ui.titlebar_height) / ui.line_height).floor() as usize + ui.scroll_y
+                        } else {
+                            ui.scroll_y
+                        };
                         let line_idx = line_idx.min(buffer.len() - 1);
 
                         // Calculate column under mouse pointer
-                        let col_idx = if mouse_x > gutter_width {
-                            ((mouse_x - gutter_width) / ui.char_width).round() as usize + ui.scroll_x
+                        let col_idx = if mouse_x > text_area_x {
+                            ((mouse_x - text_area_x) / ui.char_width).round() as usize + ui.scroll_x
                         } else {
                             0
                         };
@@ -142,50 +149,98 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         cursor.line = line_idx;
                         cursor.col = col_idx;
                         cursor.intended_col = col_idx;
-
-                        window.request_redraw();
                     }
+                    window.request_redraw();
                 }
 
                 WindowEvent::MouseInput { state, button, .. } => {
                     if button == MouseButton::Left {
-                        // Calculate dynamic line number gutter width
-                        let max_line_digits = buffer.len().to_string().len().max(3);
-                        let gutter_width = (max_line_digits as f32 + 2.0) * ui.char_width;
-
-                        // Calculate line under mouse pointer
-                        let line_idx = (mouse_y / ui.line_height).floor() as usize + ui.scroll_y;
-                        let line_idx = line_idx.min(buffer.len() - 1);
-
-                        // Calculate column under mouse pointer
-                        let col_idx = if mouse_x > gutter_width {
-                            ((mouse_x - gutter_width) / ui.char_width).round() as usize + ui.scroll_x
-                        } else {
-                            0
-                        };
-                        let line_chars = buffer.lines()[line_idx].chars().count();
-                        let col_idx = col_idx.min(line_chars);
-
+                        let size = window.inner_size();
                         if state == ElementState::Pressed {
-                            buffer.commit_transaction();
-                            is_dragging = true;
-                            
-                            let extend_selection = modifiers.shift_key();
-                            cursor.update_selection(extend_selection);
-                            
-                            cursor.line = line_idx;
-                            cursor.col = col_idx;
-                            cursor.intended_col = col_idx;
+                            let action = ui.handle_click(
+                                mouse_x,
+                                mouse_y,
+                                size.width as f32,
+                                size.height as f32,
+                                &mut buffer,
+                                &mut cursor,
+                            );
+
+                            match action {
+                                UiAction::OpenFile(path) => {
+                                    if let Err(e) = buffer.load_file(&path) {
+                                        log::error!("Failed to load file: {:?}", e);
+                                    } else {
+                                        save_path = Some(path.to_string_lossy().to_string());
+                                        cursor.line = 0;
+                                        cursor.col = 0;
+                                        cursor.intended_col = 0;
+                                        cursor.clear_selection();
+                                        ui.scroll_y = 0;
+                                    }
+                                }
+                                UiAction::SaveFile => {
+                                    if let Some(ref path) = save_path {
+                                        if let Err(e) = buffer.save_file(path) {
+                                            log::error!("Failed to save file: {:?}", e);
+                                        } else {
+                                            ui.rebuild_tree();
+                                        }
+                                    }
+                                }
+                                UiAction::Undo => {
+                                    buffer.undo();
+                                    cursor.clear_selection();
+                                    cursor.line = cursor.line.min(buffer.len() - 1);
+                                    let max_col = buffer.lines()[cursor.line].chars().count();
+                                    cursor.col = cursor.col.min(max_col);
+                                }
+                                UiAction::Redo => {
+                                    buffer.redo();
+                                    cursor.clear_selection();
+                                    cursor.line = cursor.line.min(buffer.len() - 1);
+                                    let max_col = buffer.lines()[cursor.line].chars().count();
+                                    cursor.col = cursor.col.min(max_col);
+                                }
+                                UiAction::ToggleSidebar => {
+                                    ui.target_sidebar_width = if ui.target_sidebar_width == 200.0 { 0.0 } else { 200.0 };
+                                }
+                                UiAction::Exit => {
+                                    elwt.exit();
+                                }
+                                UiAction::None => {
+                                    let max_line_digits = buffer.len().to_string().len().max(3);
+                                    let gutter_width = (max_line_digits as f32 + 2.0) * ui.char_width;
+                                    let text_area_x = ui.sidebar_width + gutter_width;
+
+                                    if mouse_x >= text_area_x && mouse_y >= ui.titlebar_height && mouse_y < size.height as f32 - ui.status_height {
+                                        buffer.commit_transaction();
+                                        is_dragging = true;
+
+                                        let extend_selection = modifiers.shift_key();
+                                        cursor.update_selection(extend_selection);
+
+                                        let line_idx = ((mouse_y - ui.titlebar_height) / ui.line_height).floor() as usize + ui.scroll_y;
+                                        let line_idx = line_idx.min(buffer.len() - 1);
+
+                                        let col_idx = ((mouse_x - text_area_x) / ui.char_width).round() as usize + ui.scroll_x;
+                                        let line_chars = buffer.lines()[line_idx].chars().count();
+                                        let col_idx = col_idx.min(line_chars);
+
+                                        cursor.line = line_idx;
+                                        cursor.col = col_idx;
+                                        cursor.intended_col = col_idx;
+                                    }
+                                }
+                            }
                         } else {
                             is_dragging = false;
-                            // If anchor matches cursor position, clean up selection bounds
                             if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
                                 if s_l == e_l && s_c == e_c {
                                     cursor.clear_selection();
                                 }
                             }
                         }
-
                         window.request_redraw();
                     }
                 }
@@ -293,6 +348,20 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 }
                                 window.request_redraw();
                             }
+                            Key::Named(NamedKey::Space) => {
+                                if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                                    buffer.start_transaction();
+                                    buffer.delete(s_l, s_c, e_l, e_c);
+                                    cursor.line = s_l;
+                                    cursor.col = s_c;
+                                    cursor.clear_selection();
+                                }
+                                buffer.start_transaction();
+                                buffer.insert(cursor.line, cursor.col, " ");
+                                cursor.col += 1;
+                                cursor.intended_col = cursor.col;
+                                window.request_redraw();
+                            }
                             Key::Named(NamedKey::Enter) => {
                                 if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
                                     buffer.start_transaction();
@@ -332,7 +401,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             buffer.commit_transaction();
                                             if buffer.undo() {
                                                 cursor.clear_selection();
-                                                // Place cursor at top/left just as a safe default
                                                 cursor.line = cursor.line.min(buffer.len() - 1);
                                                 let max_col = buffer.lines()[cursor.line].chars().count();
                                                 cursor.col = cursor.col.min(max_col);
@@ -384,8 +452,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                     cursor.clear_selection();
                                                 }
                                                 buffer.insert(cursor.line, cursor.col, &internal_clipboard);
-                                                
-                                                // Adjust cursor after insertion
+
                                                 let parts = internal_clipboard.split('\n').collect::<Vec<&str>>();
                                                 if parts.len() == 1 {
                                                     cursor.col += internal_clipboard.chars().count();
