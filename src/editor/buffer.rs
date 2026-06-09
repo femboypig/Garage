@@ -21,6 +21,7 @@ pub struct Buffer {
     undo_stack: Vec<Vec<Action>>,
     redo_stack: Vec<Vec<Action>>,
     current_transaction: Option<Vec<Action>>,
+    pub is_modified: bool,
 }
 
 impl Buffer {
@@ -31,6 +32,7 @@ impl Buffer {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             current_transaction: None,
+            is_modified: false,
         }
     }
 
@@ -52,6 +54,7 @@ impl Buffer {
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.current_transaction = None;
+        self.is_modified = false;
         Ok(())
     }
 
@@ -123,6 +126,7 @@ impl Buffer {
 
     /// Perform raw insertion without touching undo/redo stacks.
     fn insert_raw(&mut self, line: usize, col: usize, text: &str) {
+        self.is_modified = true;
         let cur_line = &mut self.lines[line];
         
         // Clamp column to line boundaries
@@ -184,6 +188,7 @@ impl Buffer {
 
     /// Perform raw deletion without touching undo/redo stacks.
     fn delete_raw(&mut self, start_line: usize, start_col: usize, end_line: usize, end_col: usize) {
+        self.is_modified = true;
         if start_line >= self.lines.len() || end_line >= self.lines.len() {
             return;
         }
