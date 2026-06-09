@@ -11,8 +11,51 @@ pub struct GlyphInfo {
     pub bearing_y: f32,
 }
 
+fn load_fallback_nerd_font() -> Option<fontdue::Font> {
+    let candidate_paths = [
+        "/usr/share/fonts/TTF/JetBrainsMonoNLNerdFontMono-Medium.ttf",
+        "/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-Regular.ttf",
+        "/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf",
+        "/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Bold.ttf",
+        "/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-Bold.ttf",
+        "/usr/share/fonts/TTF/JetBrainsMonoNLNerdFontMono-Light.ttf",
+        "/usr/share/fonts/TTF/CascadiaMonoNF.ttf",
+    ];
+
+    for path in &candidate_paths {
+        if let Ok(bytes) = std::fs::read(path) {
+            if let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
+                log::info!("Loaded fallback Nerd Font from {}", path);
+                return Some(font);
+            }
+        }
+    }
+
+    // Fallback search
+    if let Ok(entries) = std::fs::read_dir("/usr/share/fonts/TTF") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(ext) = path.extension() {
+                if ext == "ttf" || ext == "otf" {
+                    let name = path.to_string_lossy().to_string();
+                    if name.contains("Nerd") || name.contains("NF") {
+                        if let Ok(bytes) = std::fs::read(&path) {
+                            if let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
+                                log::info!("Loaded fallback Nerd Font from search: {}", name);
+                                return Some(font);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 pub struct FontAtlas {
     pub font: Font,
+    pub fallback_font: Option<Font>,
     pub texture: wgpu::Texture,
     pub sampler: wgpu::Sampler,
     pub atlas_width: u32,
@@ -32,6 +75,7 @@ impl FontAtlas {
         font_bytes: &[u8],
     ) -> Result<Self, &'static str> {
         let font = Font::from_bytes(font_bytes, FontSettings::default())?;
+        let fallback_font = load_fallback_nerd_font();
         
         let atlas_width = 1024;
         let atlas_height = 1024;
@@ -86,6 +130,7 @@ impl FontAtlas {
 
         Ok(Self {
             font,
+            fallback_font,
             texture,
             sampler,
             atlas_width,
@@ -114,7 +159,16 @@ impl FontAtlas {
             return self.glyphs.get(&key);
         }
 
-        let (metrics, bitmap) = self.font.rasterize(c, size);
+        let mut raster_font = &self.font;
+        if self.font.lookup_glyph_index(c) == 0 {
+            if let Some(ref fb_font) = self.fallback_font {
+                if fb_font.lookup_glyph_index(c) != 0 {
+                    raster_font = fb_font;
+                }
+            }
+        }
+
+        let (metrics, bitmap) = raster_font.rasterize(c, size);
         
         // Handle empty glyphs (like spaces)
         if metrics.width == 0 || metrics.height == 0 {
