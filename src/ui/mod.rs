@@ -17,6 +17,8 @@ pub enum UiAction {
     ShowSettings,
     ShowAbout,
     CloseModal,
+    ChangeFontSize(f32),
+    ChangeBackend(wgpu::Backend),
     None,
 }
 
@@ -66,9 +68,10 @@ pub struct UiState {
 }
 
 impl UiState {
-    pub fn new(atlas: &mut FontAtlas, queue: &wgpu::Queue) -> Self {
-        let glyph_m = atlas.get_or_rasterize(queue, 'm').expect("Failed to measure character");
-        let char_width = glyph_m.width.max(8.0);
+    pub fn new(atlas: &mut FontAtlas, _queue: &wgpu::Queue) -> Self {
+        // Measure advance width of 'm' and round it to get a constant integer pixel character width
+        let metrics = atlas.font.metrics('m', atlas.font_size);
+        let char_width = metrics.advance_width.round().max(8.0);
 
         let font_metrics = atlas.font.horizontal_line_metrics(atlas.font_size)
             .unwrap_or(fontdue::LineMetrics {
@@ -104,6 +107,21 @@ impl UiState {
 
         state.rebuild_tree();
         state
+    }
+
+    pub fn scroll_to_cursor(&mut self, cursor: &Cursor, buffer_len: usize, height: f32) {
+        let main_height = height - self.titlebar_height - self.status_height;
+        let visible_lines = (main_height / self.line_height).floor() as usize;
+        if visible_lines == 0 {
+            return;
+        }
+        if cursor.line < self.scroll_y {
+            self.scroll_y = cursor.line;
+        } else if cursor.line >= self.scroll_y + visible_lines {
+            self.scroll_y = cursor.line - visible_lines + 1;
+        }
+        let max_scroll = (buffer_len as isize - visible_lines as isize).max(0) as usize;
+        self.scroll_y = self.scroll_y.min(max_scroll);
     }
 
     /// Re-scan the directory to populate the project tree
@@ -164,14 +182,14 @@ impl UiState {
         buffer: &mut Buffer,
         cursor: &mut Cursor,
     ) -> UiAction {
-        // If a modal is open, any click outside the modal boundaries or on modal buttons closes it
-        if let Some(_modal) = self.active_modal {
+        // If a modal is open, check click boundaries and buttons
+        if let Some(modal) = self.active_modal {
             let modal_w = 400.0;
             let modal_h = 240.0;
             let modal_x = (width - modal_w) / 2.0;
             let modal_y = (height - modal_h) / 2.0;
 
-            // Check if clicked close button (e.g. at x: modal_x + 150..modal_x + 250, y: modal_y + 180..modal_y + 220)
+            // Check if clicked close button (e.g. at x: modal_x + 140..modal_x + 260, y: modal_y + 180..modal_y + 215)
             let inside_close_btn = mx >= modal_x + 140.0 && mx <= modal_x + 260.0 && my >= modal_y + 180.0 && my <= modal_y + 215.0;
             let clicked_outside = mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h;
 
@@ -179,6 +197,26 @@ impl UiState {
                 self.active_modal = None;
                 return UiAction::CloseModal;
             }
+
+            if modal == ModalType::Settings {
+                // Decrease Font Size button [-]
+                if mx >= modal_x + 200.0 && mx <= modal_x + 230.0 && my >= modal_y + 60.0 && my <= modal_y + 85.0 {
+                    return UiAction::ChangeFontSize(-1.0);
+                }
+                // Increase Font Size button [+]
+                if mx >= modal_x + 240.0 && mx <= modal_x + 270.0 && my >= modal_y + 60.0 && my <= modal_y + 85.0 {
+                    return UiAction::ChangeFontSize(1.0);
+                }
+                // Vulkan Button
+                if mx >= modal_x + 110.0 && mx <= modal_x + 200.0 && my >= modal_y + 105.0 && my <= modal_y + 135.0 {
+                    return UiAction::ChangeBackend(wgpu::Backend::Vulkan);
+                }
+                // OpenGL Button
+                if mx >= modal_x + 210.0 && mx <= modal_x + 300.0 && my >= modal_y + 105.0 && my <= modal_y + 135.0 {
+                    return UiAction::ChangeBackend(wgpu::Backend::Gl);
+                }
+            }
+
             return UiAction::None;
         }
 
@@ -446,6 +484,7 @@ impl UiState {
         height: f32,
         mouse_x: f32,
         mouse_y: f32,
+        current_backend: wgpu::Backend,
     ) {
         let white_uv = atlas.white_pixel_uv();
         let main_y = self.titlebar_height;
@@ -468,13 +507,9 @@ impl UiState {
         // Text viewport width is limited by scrollbar
         let _text_viewport_w = width - text_area_x - scrollbar_width;
 
-        // Ensure vertical scrolling viewport matches active cursor position
         let visible_lines = (main_height / self.line_height).floor() as usize;
-        if cursor.line < self.scroll_y {
-            self.scroll_y = cursor.line;
-        } else if cursor.line >= self.scroll_y + visible_lines {
-            self.scroll_y = cursor.line - visible_lines + 1;
-        }
+        let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as usize;
+        self.scroll_y = self.scroll_y.min(max_scroll);
 
         // --- 1. Draw Titlebar Menu Headers ---
         self.push_quad(
@@ -836,7 +871,7 @@ impl UiState {
             queue,
             &status_left,
             10.0,
-            (status_y + self.font_ascent / 2.0 + 2.0).round(),
+            (status_y + self.status_height / 2.0 + self.font_ascent / 2.0 - 2.0).round(),
             [0.6, 0.6, 0.65, 1.0],
         );
 
@@ -850,7 +885,7 @@ impl UiState {
                 queue,
                 &status_right,
                 right_x,
-                (status_y + self.font_ascent / 2.0 + 2.0).round(),
+                (status_y + self.status_height / 2.0 + self.font_ascent / 2.0 - 2.0).round(),
                 [0.5, 0.5, 0.55, 1.0],
             );
         }
@@ -1099,35 +1134,138 @@ impl UiState {
                         modal_y + 35.0,
                         [1.0, 1.0, 1.0, 1.0],
                     );
+                    
+                    // 1. Font Size Settings
+                    let font_size_str = format!("Font Size:  {:.1} px", atlas.font_size);
                     self.push_str(
                         vertices,
                         indices,
                         atlas,
                         queue,
-                        " Font Size:  16.0 px",
+                        &font_size_str,
                         modal_x + 20.0,
                         modal_y + 75.0,
                         [0.8, 0.8, 0.85, 1.0],
                     );
-                    self.push_str(
+                    
+                    // Decrease button [-]
+                    let dec_hover = mouse_x >= modal_x + 200.0 && mouse_x <= modal_x + 230.0 && mouse_y >= modal_y + 60.0 && mouse_y <= modal_y + 85.0;
+                    self.push_quad(
                         vertices,
                         indices,
-                        atlas,
-                        queue,
-                        " Font Family: IBM Plex Mono",
-                        modal_x + 20.0,
-                        modal_y + 105.0,
-                        [0.8, 0.8, 0.85, 1.0],
+                        modal_x + 200.0,
+                        modal_y + 60.0,
+                        30.0,
+                        25.0,
+                        white_uv,
+                        if dec_hover { [0.18, 0.18, 0.22, 1.0] } else { [0.12, 0.12, 0.15, 1.0] },
                     );
                     self.push_str(
                         vertices,
                         indices,
                         atlas,
                         queue,
-                        " Tab Width:   4 spaces",
+                        "-",
+                        modal_x + 211.0,
+                        (modal_y + 77.0).round(),
+                        [0.85, 0.85, 0.9, 1.0],
+                    );
+
+                    // Increase button [+]
+                    let inc_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 270.0 && mouse_y >= modal_y + 60.0 && mouse_y <= modal_y + 85.0;
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 240.0,
+                        modal_y + 60.0,
+                        30.0,
+                        25.0,
+                        white_uv,
+                        if inc_hover { [0.18, 0.18, 0.22, 1.0] } else { [0.12, 0.12, 0.15, 1.0] },
+                    );
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "+",
+                        modal_x + 251.0,
+                        (modal_y + 77.0).round(),
+                        [0.85, 0.85, 0.9, 1.0],
+                    );
+
+                    // 2. Backend Selection
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "Backend:",
                         modal_x + 20.0,
-                        modal_y + 135.0,
+                        modal_y + 120.0,
                         [0.8, 0.8, 0.85, 1.0],
+                    );
+
+                    // Vulkan Button
+                    let is_vulkan = current_backend == wgpu::Backend::Vulkan;
+                    let vulkan_hover = mouse_x >= modal_x + 110.0 && mouse_x <= modal_x + 200.0 && mouse_y >= modal_y + 105.0 && mouse_y <= modal_y + 135.0;
+                    let vulkan_bg = if is_vulkan {
+                        [0.0, 0.45, 0.4, 1.0]
+                    } else if vulkan_hover {
+                        [0.18, 0.18, 0.22, 1.0]
+                    } else {
+                        [0.12, 0.12, 0.15, 1.0]
+                    };
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 110.0,
+                        modal_y + 105.0,
+                        90.0,
+                        30.0,
+                        white_uv,
+                        vulkan_bg,
+                    );
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "Vulkan",
+                        modal_x + 125.0,
+                        (modal_y + 125.0).round(),
+                        if is_vulkan { [1.0, 1.0, 1.0, 1.0] } else { [0.85, 0.85, 0.9, 1.0] },
+                    );
+
+                    // OpenGL Button
+                    let is_opengl = current_backend == wgpu::Backend::Gl;
+                    let opengl_hover = mouse_x >= modal_x + 210.0 && mouse_x <= modal_x + 300.0 && mouse_y >= modal_y + 105.0 && mouse_y <= modal_y + 135.0;
+                    let opengl_bg = if is_opengl {
+                        [0.0, 0.45, 0.4, 1.0]
+                    } else if opengl_hover {
+                        [0.18, 0.18, 0.22, 1.0]
+                    } else {
+                        [0.12, 0.12, 0.15, 1.0]
+                    };
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 210.0,
+                        modal_y + 105.0,
+                        90.0,
+                        30.0,
+                        white_uv,
+                        opengl_bg,
+                    );
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "OpenGL",
+                        modal_x + 225.0,
+                        (modal_y + 125.0).round(),
+                        if is_opengl { [1.0, 1.0, 1.0, 1.0] } else { [0.85, 0.85, 0.9, 1.0] },
                     );
                 }
             }
