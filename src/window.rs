@@ -121,8 +121,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let mut terminal_focus = false;
     let mut last_click_time: Option<std::time::Instant> = None;
 
-    // Create default initial terminal
-    if let Ok(term) = crate::terminal::TerminalInstance::new(80, 24, window.clone()) {
+    // Create default initial terminal with correct dimensions matching the startup size of the dock area
+    let initial_term_size = window.inner_size();
+    let initial_width_content = initial_term_size.width as f32 - ui.sidebar_width - 16.0;
+    let initial_height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
+    let initial_cols = (initial_width_content / ui.buffer_char_width).floor().max(10.0) as usize;
+    let initial_rows = (initial_height_content / ui.buffer_line_height).floor().max(2.0) as usize;
+
+    if let Ok(term) = crate::terminal::TerminalInstance::new(initial_cols, initial_rows, window.clone()) {
         dock_terminals.push(term);
     }
     
