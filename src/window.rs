@@ -2,7 +2,7 @@ use std::sync::Arc;
 use winit::{
     event::{ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    keyboard::{Key, NamedKey},
+    keyboard::{Key, NamedKey, KeyCode, PhysicalKey},
     window::WindowBuilder,
 };
 
@@ -19,7 +19,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
         .init();
 
     let event_loop = EventLoop::new()?;
-    let window = Arc::new(
+    let mut window = Arc::new(
         WindowBuilder::new()
             .with_title("Garage Code Editor")
             .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
@@ -275,6 +275,19 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             _ => wgpu::Backends::all(),
                                         };
                                         gpu = None;
+                                        let current_size = window.inner_size();
+                                        let new_win_res = WindowBuilder::new()
+                                            .with_title("Garage Code Editor")
+                                            .with_inner_size(current_size)
+                                            .build(elwt);
+                                        match new_win_res {
+                                            Ok(w) => {
+                                                window = Arc::new(w);
+                                            }
+                                            Err(e) => {
+                                                log::error!("Failed to recreate window: {:?}", e);
+                                            }
+                                        }
                                         let mut new_gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
                                         if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes) {
                                             atlas = new_atlas;
@@ -415,6 +428,19 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 _ => wgpu::Backends::all(),
                                             };
                                             gpu = None;
+                                            let current_size = window.inner_size();
+                                            let new_win_res = WindowBuilder::new()
+                                                .with_title("Garage Code Editor")
+                                                .with_inner_size(current_size)
+                                                .build(elwt);
+                                            match new_win_res {
+                                                Ok(w) => {
+                                                    window = Arc::new(w);
+                                                }
+                                                Err(e) => {
+                                                    log::error!("Failed to recreate window: {:?}", e);
+                                                }
+                                            }
                                             let mut new_gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
                                             if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes) {
                                                 atlas = new_atlas;
@@ -547,29 +573,123 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                 WindowEvent::KeyboardInput { event: kb_event, .. } => {
                     if kb_event.state == ElementState::Pressed {
-                        if ui.active_modal.is_some() {
-                            let ctrl = modifiers.control_key();
-                            match &kb_event.logical_key {
-                                Key::Named(NamedKey::Escape) => {
-                                    ui.active_modal = None;
-                                    window.request_redraw();
-                                }
-                                Key::Character(text) if ctrl => {
-                                    match text.as_str() {
-                                        "+" | "=" => {
-                                            let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
-                                            ui.update_buffer_font_size(&atlas.font, new_size);
-                                            window.request_redraw();
-                                        }
-                                        "-" => {
-                                            let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
-                                            ui.update_buffer_font_size(&atlas.font, new_size);
-                                            window.request_redraw();
-                                        }
-                                        _ => {}
+                        let ctrl = modifiers.control_key();
+                        if ctrl {
+                            if let PhysicalKey::Code(keycode) = kb_event.physical_key {
+                                match keycode {
+                                    KeyCode::Equal | KeyCode::NumpadAdd => {
+                                        let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
+                                        ui.update_buffer_font_size(&atlas.font, new_size);
+                                        window.request_redraw();
+                                        return;
                                     }
+                                    KeyCode::Minus | KeyCode::NumpadSubtract => {
+                                        let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
+                                        ui.update_buffer_font_size(&atlas.font, new_size);
+                                        window.request_redraw();
+                                        return;
+                                    }
+                                    KeyCode::KeyS if ui.active_modal.is_none() => {
+                                        buffer.commit_transaction();
+                                        let path_to_save = save_path.clone().unwrap_or_else(|| {
+                                            let default_path = "./untitled.txt".to_string();
+                                            save_path = Some(default_path.clone());
+                                            default_path
+                                        });
+                                        println!("Saving file to: {}", path_to_save);
+                                        if let Err(e) = buffer.save_file(&path_to_save) {
+                                            log::error!("Failed to save file: {:?}", e);
+                                        }
+                                        window.request_redraw();
+                                        return;
+                                    }
+                                    KeyCode::KeyA if ui.active_modal.is_none() => {
+                                        buffer.commit_transaction();
+                                        cursor.selection_anchor = Some((0, 0));
+                                        cursor.line = buffer.len() - 1;
+                                        cursor.col = buffer.lines()[cursor.line].chars().count();
+                                        cursor.intended_col = cursor.col;
+                                        window.request_redraw();
+                                        return;
+                                    }
+                                    KeyCode::KeyC if ui.active_modal.is_none() => {
+                                        if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                                            internal_clipboard = buffer.get_range_text(s_l, s_c, e_l, e_c);
+                                        }
+                                        window.request_redraw();
+                                        return;
+                                    }
+                                    KeyCode::KeyX if ui.active_modal.is_none() => {
+                                        if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                                            internal_clipboard = buffer.get_range_text(s_l, s_c, e_l, e_c);
+                                            buffer.start_transaction();
+                                            buffer.delete(s_l, s_c, e_l, e_c);
+                                            cursor.line = s_l;
+                                            cursor.col = s_c;
+                                            cursor.intended_col = s_c;
+                                            cursor.clear_selection();
+                                            buffer.commit_transaction();
+                                        }
+                                        window.request_redraw();
+                                        return;
+                                    }
+                                    KeyCode::KeyV if ui.active_modal.is_none() => {
+                                        if !internal_clipboard.is_empty() {
+                                            buffer.start_transaction();
+                                            if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                                                buffer.delete(s_l, s_c, e_l, e_c);
+                                                cursor.line = s_l;
+                                                cursor.col = s_c;
+                                                cursor.clear_selection();
+                                            }
+                                            buffer.insert(cursor.line, cursor.col, &internal_clipboard);
+
+                                            let parts = internal_clipboard.split('\n').collect::<Vec<&str>>();
+                                            if parts.len() == 1 {
+                                                cursor.col += internal_clipboard.chars().count();
+                                            } else {
+                                                cursor.line += parts.len() - 1;
+                                                cursor.col = parts.last().unwrap().chars().count();
+                                            }
+                                            cursor.intended_col = cursor.col;
+                                            buffer.commit_transaction();
+                                        }
+                                        window.request_redraw();
+                                        return;
+                                    }
+                                    KeyCode::KeyZ if ui.active_modal.is_none() => {
+                                        buffer.commit_transaction();
+                                        if buffer.undo() {
+                                            cursor.clear_selection();
+                                            cursor.line = cursor.line.min(buffer.len() - 1);
+                                            let max_col = buffer.lines()[cursor.line].chars().count();
+                                            cursor.col = cursor.col.min(max_col);
+                                            cursor.intended_col = cursor.col;
+                                        }
+                                        window.request_redraw();
+                                        return;
+                                    }
+                                    KeyCode::KeyY if ui.active_modal.is_none() => {
+                                        buffer.commit_transaction();
+                                        if buffer.redo() {
+                                            cursor.clear_selection();
+                                            cursor.line = cursor.line.min(buffer.len() - 1);
+                                            let max_col = buffer.lines()[cursor.line].chars().count();
+                                            cursor.col = cursor.col.min(max_col);
+                                            cursor.intended_col = cursor.col;
+                                        }
+                                        window.request_redraw();
+                                        return;
+                                    }
+                                    _ => {}
                                 }
-                                _ => {}
+                            }
+                        }
+
+                        if ui.active_modal.is_some() {
+                            if let Key::Named(NamedKey::Escape) = &kb_event.logical_key {
+                                ui.active_modal = None;
+                                window.request_redraw();
                             }
                             return;
                         }
@@ -707,97 +827,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 window.request_redraw();
                             }
                             Key::Character(text) => {
-                                if ctrl {
-                                    match text.as_str() {
-                                         "+" | "=" => {
-                                             let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
-                                             ui.update_buffer_font_size(&atlas.font, new_size);
-                                         }
-                                         "-" => {
-                                             let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
-                                             ui.update_buffer_font_size(&atlas.font, new_size);
-                                         }
-                                        "z" | "Z" => {
-                                            buffer.commit_transaction();
-                                            if buffer.undo() {
-                                                cursor.clear_selection();
-                                                cursor.line = cursor.line.min(buffer.len() - 1);
-                                                let max_col = buffer.lines()[cursor.line].chars().count();
-                                                cursor.col = cursor.col.min(max_col);
-                                                cursor.intended_col = cursor.col;
-                                            }
-                                        }
-                                        "y" | "Y" => {
-                                            buffer.commit_transaction();
-                                            if buffer.redo() {
-                                                cursor.clear_selection();
-                                                cursor.line = cursor.line.min(buffer.len() - 1);
-                                                let max_col = buffer.lines()[cursor.line].chars().count();
-                                                cursor.col = cursor.col.min(max_col);
-                                                cursor.intended_col = cursor.col;
-                                            }
-                                        }
-                                        "s" | "S" => {
-                                            buffer.commit_transaction();
-                                            let path_to_save = save_path.clone().unwrap_or_else(|| {
-                                                let default_path = "./untitled.txt".to_string();
-                                                save_path = Some(default_path.clone());
-                                                default_path
-                                            });
-                                            println!("Saving file to: {}", path_to_save);
-                                            if let Err(e) = buffer.save_file(&path_to_save) {
-                                                log::error!("Failed to save file: {:?}", e);
-                                            }
-                                        }
-                                        "c" | "C" => {
-                                            if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
-                                                internal_clipboard = buffer.get_range_text(s_l, s_c, e_l, e_c);
-                                            }
-                                        }
-                                        "x" | "X" => {
-                                            if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
-                                                internal_clipboard = buffer.get_range_text(s_l, s_c, e_l, e_c);
-                                                buffer.start_transaction();
-                                                buffer.delete(s_l, s_c, e_l, e_c);
-                                                cursor.line = s_l;
-                                                cursor.col = s_c;
-                                                cursor.intended_col = s_c;
-                                                cursor.clear_selection();
-                                                buffer.commit_transaction();
-                                            }
-                                        }
-                                        "v" | "V" => {
-                                            if !internal_clipboard.is_empty() {
-                                                buffer.start_transaction();
-                                                if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
-                                                    buffer.delete(s_l, s_c, e_l, e_c);
-                                                    cursor.line = s_l;
-                                                    cursor.col = s_c;
-                                                    cursor.clear_selection();
-                                                }
-                                                buffer.insert(cursor.line, cursor.col, &internal_clipboard);
-
-                                                let parts = internal_clipboard.split('\n').collect::<Vec<&str>>();
-                                                if parts.len() == 1 {
-                                                    cursor.col += internal_clipboard.chars().count();
-                                                } else {
-                                                    cursor.line += parts.len() - 1;
-                                                    cursor.col = parts.last().unwrap().chars().count();
-                                                }
-                                                cursor.intended_col = cursor.col;
-                                                buffer.commit_transaction();
-                                            }
-                                        }
-                                        "a" | "A" => {
-                                            buffer.commit_transaction();
-                                            cursor.selection_anchor = Some((0, 0));
-                                            cursor.line = buffer.len() - 1;
-                                            cursor.col = buffer.lines()[cursor.line].chars().count();
-                                            cursor.intended_col = cursor.col;
-                                        }
-                                        _ => {}
-                                    }
-                                } else {
+                                if !ctrl {
                                     if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
                                         buffer.start_transaction();
                                         buffer.delete(s_l, s_c, e_l, e_c);
