@@ -224,6 +224,8 @@ impl FontAtlas {
             "search" => include_str!("../../assets/icons/magnifying_glass.svg"),
             "circle" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"7.0\" fill=\"currentColor\"/></svg>",
             "close" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"currentColor\" d=\"M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z\"/></svg>",
+            "minimize" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" d=\"M3 8h10\"/></svg>",
+            "maximize" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"10\" height=\"10\" x=\"3\" y=\"3\" rx=\"1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/></svg>",
             "terminal" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"14\" height=\"12\" x=\"1\" y=\"2\" rx=\"1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/><path fill=\"currentColor\" d=\"M4 5.5l2.5 2-2.5 2M8 9.5h4\"/></svg>",
             "bug" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"currentColor\" d=\"M8 1.5a2.5 2.5 0 0 0-2.5 2.5V5H4.25a.75.75 0 0 0 0 1.5H5v1.25H3.75a.75.75 0 0 0 0 1.5H5V11H4.25a.75.75 0 0 0 0 1.5h1.25v.75c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5v-.75h1.25a.75.75 0 0 0 0-1.5H11V9.25h1.25a.75.75 0 0 0 0-1.5H11V6.5h.75a.75.75 0 0 0 0-1.5H11V4a2.5 2.5 0 0 0-2.5-2.5zM7 5H6.5V4a1.5 1.5 0 0 1 3 0v1H9V5H7zm-1 2.75h4V9H6V7.75zm0 2.75h4v1.5H6V10.5z\"/></svg>",
             _ => {
