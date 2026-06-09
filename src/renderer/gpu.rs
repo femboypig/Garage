@@ -98,15 +98,84 @@ impl GpuContext {
             Some((surface, device, queue, adapter))
         }
 
+        fn restore_env(orig_wgpu: Option<String>, orig_libgl: Option<String>) {
+            unsafe {
+                if let Some(val) = orig_wgpu {
+                    std::env::set_var("WGPU_GL_BACKEND", val);
+                } else {
+                    std::env::remove_var("WGPU_GL_BACKEND");
+                }
+                if let Some(val) = orig_libgl {
+                    std::env::set_var("LIBGL_ALWAYS_SOFTWARE", val);
+                } else {
+                    std::env::remove_var("LIBGL_ALWAYS_SOFTWARE");
+                }
+            }
+        }
+
+        // Helper to try GL context creation with various fallbacks
+        async fn try_create_gl(
+            window: &Arc<Window>,
+            flags: wgpu::InstanceFlags,
+        ) -> Option<(wgpu::Surface<'static>, wgpu::Device, wgpu::Queue, wgpu::Adapter)> {
+            // Save current environment variables
+            let orig_wgpu_backend = std::env::var("WGPU_GL_BACKEND").ok();
+            let orig_libgl_software = std::env::var("LIBGL_ALWAYS_SOFTWARE").ok();
+
+            // 1. Try default (EGL hardware)
+            if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+                return Some(res);
+            }
+
+            // 2. Try GLX hardware
+            log::warn!("OpenGL with default EGL failed. Retrying OpenGL with GLX backend...");
+            unsafe { std::env::set_var("WGPU_GL_BACKEND", "glx"); }
+            if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+                restore_env(orig_wgpu_backend, orig_libgl_software);
+                return Some(res);
+            }
+
+            // 3. Try EGL software
+            log::warn!("OpenGL with hardware GLX failed. Retrying OpenGL with EGL software rendering (llvmpipe)...");
+            unsafe {
+                std::env::set_var("WGPU_GL_BACKEND", "egl");
+                std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+            }
+            if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+                restore_env(orig_wgpu_backend, orig_libgl_software);
+                return Some(res);
+            }
+
+            // 4. Try GLX software
+            log::warn!("OpenGL with software EGL failed. Retrying OpenGL with GLX software rendering (llvmpipe)...");
+            unsafe {
+                std::env::set_var("WGPU_GL_BACKEND", "glx");
+                std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+            }
+            if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+                restore_env(orig_wgpu_backend, orig_libgl_software);
+                return Some(res);
+            }
+
+            // Clean up and restore env on failure
+            restore_env(orig_wgpu_backend, orig_libgl_software);
+            None
+        }
+
         let mut creation_result = None;
 
         if let Some(backend) = forced_backend {
-            let flags = if backend == wgpu::Backends::VULKAN {
-                wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER
+            if backend == wgpu::Backends::GL {
+                let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
+                creation_result = try_create_gl(&window, flags).await;
             } else {
-                wgpu::InstanceFlags::default()
-            };
-            creation_result = try_create(&window, backend, flags).await;
+                let flags = if backend == wgpu::Backends::VULKAN {
+                    wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER
+                } else {
+                    wgpu::InstanceFlags::default()
+                };
+                creation_result = try_create(&window, backend, flags).await;
+            }
         }
 
         if creation_result.is_none() {
@@ -121,11 +190,8 @@ impl GpuContext {
         if creation_result.is_none() {
             log::warn!("Failed to initialize Vulkan. Falling back to OpenGL/GL backend...");
             // Try GL/GLES next
-            creation_result = try_create(
-                &window,
-                wgpu::Backends::GL,
-                wgpu::InstanceFlags::default(),
-            ).await;
+            let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
+            creation_result = try_create_gl(&window, flags).await;
         }
 
         if creation_result.is_none() {
