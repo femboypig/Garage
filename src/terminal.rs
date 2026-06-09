@@ -24,8 +24,8 @@ const COLOR_PALETTE: [[f32; 4]; 16] = [
     [0.98, 0.98, 0.98, 1.0], // Bright White
 ];
 
-const DEFAULT_FG: [f32; 4] = [0.85, 0.85, 0.85, 1.0];
-const DEFAULT_BG: [f32; 4] = [0.0, 0.0, 0.0, 0.0]; // transparent, fallback to theme
+pub const DEFAULT_FG: [f32; 4] = [0.85, 0.85, 0.85, 1.0];
+pub const DEFAULT_BG: [f32; 4] = [0.0, 0.0, 0.0, 0.0]; // transparent, fallback to theme
 
 #[derive(Clone, Copy, Debug)]
 pub struct Cell {
