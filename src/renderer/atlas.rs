@@ -200,28 +200,39 @@ impl FontAtlas {
     pub fn get_or_rasterize_icon(
         &mut self,
         queue: &wgpu::Queue,
-        icon_path: &str,
+        icon_name: &str,
         size: f32,
     ) -> Option<&GlyphInfo> {
         let size_key = size.round() as u32;
-        let key = (icon_path.to_string(), size_key);
+        let key = (icon_name.to_string(), size_key);
         if self.icons.contains_key(&key) {
             return self.icons.get(&key);
         }
 
-        // Load SVG file
-        let svg_content = std::fs::read_to_string(icon_path)
-            .map_err(|e| {
-                log::warn!("Failed to read SVG icon '{}': {}", icon_path, e);
-                e
-            })
-            .ok()?;
+        // Get SVG content from embedded assets
+        let svg_content = match icon_name {
+            "folder" => include_str!("../../assets/icons/folder.svg"),
+            "folder_open" => include_str!("../../assets/icons/folder_open.svg"),
+            "file" => include_str!("../../assets/icons/file.svg"),
+            "rust" => include_str!("../../assets/icons/file_icons/rust.svg"),
+            "toml" => include_str!("../../assets/icons/file_icons/toml.svg"),
+            "json" => include_str!("../../assets/icons/json.svg"),
+            "md" => include_str!("../../assets/icons/file_markdown.svg"),
+            "branch" => include_str!("../../assets/icons/git_branch.svg"),
+            "info" => include_str!("../../assets/icons/info.svg"),
+            "settings" => include_str!("../../assets/icons/settings.svg"),
+            "search" => include_str!("../../assets/icons/magnifying_glass.svg"),
+            _ => {
+                log::warn!("Unknown embedded icon name: '{}'", icon_name);
+                return None;
+            }
+        };
 
         // Parse and render SVG
         let opt = resvg::usvg::Options::default();
-        let tree = resvg::usvg::Tree::from_str(&svg_content, &opt)
+        let tree = resvg::usvg::Tree::from_str(svg_content, &opt)
             .map_err(|e| {
-                log::warn!("Failed to parse SVG icon '{}': {:?}", icon_path, e);
+                log::warn!("Failed to parse embedded SVG icon '{}': {:?}", icon_name, e);
                 e
             })
             .ok()?;
@@ -304,6 +315,6 @@ impl FontAtlas {
         self.max_row_height = self.max_row_height.max(h);
 
         self.icons.insert(key, info);
-        self.icons.get(&(icon_path.to_string(), size_key))
+        self.icons.get(&(icon_name.to_string(), size_key))
     }
 }
