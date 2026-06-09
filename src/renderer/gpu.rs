@@ -51,6 +51,7 @@ pub struct GpuContext {
     pub render_pipeline: wgpu::RenderPipeline,
     
     pub backend: wgpu::Backend,
+    pub device_name: String,
     globals_buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
@@ -371,6 +372,7 @@ impl GpuContext {
             size,
             render_pipeline,
             backend: adapter_info.backend,
+            device_name: adapter_info.name,
             globals_buffer,
             bind_group_layout,
             bind_group,
