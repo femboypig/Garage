@@ -216,8 +216,8 @@ impl UiState {
                     let path = entry.path();
                     let name = entry.file_name().to_string_lossy().to_string();
                     
-                    // Skip the .git directory to keep the explorer clean
-                    if name == ".git" {
+                    // Skip large/ignored folders to optimize directory scanning performance
+                    if name == ".git" || name == "target" || name == ".gemini" {
                         continue;
                     }
                     
@@ -333,13 +333,9 @@ impl UiState {
                 if mx >= modal_x + 200.0 && mx <= modal_x + 280.0 && my >= modal_y + 230.0 && my <= modal_y + 260.0 {
                     return UiAction::ChangeTheme("Dark Theme".to_string());
                 }
-                // Solarized at 290..380, 230..260
-                if mx >= modal_x + 290.0 && mx <= modal_x + 380.0 && my >= modal_y + 230.0 && my <= modal_y + 260.0 {
-                    return UiAction::ChangeTheme("Solarized Dark".to_string());
-                }
-                // Cyberpunk at 390..480, 230..260
-                if mx >= modal_x + 390.0 && mx <= modal_x + 480.0 && my >= modal_y + 230.0 && my <= modal_y + 260.0 {
-                    return UiAction::ChangeTheme("Cyberpunk".to_string());
+                // Dracula at 290..390, 230..260
+                if mx >= modal_x + 290.0 && mx <= modal_x + 390.0 && my >= modal_y + 230.0 && my <= modal_y + 260.0 {
+                    return UiAction::ChangeTheme("Dracula".to_string());
                 }
             }
 
@@ -925,11 +921,11 @@ impl UiState {
                 main_height,
                 white_uv,
                 self.config.theme.sidebar_border,
-            );            // Draw sidebar title header (root project directory name in uppercase)
+            );            // Draw sidebar title header (root project directory name in original casing)
             let root_name = std::env::current_dir()
                 .ok()
-                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string().to_uppercase()))
-                .unwrap_or_else(|| "PROJECT".to_string());
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "Project".to_string());
             let sidebar_header_text = format!(" {}", root_name);
 
             self.push_str(
@@ -1808,13 +1804,11 @@ impl UiState {
                     let dark_hover = mouse_x >= modal_x + 200.0 && mouse_x <= modal_x + 280.0 && mouse_y >= modal_y + 230.0 && mouse_y <= modal_y + 260.0;
                     draw_button(vertices, indices, atlas, queue, "Dark", modal_x + 200.0, modal_y + 230.0, 80.0, 30.0, is_dark_t, dark_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
-                    let is_sol_t = self.config.theme.name == "Solarized Dark";
-                    let sol_hover = mouse_x >= modal_x + 290.0 && mouse_x <= modal_x + 380.0 && mouse_y >= modal_y + 230.0 && mouse_y <= modal_y + 260.0;
-                    draw_button(vertices, indices, atlas, queue, "Solarized", modal_x + 290.0, modal_y + 230.0, 90.0, 30.0, is_sol_t, sol_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let is_drac_t = self.config.theme.name == "Dracula";
+                    let drac_hover = mouse_x >= modal_x + 290.0 && mouse_x <= modal_x + 390.0 && mouse_y >= modal_y + 230.0 && mouse_y <= modal_y + 260.0;
+                    draw_button(vertices, indices, atlas, queue, "Dracula", modal_x + 290.0, modal_y + 230.0, 100.0, 30.0, is_drac_t, drac_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
-                    let is_cyb_t = self.config.theme.name == "Cyberpunk";
-                    let cyb_hover = mouse_x >= modal_x + 390.0 && mouse_x <= modal_x + 480.0 && mouse_y >= modal_y + 230.0 && mouse_y <= modal_y + 260.0;
-                    draw_button(vertices, indices, atlas, queue, "Cyberpunk", modal_x + 390.0, modal_y + 230.0, 90.0, 30.0, is_cyb_t, cyb_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+
 
                     // 6. Draw Active backend and GPU info
                     let backend_str = match current_backend {
