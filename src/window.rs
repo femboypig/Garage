@@ -27,7 +27,18 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     );
 
     // Initialize wgpu rendering context and pipeline synchronously
-    let mut gpu = Some(pollster::block_on(GpuContext::new(window.clone(), None)));
+    // Load configuration at startup
+    let config = crate::config::AppConfig::load();
+
+    // Select backend based on config
+    let initial_backends = match config.backend.as_str() {
+        "Vulkan" => Some(wgpu::Backends::VULKAN),
+        "OpenGL" => Some(wgpu::Backends::GL),
+        _ => None,
+    };
+
+    // Initialize wgpu rendering context and pipeline synchronously
+    let mut gpu = Some(pollster::block_on(GpuContext::new(window.clone(), initial_backends)));
 
     // Load bundled IBM Plex Mono font bytes
     let font_bytes = include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf");
@@ -40,7 +51,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     gpu.as_mut().unwrap().update_bind_group(&atlas.texture, &atlas.sampler);
 
     // Initialize layout and state
-    let mut ui = UiState::new(&mut atlas, &gpu.as_ref().unwrap().queue, 14.0, 16.0);
+    let mut ui = UiState::new(&mut atlas, &gpu.as_ref().unwrap().queue, config);
+    ui.active_device_name = gpu.as_ref().unwrap().device_name.clone();
 
     // Initialize text buffer and load file if provided
     let mut buffer = Buffer::new();
@@ -226,38 +238,60 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     UiAction::ChangeBufferFontSize(delta) => {
                                         let new_size = (ui.buffer_font_size + delta).clamp(8.0, 36.0);
                                         ui.update_buffer_font_size(&atlas.font, new_size);
+                                        ui.config.buffer_font_size = new_size;
+                                        let _ = ui.config.save();
                                     }
                                     UiAction::ChangeUiFontSize(delta) => {
                                         let new_size = (ui.ui_font_size + delta).clamp(8.0, 24.0);
                                         ui.update_ui_font_size(&atlas.font, new_size);
+                                        ui.config.ui_font_size = new_size;
+                                        let _ = ui.config.save();
                                     }
                                     UiAction::ChangeBackend(backend) => {
-                                        if gpu.as_ref().unwrap().backend != backend {
-                                            let forced_backends = match backend {
-                                                wgpu::Backend::Vulkan => wgpu::Backends::VULKAN,
-                                                wgpu::Backend::Gl => wgpu::Backends::GL,
-                                                _ => wgpu::Backends::all(),
+                                        let mut new_config = ui.config.clone();
+                                        let requested_str = match backend {
+                                            wgpu::Backend::Vulkan => "Vulkan",
+                                            wgpu::Backend::Gl => "OpenGL",
+                                            _ => "Vulkan",
+                                        };
+                                        new_config.backend = requested_str.to_string();
+                                        let _ = new_config.save();
+
+                                        let forced_backends = match backend {
+                                            wgpu::Backend::Vulkan => wgpu::Backends::VULKAN,
+                                            wgpu::Backend::Gl => wgpu::Backends::GL,
+                                            _ => wgpu::Backends::all(),
+                                        };
+                                        gpu = None;
+                                        let mut new_gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
+                                        if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes) {
+                                            atlas = new_atlas;
+                                            new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
+
+                                            let actual_str = match new_gpu.backend {
+                                                wgpu::Backend::Vulkan => "Vulkan",
+                                                wgpu::Backend::Gl => "OpenGL",
+                                                _ => requested_str,
                                             };
-                                            gpu = None;
-                                            let mut new_gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
-                                            if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes) {
-                                                atlas = new_atlas;
-                                                new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
-                                                let new_ui = UiState::new(&mut atlas, &new_gpu.queue, ui.ui_font_size, ui.buffer_font_size);
-                                                let old_expanded = ui.expanded_dirs.clone();
-                                                let old_selected = ui.selected_file.clone();
-                                                let old_sidebar_w = ui.sidebar_width;
-                                                let old_target_sidebar_w = ui.target_sidebar_width;
-                                                ui = new_ui;
-                                                ui.expanded_dirs = old_expanded;
-                                                ui.selected_file = old_selected;
-                                                ui.sidebar_width = old_sidebar_w;
-                                                ui.target_sidebar_width = old_target_sidebar_w;
-                                                ui.active_modal = Some(crate::ui::ModalType::Settings);
-                                                ui.rebuild_tree();
-                                            }
-                                            gpu = Some(new_gpu);
+                                            new_config.backend = actual_str.to_string();
+                                            let _ = new_config.save();
+
+                                            let mut new_ui = UiState::new(&mut atlas, &new_gpu.queue, new_config);
+                                            new_ui.active_device_name = new_gpu.device_name.clone();
+
+                                            let old_expanded = ui.expanded_dirs.clone();
+                                            let old_selected = ui.selected_file.clone();
+                                            let old_sidebar_w = ui.sidebar_width;
+                                            let old_target_sidebar_w = ui.target_sidebar_width;
+                                            ui = new_ui;
+                                            ui.expanded_dirs = old_expanded;
+                                            ui.selected_file = old_selected;
+                                            ui.sidebar_width = old_sidebar_w;
+                                            ui.target_sidebar_width = old_target_sidebar_w;
+                                            ui.active_modal = Some(crate::ui::ModalType::Settings);
+                                            ui.rebuild_tree();
                                         }
+                                        gpu = Some(new_gpu);
                                     }
                                     _ => {}
                                 }
@@ -317,7 +351,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             cursor.col = cursor.col.min(max_col);
                                         }
                                         UiAction::ToggleSidebar => {
-                                            ui.target_sidebar_width = if ui.target_sidebar_width == 200.0 { 0.0 } else { 200.0 };
+                                            ui.target_sidebar_width = if ui.target_sidebar_width > 0.0 { 0.0 } else { 200.0 };
+                                            ui.sidebar_width = ui.target_sidebar_width;
+                                            ui.config.sidebar_width = ui.target_sidebar_width;
+                                            let _ = ui.config.save();
                                         }
                                         UiAction::ShowSettings => {
                                             ui.active_modal = Some(crate::ui::ModalType::Settings);
@@ -331,38 +368,60 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         UiAction::ChangeBufferFontSize(delta) => {
                                             let new_size = (ui.buffer_font_size + delta).clamp(8.0, 36.0);
                                             ui.update_buffer_font_size(&atlas.font, new_size);
+                                            ui.config.buffer_font_size = new_size;
+                                            let _ = ui.config.save();
                                         }
                                         UiAction::ChangeUiFontSize(delta) => {
                                             let new_size = (ui.ui_font_size + delta).clamp(8.0, 24.0);
                                             ui.update_ui_font_size(&atlas.font, new_size);
+                                            ui.config.ui_font_size = new_size;
+                                            let _ = ui.config.save();
                                         }
                                         UiAction::ChangeBackend(backend) => {
-                                            if gpu.as_ref().unwrap().backend != backend {
-                                                let forced_backends = match backend {
-                                                    wgpu::Backend::Vulkan => wgpu::Backends::VULKAN,
-                                                    wgpu::Backend::Gl => wgpu::Backends::GL,
-                                                    _ => wgpu::Backends::all(),
+                                            let mut new_config = ui.config.clone();
+                                            let requested_str = match backend {
+                                                wgpu::Backend::Vulkan => "Vulkan",
+                                                wgpu::Backend::Gl => "OpenGL",
+                                                _ => "Vulkan",
+                                            };
+                                            new_config.backend = requested_str.to_string();
+                                            let _ = new_config.save();
+
+                                            let forced_backends = match backend {
+                                                wgpu::Backend::Vulkan => wgpu::Backends::VULKAN,
+                                                wgpu::Backend::Gl => wgpu::Backends::GL,
+                                                _ => wgpu::Backends::all(),
+                                            };
+                                            gpu = None;
+                                            let mut new_gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
+                                            if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes) {
+                                                atlas = new_atlas;
+                                                new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
+
+                                                let actual_str = match new_gpu.backend {
+                                                    wgpu::Backend::Vulkan => "Vulkan",
+                                                    wgpu::Backend::Gl => "OpenGL",
+                                                    _ => requested_str,
                                                 };
-                                                gpu = None;
-                                                let mut new_gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
-                                                if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes) {
-                                                    atlas = new_atlas;
-                                                    new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
-                                                    let new_ui = UiState::new(&mut atlas, &new_gpu.queue, ui.ui_font_size, ui.buffer_font_size);
-                                                    let old_expanded = ui.expanded_dirs.clone();
-                                                    let old_selected = ui.selected_file.clone();
-                                                    let old_sidebar_w = ui.sidebar_width;
-                                                    let old_target_sidebar_w = ui.target_sidebar_width;
-                                                    ui = new_ui;
-                                                    ui.expanded_dirs = old_expanded;
-                                                    ui.selected_file = old_selected;
-                                                    ui.sidebar_width = old_sidebar_w;
-                                                    ui.target_sidebar_width = old_target_sidebar_w;
-                                                    ui.active_modal = Some(crate::ui::ModalType::Settings);
-                                                    ui.rebuild_tree();
-                                                }
-                                                gpu = Some(new_gpu);
+                                                new_config.backend = actual_str.to_string();
+                                                let _ = new_config.save();
+
+                                                let mut new_ui = UiState::new(&mut atlas, &new_gpu.queue, new_config);
+                                                new_ui.active_device_name = new_gpu.device_name.clone();
+
+                                                let old_expanded = ui.expanded_dirs.clone();
+                                                let old_selected = ui.selected_file.clone();
+                                                let old_sidebar_w = ui.sidebar_width;
+                                                let old_target_sidebar_w = ui.target_sidebar_width;
+                                                ui = new_ui;
+                                                ui.expanded_dirs = old_expanded;
+                                                ui.selected_file = old_selected;
+                                                ui.sidebar_width = old_sidebar_w;
+                                                ui.target_sidebar_width = old_target_sidebar_w;
+                                                ui.active_modal = Some(crate::ui::ModalType::Settings);
+                                                ui.rebuild_tree();
                                             }
+                                            gpu = Some(new_gpu);
                                         }
                                         UiAction::Exit => {
                                             elwt.exit();
@@ -429,9 +488,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 }
                             }
                         } else {
+                            let was_dragging_sidebar = is_dragging_sidebar;
                             is_dragging = false;
                             is_dragging_scroll = false;
                             is_dragging_sidebar = false;
+                            if was_dragging_sidebar {
+                                ui.config.sidebar_width = ui.sidebar_width;
+                                let _ = ui.config.save();
+                            }
                             if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
                                 if s_l == e_l && s_c == e_c {
                                     cursor.clear_selection();
