@@ -50,6 +50,7 @@ pub struct GpuContext {
     pub size: winit::dpi::PhysicalSize<u32>,
     pub render_pipeline: wgpu::RenderPipeline,
     
+    pub backend: wgpu::Backend,
     globals_buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
@@ -61,7 +62,7 @@ pub struct GpuContext {
 }
 
 impl GpuContext {
-    pub async fn new(window: Arc<Window>) -> Self {
+    pub async fn new(window: Arc<Window>, forced_backend: Option<wgpu::Backends>) -> Self {
         let size = window.inner_size();
 
         // Helper to try creating surface, adapter, device, queue for a given instance and backend
@@ -97,12 +98,25 @@ impl GpuContext {
             Some((surface, device, queue, adapter))
         }
 
-        // Try Vulkan first (including non-compliant adapters for older GPUs/drivers)
-        let mut creation_result = try_create(
-            &window,
-            wgpu::Backends::VULKAN,
-            wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
-        ).await;
+        let mut creation_result = None;
+
+        if let Some(backend) = forced_backend {
+            let flags = if backend == wgpu::Backends::VULKAN {
+                wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER
+            } else {
+                wgpu::InstanceFlags::default()
+            };
+            creation_result = try_create(&window, backend, flags).await;
+        }
+
+        if creation_result.is_none() {
+            // Try Vulkan first (including non-compliant adapters for older GPUs/drivers)
+            creation_result = try_create(
+                &window,
+                wgpu::Backends::VULKAN,
+                wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
+            ).await;
+        }
 
         if creation_result.is_none() {
             log::warn!("Failed to initialize Vulkan. Falling back to OpenGL/GL backend...");
@@ -290,6 +304,7 @@ impl GpuContext {
             config,
             size,
             render_pipeline,
+            backend: adapter_info.backend,
             globals_buffer,
             bind_group_layout,
             bind_group,
