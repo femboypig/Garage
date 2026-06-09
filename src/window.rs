@@ -47,7 +47,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     };
     if config.backend != actual_backend_str {
         config.backend = actual_backend_str.to_string();
-        config.save_in_background();
+        if let Err(e) = config.save() {
+            log::warn!("Failed to save config on startup fallback: {:?}", e);
+        } else {
+            log::warn!("Successfully saved fallback backend '{}' to config.", actual_backend_str);
+        }
     }
 
     // Load bundled IBM Plex Mono font bytes
