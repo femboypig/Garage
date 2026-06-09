@@ -1188,19 +1188,25 @@ impl UiState {
                     );
                 }
 
-                let indent_x = activity_bar_width + 10.0 + node.depth as f32 * 12.0;
+                let indent_step = (self.ui_char_width * 1.5).round().max(10.0);
+                let indent_x = activity_bar_width + 10.0 + node.depth as f32 * indent_step;
                 let text_color = if node.is_dir {
                     self.config.theme.sidebar_text_dir
                 } else {
                     self.config.theme.sidebar_text_file
                 };
 
+                let icon_sz = (self.ui_font_size * 1.05).round().max(13.0);
+                let icon_y_center = row_y + (self.ui_line_height / 2.0).round() - 1.0;
+                let icon_x = indent_x + (self.ui_char_width * 1.2).round().max(8.0);
+                let icon_y = icon_y_center - (icon_sz / 2.0).round();
+
                 if node.is_dir {
                     // Draw Chevron via vector lines to avoid font fallback rectangles
                     let is_expanded = self.expanded_dirs.contains(&node.path);
                     let chev_size = (self.ui_font_size * 0.2).round().max(2.0);
-                    let chev_cx = indent_x + 4.0;
-                    let chev_cy = row_y + (self.ui_line_height / 2.0).round();
+                    let chev_cx = indent_x + (self.ui_char_width * 0.5).round().max(3.0);
+                    let chev_cy = icon_y_center;
                     if is_expanded {
                         // Down-pointing chevron (v)
                         for offset in 0..=(chev_size as i32) {
@@ -1252,10 +1258,6 @@ impl UiState {
                     }
 
                     // Draw Folder Outline Icon from SVGs
-                    let icon_sz = (self.ui_char_width * 1.35).round().max(12.0);
-                    let icon_x = indent_x + self.ui_char_width * 1.2;
-                    let icon_y = row_y + ((self.ui_line_height - icon_sz) / 2.0).round() - 1.0;
-
                     let is_expanded = self.expanded_dirs.contains(&node.path);
                     let icon_path = if is_expanded {
                         "folder_open"
@@ -1285,10 +1287,6 @@ impl UiState {
                         _ => ("file", text_color),
                     };
 
-                    let icon_sz = (self.ui_char_width * 1.35).round().max(12.0);
-                    let icon_x = indent_x + self.ui_char_width * 1.2;
-                    let icon_y = row_y + ((self.ui_line_height - icon_sz) / 2.0).round() - 1.0;
-
                     self.push_icon(
                         vertices,
                         indices,
@@ -1302,7 +1300,7 @@ impl UiState {
                     );
                 }
 
-                let text_x = indent_x + self.ui_char_width * 3.2;
+                let text_x = icon_x + icon_sz + (self.ui_char_width * 0.6).round().max(4.0);
                 let max_w = self.sidebar_width - (text_x - activity_bar_width) - 10.0;
                 if max_w > 0.0 {
                     let max_chars = (max_w / self.ui_char_width).floor() as usize;
