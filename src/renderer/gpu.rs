@@ -80,11 +80,21 @@ impl GpuContext {
 
             let surface = instance.create_surface(window.clone()).ok()?;
 
-            let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
+            let mut adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
-            }).await?;
+            }).await;
+
+            if adapter.is_none() {
+                adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    compatible_surface: None,
+                    force_fallback_adapter: false,
+                }).await;
+            }
+
+            let adapter = adapter?;
 
             let (device, queue) = adapter.request_device(
                 &wgpu::DeviceDescriptor {
