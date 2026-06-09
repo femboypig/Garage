@@ -16,6 +16,7 @@ pub enum UiAction {
     Exit,
     ShowSettings,
     ShowAbout,
+    ShowCommandPalette,
     CloseModal,
     ChangeBufferFontSize(f32),
     ChangeUiFontSize(f32),
@@ -477,7 +478,7 @@ impl UiState {
                 MenuType::File => vec!["Save (Ctrl+S)", "Toggle Sidebar", "Exit"],
                 MenuType::Edit => vec!["Undo (Ctrl+Z)", "Redo (Ctrl+Y)"],
                 MenuType::Selection => vec!["Select All", "Clear Selection"],
-                MenuType::View => vec!["Toggle Sidebar"],
+                MenuType::View => vec!["Toggle Sidebar", "Command Palette (Ctrl+Shift+P)"],
             };
             
             // Calculate dynamic menu_x matching the contiguous header position
@@ -547,6 +548,7 @@ impl UiState {
                     },
                     MenuType::View => match idx {
                         0 => Some(UiAction::ToggleSidebar),
+                        1 => Some(UiAction::ShowCommandPalette),
                         _ => None,
                     },
                 }
@@ -1676,14 +1678,14 @@ impl UiState {
         // --- 4. Draw Scrollbar ---
         let is_sb_hovered = self.active_modal.is_none() && mouse_x >= sb_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
 
-        // Scrollbar Track background (inset by 2px top and bottom)
+        // Scrollbar Track background
         self.push_quad(
             vertices,
             indices,
             sb_x,
-            editor_y + 2.0,
+            editor_y,
             scrollbar_width,
-            editor_height - 4.0,
+            editor_height,
             white_uv,
             self.config.theme.scrollbar_track,
         );
@@ -1699,12 +1701,12 @@ impl UiState {
             self.config.theme.scrollbar_border,
         );
 
-        let track_h = editor_height - 4.0;
+        let track_h = editor_height;
         let ratio = visible_lines as f32 / buffer.len() as f32;
         let thumb_h = (track_h * ratio).clamp(20.0, track_h);
         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
         let scroll_ratio = if max_scroll > 0.0 { self.scroll_y as f32 / max_scroll } else { 0.0 };
-        let thumb_y = editor_y + 2.0 + scroll_ratio * (track_h - thumb_h);
+        let thumb_y = editor_y + scroll_ratio * (track_h - thumb_h);
 
         let thumb_color = if is_sb_hovered {
             self.config.theme.scrollbar_thumb_hover
@@ -1979,7 +1981,7 @@ impl UiState {
                 MenuType::File => vec!["Save (Ctrl+S)", "Toggle Sidebar", "Exit"],
                 MenuType::Edit => vec!["Undo (Ctrl+Z)", "Redo (Ctrl+Y)"],
                 MenuType::Selection => vec!["Select All", "Clear Selection"],
-                MenuType::View => vec!["Toggle Sidebar"],
+                MenuType::View => vec!["Toggle Sidebar", "Command Palette (Ctrl+Shift+P)"],
             };
             
             // Calculate dynamic menu_x matching the header position
