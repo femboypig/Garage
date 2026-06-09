@@ -12,12 +12,11 @@ pub struct GlyphInfo {
 
 pub struct FontAtlas {
     pub font: Font,
-    pub font_size: f32,
     pub texture: wgpu::Texture,
     pub sampler: wgpu::Sampler,
     pub atlas_width: u32,
     pub atlas_height: u32,
-    glyphs: HashMap<char, GlyphInfo>,
+    glyphs: HashMap<(char, u32), GlyphInfo>,
     current_x: u32,
     current_y: u32,
     max_row_height: u32,
@@ -29,7 +28,6 @@ impl FontAtlas {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         font_bytes: &[u8],
-        font_size: f32,
     ) -> Result<Self, &'static str> {
         let font = Font::from_bytes(font_bytes, FontSettings::default())?;
         
@@ -56,8 +54,8 @@ impl FontAtlas {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
@@ -86,7 +84,6 @@ impl FontAtlas {
 
         Ok(Self {
             font,
-            font_size,
             texture,
             sampler,
             atlas_width,
@@ -107,12 +104,14 @@ impl FontAtlas {
     }
 
     /// Retrieve glyph details, rasterizing and uploading it to the GPU texture if not cached.
-    pub fn get_or_rasterize(&mut self, queue: &wgpu::Queue, c: char) -> Option<&GlyphInfo> {
-        if self.glyphs.contains_key(&c) {
-            return self.glyphs.get(&c);
+    pub fn get_or_rasterize(&mut self, queue: &wgpu::Queue, c: char, size: f32) -> Option<&GlyphInfo> {
+        let size_key = size.round() as u32;
+        let key = (c, size_key);
+        if self.glyphs.contains_key(&key) {
+            return self.glyphs.get(&key);
         }
 
-        let (metrics, bitmap) = self.font.rasterize(c, self.font_size);
+        let (metrics, bitmap) = self.font.rasterize(c, size);
         
         // Handle empty glyphs (like spaces)
         if metrics.width == 0 || metrics.height == 0 {
@@ -124,8 +123,8 @@ impl FontAtlas {
                 bearing_x: 0.0,
                 bearing_y: 0.0,
             };
-            self.glyphs.insert(c, info);
-            return self.glyphs.get(&c);
+            self.glyphs.insert(key, info);
+            return self.glyphs.get(&key);
         }
 
         let w = metrics.width as u32;
@@ -183,15 +182,15 @@ impl FontAtlas {
             uv_max,
             width: w as f32,
             height: h as f32,
-            bearing_x: metrics.bounds.xmin,
-            bearing_y: metrics.bounds.ymin,
+            bearing_x: metrics.xmin as f32,
+            bearing_y: metrics.ymin as f32,
         };
 
         // Advance layout pointer
         self.current_x += w + self.padding;
         self.max_row_height = self.max_row_height.max(h);
 
-        self.glyphs.insert(c, info);
-        self.glyphs.get(&c)
+        self.glyphs.insert(key, info);
+        self.glyphs.get(&key)
     }
 }
