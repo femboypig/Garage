@@ -309,14 +309,17 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             _ => wgpu::Backends::all(),
                         };
                         gpu = None;
+                        window.set_visible(false);
                         let current_size = window.inner_size();
                         let new_win_res = WindowBuilder::new()
                             .with_title("Garage")
+                            .with_decorations(false)
                             .with_inner_size(current_size)
                             .build(elwt);
                         match new_win_res {
                             Ok(w) => {
                                 window = Arc::new(w);
+                                window.set_visible(true);
                             }
                             Err(e) => {
                                 log::error!("Failed to recreate window: {:?}", e);
