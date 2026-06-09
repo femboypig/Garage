@@ -23,13 +23,12 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
         WindowBuilder::new()
             .with_title("Garage")
             .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
-            .with_transparent(true)
             .build(&event_loop)?,
     );
 
     // Initialize wgpu rendering context and pipeline synchronously
     // Load configuration at startup
-    let config = crate::config::AppConfig::load();
+    let mut config = crate::config::AppConfig::load();
 
     // Select backend based on config
     let initial_backends = match config.backend.as_str() {
@@ -40,6 +39,16 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
     // Initialize wgpu rendering context and pipeline synchronously
     let mut gpu = Some(pollster::block_on(GpuContext::new(window.clone(), initial_backends)));
+
+    let actual_backend_str = match gpu.as_ref().unwrap().backend {
+        wgpu::Backend::Vulkan => "Vulkan",
+        wgpu::Backend::Gl => "OpenGL",
+        _ => "Vulkan",
+    };
+    if config.backend != actual_backend_str {
+        config.backend = actual_backend_str.to_string();
+        config.save_in_background();
+    }
 
     // Load bundled IBM Plex Mono font bytes
     let font_bytes = include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf");
@@ -286,7 +295,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         let new_win_res = WindowBuilder::new()
                             .with_title("Garage")
                             .with_inner_size(current_size)
-                            .with_transparent(true)
                             .build(elwt);
                         match new_win_res {
                             Ok(w) => {
