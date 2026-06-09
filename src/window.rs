@@ -33,14 +33,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let font_bytes = include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf");
 
     // Initialize Font Atlas using wgpu device/queue
-    let mut atlas = FontAtlas::new(&gpu.as_ref().unwrap().device, &gpu.as_ref().unwrap().queue, font_bytes, 16.0)
+    let mut atlas = FontAtlas::new(&gpu.as_ref().unwrap().device, &gpu.as_ref().unwrap().queue, font_bytes)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     // Update bind group to use actual font texture and sampler
     gpu.as_mut().unwrap().update_bind_group(&atlas.texture, &atlas.sampler);
 
     // Initialize layout and state
-    let mut ui = UiState::new(&mut atlas, &gpu.as_ref().unwrap().queue);
+    let mut ui = UiState::new(&mut atlas, &gpu.as_ref().unwrap().queue, 14.0, 16.0);
 
     // Initialize text buffer and load file if provided
     let mut buffer = Buffer::new();
@@ -68,7 +68,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let update_cursor_icon = |window: &winit::window::Window, ui: &UiState, buffer: &Buffer, mouse_x: f32, mouse_y: f32| {
         let size = window.inner_size();
         let max_line_digits = buffer.len().to_string().len().max(3);
-        let gutter_width = (max_line_digits as f32 + 2.0) * ui.char_width;
+        let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
         let text_area_x = ui.sidebar_width + gutter_width;
         
         let on_sidebar_border = ui.sidebar_width > 0.0 && (mouse_x - ui.sidebar_width).abs() <= 4.0;
@@ -164,7 +164,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         ui.target_sidebar_width = new_width;
                     } else if is_dragging_scroll {
                         let main_height = size.height as f32 - ui.titlebar_height - ui.status_height;
-                        let visible_lines = (main_height / ui.line_height).floor() as usize;
+                        let visible_lines = (main_height / ui.buffer_line_height).floor() as usize;
                         let ratio = visible_lines as f32 / buffer.len() as f32;
                         let thumb_h = (main_height * ratio).clamp(20.0, main_height);
                         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
@@ -174,18 +174,18 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
                     } else if is_dragging {
                         let max_line_digits = buffer.len().to_string().len().max(3);
-                        let gutter_width = (max_line_digits as f32 + 2.0) * ui.char_width;
+                        let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
                         let text_area_x = ui.sidebar_width + gutter_width;
 
                         let line_idx = if mouse_y >= ui.titlebar_height {
-                            ((mouse_y - ui.titlebar_height) / ui.line_height).floor() as usize + ui.scroll_y
+                            ((mouse_y - ui.titlebar_height) / ui.buffer_line_height).floor() as usize + ui.scroll_y
                         } else {
                             ui.scroll_y
                         };
                         let line_idx = line_idx.min(buffer.len() - 1);
 
                         let col_idx = if mouse_x > text_area_x {
-                            ((mouse_x - text_area_x) / ui.char_width).round() as usize + ui.scroll_x
+                            ((mouse_x - text_area_x) / ui.buffer_char_width).round() as usize + ui.scroll_x
                         } else {
                             0
                         };
@@ -206,11 +206,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     if button == MouseButton::Left {
                         let size = window.inner_size();
                         if state == ElementState::Pressed {
-                            // Check if click is on sidebar resize border
-                            let on_sidebar_border = ui.sidebar_width > 0.0 && (mouse_x - ui.sidebar_width).abs() <= 4.0;
-                            if on_sidebar_border {
-                                is_dragging_sidebar = true;
-                            } else {
+                            if ui.active_modal.is_some() {
                                 let action = ui.handle_click(
                                     mouse_x,
                                     mouse_y,
@@ -221,75 +217,16 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 );
 
                                 match action {
-                                    UiAction::OpenFile(path) => {
-                                        if let Err(e) = buffer.load_file(&path) {
-                                            log::error!("Failed to load file: {:?}", e);
-                                        } else {
-                                            save_path = Some(path.to_string_lossy().to_string());
-                                            cursor.line = 0;
-                                            cursor.col = 0;
-                                            cursor.intended_col = 0;
-                                            cursor.clear_selection();
-                                            ui.scroll_y = 0;
-                                        }
-                                    }
-                                    UiAction::SaveFile => {
-                                        let path_to_save = save_path.clone().unwrap_or_else(|| {
-                                            let default_path = "./untitled.txt".to_string();
-                                            save_path = Some(default_path.clone());
-                                            default_path
-                                        });
-                                        println!("Saving file to: {}", path_to_save);
-                                        if let Err(e) = buffer.save_file(&path_to_save) {
-                                            log::error!("Failed to save file: {:?}", e);
-                                        } else {
-                                            ui.rebuild_tree();
-                                        }
-                                    }
-                                    UiAction::Undo => {
-                                        buffer.undo();
-                                        cursor.clear_selection();
-                                        cursor.line = cursor.line.min(buffer.len() - 1);
-                                        let max_col = buffer.lines()[cursor.line].chars().count();
-                                        cursor.col = cursor.col.min(max_col);
-                                    }
-                                    UiAction::Redo => {
-                                        buffer.redo();
-                                        cursor.clear_selection();
-                                        cursor.line = cursor.line.min(buffer.len() - 1);
-                                        let max_col = buffer.lines()[cursor.line].chars().count();
-                                        cursor.col = cursor.col.min(max_col);
-                                    }
-                                    UiAction::ToggleSidebar => {
-                                        ui.target_sidebar_width = if ui.target_sidebar_width == 200.0 { 0.0 } else { 200.0 };
-                                    }
-                                    UiAction::ShowSettings => {
-                                        ui.active_modal = Some(crate::ui::ModalType::Settings);
-                                    }
-                                    UiAction::ShowAbout => {
-                                        ui.active_modal = Some(crate::ui::ModalType::About);
-                                    }
                                     UiAction::CloseModal => {
                                         ui.active_modal = None;
                                     }
-                                    UiAction::ChangeFontSize(delta) => {
-                                        let new_size = (atlas.font_size + delta).clamp(8.0, 36.0);
-                                        if let Ok(new_atlas) = FontAtlas::new(&gpu.as_ref().unwrap().device, &gpu.as_ref().unwrap().queue, font_bytes, new_size) {
-                                            atlas = new_atlas;
-                                            gpu.as_mut().unwrap().update_bind_group(&atlas.texture, &atlas.sampler);
-                                            let new_ui = UiState::new(&mut atlas, &gpu.as_ref().unwrap().queue);
-                                            let old_expanded = ui.expanded_dirs.clone();
-                                            let old_selected = ui.selected_file.clone();
-                                            let old_sidebar_w = ui.sidebar_width;
-                                            let old_target_sidebar_w = ui.target_sidebar_width;
-                                            ui = new_ui;
-                                            ui.expanded_dirs = old_expanded;
-                                            ui.selected_file = old_selected;
-                                            ui.sidebar_width = old_sidebar_w;
-                                            ui.target_sidebar_width = old_target_sidebar_w;
-                                            ui.active_modal = Some(crate::ui::ModalType::Settings);
-                                            ui.rebuild_tree();
-                                        }
+                                    UiAction::ChangeBufferFontSize(delta) => {
+                                        let new_size = (ui.buffer_font_size + delta).clamp(8.0, 36.0);
+                                        ui.update_buffer_font_size(&atlas.font, new_size);
+                                    }
+                                    UiAction::ChangeUiFontSize(delta) => {
+                                        let new_size = (ui.ui_font_size + delta).clamp(8.0, 24.0);
+                                        ui.update_ui_font_size(&atlas.font, new_size);
                                     }
                                     UiAction::ChangeBackend(backend) => {
                                         if gpu.as_ref().unwrap().backend != backend {
@@ -298,15 +235,12 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 wgpu::Backend::Gl => wgpu::Backends::GL,
                                                 _ => wgpu::Backends::all(),
                                             };
-                                            // Drop the old GPU context first to release window surface resources!
                                             gpu = None;
-                                            // Recreate GPU context
                                             let mut new_gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
-                                            // Re-initialize font atlas with the new device/queue
-                                            if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes, atlas.font_size) {
+                                            if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes) {
                                                 atlas = new_atlas;
                                                 new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
-                                                let new_ui = UiState::new(&mut atlas, &new_gpu.queue);
+                                                let new_ui = UiState::new(&mut atlas, &new_gpu.queue, ui.ui_font_size, ui.buffer_font_size);
                                                 let old_expanded = ui.expanded_dirs.clone();
                                                 let old_selected = ui.selected_file.clone();
                                                 let old_sidebar_w = ui.sidebar_width;
@@ -322,64 +256,169 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             gpu = Some(new_gpu);
                                         }
                                     }
-                                    UiAction::Exit => {
-                                        elwt.exit();
-                                    }
-                                    UiAction::None => {
-                                        // Check if click is on scrollbar
-                                        let sb_x = size.width as f32 - 12.0;
-                                        if mouse_x >= sb_x && mouse_y >= ui.titlebar_height && mouse_y < size.height as f32 - ui.status_height {
-                                            is_dragging_scroll = true;
-                                            let main_height = size.height as f32 - ui.titlebar_height - ui.status_height;
-                                            let visible_lines = (main_height / ui.line_height).floor() as usize;
-                                            let ratio = visible_lines as f32 / buffer.len() as f32;
-                                            let thumb_h = (main_height * ratio).clamp(20.0, main_height);
-                                            let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
-                                            
-                                            let scroll_ratio = if max_scroll > 0.0 { ui.scroll_y as f32 / max_scroll } else { 0.0 };
-                                            let thumb_y = ui.titlebar_height + scroll_ratio * (main_height - thumb_h);
-                                            
-                                            if mouse_y >= thumb_y && mouse_y < thumb_y + thumb_h {
-                                                scroll_drag_offset_y = mouse_y - thumb_y;
+                                    _ => {}
+                                }
+                            } else {
+                                // Check if click is on sidebar resize border
+                                let on_sidebar_border = ui.sidebar_width > 0.0 && (mouse_x - ui.sidebar_width).abs() <= 4.0;
+                                if on_sidebar_border {
+                                    is_dragging_sidebar = true;
+                                } else {
+                                    let action = ui.handle_click(
+                                        mouse_x,
+                                        mouse_y,
+                                        size.width as f32,
+                                        size.height as f32,
+                                        &mut buffer,
+                                        &mut cursor,
+                                    );
+
+                                    match action {
+                                        UiAction::OpenFile(path) => {
+                                            if let Err(e) = buffer.load_file(&path) {
+                                                log::error!("Failed to load file: {:?}", e);
                                             } else {
-                                                scroll_drag_offset_y = thumb_h / 2.0;
-                                                // Jump immediately
-                                                let relative_y = mouse_y - ui.titlebar_height - scroll_drag_offset_y;
-                                                let scroll_range = main_height - thumb_h;
-                                                let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
-                                                ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                                                save_path = Some(path.to_string_lossy().to_string());
+                                                cursor.line = 0;
+                                                cursor.col = 0;
+                                                cursor.intended_col = 0;
+                                                cursor.clear_selection();
+                                                ui.scroll_y = 0;
                                             }
-                                        } else {
-                                            // Click inside editor area
-                                            let max_line_digits = buffer.len().to_string().len().max(3);
-                                            let gutter_width = (max_line_digits as f32 + 2.0) * ui.char_width;
-                                            let text_area_x = ui.sidebar_width + gutter_width;
-
-                                            if mouse_x >= text_area_x && mouse_y >= ui.titlebar_height && mouse_y < size.height as f32 - ui.status_height {
-                                                buffer.commit_transaction();
-                                                is_dragging = true;
-
-                                                let line_idx = ((mouse_y - ui.titlebar_height) / ui.line_height).floor() as usize + ui.scroll_y;
-                                                let line_idx = line_idx.min(buffer.len() - 1);
-
-                                                let col_idx = ((mouse_x - text_area_x) / ui.char_width).round() as usize + ui.scroll_x;
-                                                let line_chars = buffer.lines()[line_idx].chars().count();
-                                                let col_idx = col_idx.min(line_chars);
-
-                                                let extend_selection = modifiers.shift_key();
-                                                if extend_selection {
-                                                    if cursor.selection_anchor.is_none() {
-                                                        cursor.selection_anchor = Some((cursor.line, cursor.col));
-                                                    }
-                                                } else {
-                                                    cursor.selection_anchor = Some((line_idx, col_idx));
+                                        }
+                                        UiAction::SaveFile => {
+                                            let path_to_save = save_path.clone().unwrap_or_else(|| {
+                                                let default_path = "./untitled.txt".to_string();
+                                                save_path = Some(default_path.clone());
+                                                default_path
+                                            });
+                                            println!("Saving file to: {}", path_to_save);
+                                            if let Err(e) = buffer.save_file(&path_to_save) {
+                                                log::error!("Failed to save file: {:?}", e);
+                                            } else {
+                                                ui.rebuild_tree();
+                                            }
+                                        }
+                                        UiAction::Undo => {
+                                            buffer.undo();
+                                            cursor.clear_selection();
+                                            cursor.line = cursor.line.min(buffer.len() - 1);
+                                            let max_col = buffer.lines()[cursor.line].chars().count();
+                                            cursor.col = cursor.col.min(max_col);
+                                        }
+                                        UiAction::Redo => {
+                                            buffer.redo();
+                                            cursor.clear_selection();
+                                            cursor.line = cursor.line.min(buffer.len() - 1);
+                                            let max_col = buffer.lines()[cursor.line].chars().count();
+                                            cursor.col = cursor.col.min(max_col);
+                                        }
+                                        UiAction::ToggleSidebar => {
+                                            ui.target_sidebar_width = if ui.target_sidebar_width == 200.0 { 0.0 } else { 200.0 };
+                                        }
+                                        UiAction::ShowSettings => {
+                                            ui.active_modal = Some(crate::ui::ModalType::Settings);
+                                        }
+                                        UiAction::ShowAbout => {
+                                            ui.active_modal = Some(crate::ui::ModalType::About);
+                                        }
+                                        UiAction::CloseModal => {
+                                            ui.active_modal = None;
+                                        }
+                                        UiAction::ChangeBufferFontSize(delta) => {
+                                            let new_size = (ui.buffer_font_size + delta).clamp(8.0, 36.0);
+                                            ui.update_buffer_font_size(&atlas.font, new_size);
+                                        }
+                                        UiAction::ChangeUiFontSize(delta) => {
+                                            let new_size = (ui.ui_font_size + delta).clamp(8.0, 24.0);
+                                            ui.update_ui_font_size(&atlas.font, new_size);
+                                        }
+                                        UiAction::ChangeBackend(backend) => {
+                                            if gpu.as_ref().unwrap().backend != backend {
+                                                let forced_backends = match backend {
+                                                    wgpu::Backend::Vulkan => wgpu::Backends::VULKAN,
+                                                    wgpu::Backend::Gl => wgpu::Backends::GL,
+                                                    _ => wgpu::Backends::all(),
+                                                };
+                                                gpu = None;
+                                                let mut new_gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
+                                                if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes) {
+                                                    atlas = new_atlas;
+                                                    new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
+                                                    let new_ui = UiState::new(&mut atlas, &new_gpu.queue, ui.ui_font_size, ui.buffer_font_size);
+                                                    let old_expanded = ui.expanded_dirs.clone();
+                                                    let old_selected = ui.selected_file.clone();
+                                                    let old_sidebar_w = ui.sidebar_width;
+                                                    let old_target_sidebar_w = ui.target_sidebar_width;
+                                                    ui = new_ui;
+                                                    ui.expanded_dirs = old_expanded;
+                                                    ui.selected_file = old_selected;
+                                                    ui.sidebar_width = old_sidebar_w;
+                                                    ui.target_sidebar_width = old_target_sidebar_w;
+                                                    ui.active_modal = Some(crate::ui::ModalType::Settings);
+                                                    ui.rebuild_tree();
                                                 }
+                                                gpu = Some(new_gpu);
+                                            }
+                                        }
+                                        UiAction::Exit => {
+                                            elwt.exit();
+                                        }
+                                        UiAction::None => {
+                                            // Check if click is on scrollbar
+                                            let sb_x = size.width as f32 - 12.0;
+                                            if mouse_x >= sb_x && mouse_y >= ui.titlebar_height && mouse_y < size.height as f32 - ui.status_height {
+                                                is_dragging_scroll = true;
+                                                let main_height = size.height as f32 - ui.titlebar_height - ui.status_height;
+                                                let visible_lines = (main_height / ui.buffer_line_height).floor() as usize;
+                                                let ratio = visible_lines as f32 / buffer.len() as f32;
+                                                let thumb_h = (main_height * ratio).clamp(20.0, main_height);
+                                                let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
+                                                
+                                                let scroll_ratio = if max_scroll > 0.0 { ui.scroll_y as f32 / max_scroll } else { 0.0 };
+                                                let thumb_y = ui.titlebar_height + scroll_ratio * (main_height - thumb_h);
+                                                
+                                                if mouse_y >= thumb_y && mouse_y < thumb_y + thumb_h {
+                                                    scroll_drag_offset_y = mouse_y - thumb_y;
+                                                } else {
+                                                    scroll_drag_offset_y = thumb_h / 2.0;
+                                                    let relative_y = mouse_y - ui.titlebar_height - scroll_drag_offset_y;
+                                                    let scroll_range = main_height - thumb_h;
+                                                    let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
+                                                    ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                                                }
+                                            } else {
+                                                // Click inside editor area
+                                                let max_line_digits = buffer.len().to_string().len().max(3);
+                                                let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
+                                                let text_area_x = ui.sidebar_width + gutter_width;
 
-                                                cursor.line = line_idx;
-                                                cursor.col = col_idx;
-                                                cursor.intended_col = col_idx;
+                                                if mouse_x >= text_area_x && mouse_y >= ui.titlebar_height && mouse_y < size.height as f32 - ui.status_height {
+                                                    buffer.commit_transaction();
+                                                    is_dragging = true;
 
-                                                ui.scroll_to_cursor(&cursor, buffer.len(), size.height as f32);
+                                                    let line_idx = ((mouse_y - ui.titlebar_height) / ui.buffer_line_height).floor() as usize + ui.scroll_y;
+                                                    let line_idx = line_idx.min(buffer.len() - 1);
+
+                                                    let col_idx = ((mouse_x - text_area_x) / ui.buffer_char_width).round() as usize + ui.scroll_x;
+                                                    let line_chars = buffer.lines()[line_idx].chars().count();
+                                                    let col_idx = col_idx.min(line_chars);
+
+                                                    let extend_selection = modifiers.shift_key();
+                                                    if extend_selection {
+                                                        if cursor.selection_anchor.is_none() {
+                                                            cursor.selection_anchor = Some((cursor.line, cursor.col));
+                                                        }
+                                                    } else {
+                                                        cursor.selection_anchor = Some((line_idx, col_idx));
+                                                    }
+
+                                                    cursor.line = line_idx;
+                                                    cursor.col = col_idx;
+                                                    cursor.intended_col = col_idx;
+
+                                                    ui.scroll_to_cursor(&cursor, buffer.len(), size.height as f32);
+                                                }
                                             }
                                         }
                                     }
@@ -401,13 +440,16 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 }
 
                 WindowEvent::MouseWheel { delta, .. } => {
+                    if ui.active_modal.is_some() {
+                        return;
+                    }
                     let scroll_lines = match delta {
                         MouseScrollDelta::LineDelta(_, dy) => -dy as isize,
-                        MouseScrollDelta::PixelDelta(pos) => (pos.y / (ui.line_height as f64)) as isize * -1,
+                        MouseScrollDelta::PixelDelta(pos) => (pos.y / (ui.buffer_line_height as f64)) as isize * -1,
                     };
 
                     let main_height = window.inner_size().height as f32 - ui.titlebar_height - ui.status_height;
-                    let visible_lines = (main_height / ui.line_height).floor() as usize;
+                    let visible_lines = (main_height / ui.buffer_line_height).floor() as usize;
                     let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0);
 
                     let new_scroll = ui.scroll_y as isize + scroll_lines;
@@ -417,7 +459,34 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 }
 
                 WindowEvent::KeyboardInput { event: kb_event, .. } => {
-                    if kb_event.state == ElementState::Pressed && ui.active_modal.is_none() {
+                    if kb_event.state == ElementState::Pressed {
+                        if ui.active_modal.is_some() {
+                            let ctrl = modifiers.control_key();
+                            match &kb_event.logical_key {
+                                Key::Named(NamedKey::Escape) => {
+                                    ui.active_modal = None;
+                                    window.request_redraw();
+                                }
+                                Key::Character(text) if ctrl => {
+                                    match text.as_str() {
+                                        "+" | "=" => {
+                                            let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
+                                            ui.update_buffer_font_size(&atlas.font, new_size);
+                                            window.request_redraw();
+                                        }
+                                        "-" => {
+                                            let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
+                                            ui.update_buffer_font_size(&atlas.font, new_size);
+                                            window.request_redraw();
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                _ => {}
+                            }
+                            return;
+                        }
+
                         let shift = modifiers.shift_key();
                         let ctrl = modifiers.control_key();
 
@@ -553,6 +622,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             Key::Character(text) => {
                                 if ctrl {
                                     match text.as_str() {
+                                         "+" | "=" => {
+                                             let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
+                                             ui.update_buffer_font_size(&atlas.font, new_size);
+                                         }
+                                         "-" => {
+                                             let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
+                                             ui.update_buffer_font_size(&atlas.font, new_size);
+                                         }
                                         "z" | "Z" => {
                                             buffer.commit_transaction();
                                             if buffer.undo() {
