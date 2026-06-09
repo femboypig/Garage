@@ -658,16 +658,31 @@ impl UiState {
                 };
 
                 let node_text = format!("{}{}", icon, node.name);
-                self.push_str(
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    &node_text,
-                    indent_x,
-                    (row_y + self.font_ascent).round(),
-                    text_color,
-                );
+                let max_w = self.sidebar_width - indent_x - 10.0;
+                if max_w > 0.0 {
+                    let max_chars = (max_w / self.char_width).floor() as usize;
+                    let truncated_text: String = if node_text.chars().count() > max_chars {
+                        if max_chars > 3 {
+                            let mut s: String = node_text.chars().take(max_chars - 3).collect();
+                            s.push_str("...");
+                            s
+                        } else {
+                            node_text.chars().take(max_chars).collect()
+                        }
+                    } else {
+                        node_text
+                    };
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        &truncated_text,
+                        indent_x,
+                        (row_y + self.font_ascent).round(),
+                        text_color,
+                    );
+                }
             }
         }
 
