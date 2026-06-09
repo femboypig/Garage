@@ -65,6 +65,8 @@ pub struct UiState {
     pub status_height: f32,
     pub sidebar_width: f32,
     pub target_sidebar_width: f32,
+    pub tabbar_height: f32,
+    pub breadcrumb_height: f32,
     
     // Project Tree State
     pub expanded_dirs: HashSet<PathBuf>,
@@ -108,6 +110,11 @@ impl UiState {
         // Expand root by default
         expanded_dirs.insert(PathBuf::from("."));
 
+        let titlebar_height = (ui_line_height * 1.8).round().max(32.0);
+        let status_height = (ui_line_height * 1.5).round().max(24.0);
+        let tabbar_height = (ui_line_height * 1.6).round().max(30.0);
+        let breadcrumb_height = (ui_line_height * 1.3).round().max(22.0);
+
         let mut state = Self {
             ui_font_size,
             buffer_font_size,
@@ -119,10 +126,12 @@ impl UiState {
             buffer_font_ascent,
             scroll_y: 0,
             scroll_x: 0,
-            titlebar_height: (ui_line_height * 1.8).round().max(32.0),
-            status_height: (ui_line_height * 1.5).round().max(24.0),
+            titlebar_height,
+            status_height,
             sidebar_width: 200.0,
             target_sidebar_width: 200.0,
+            tabbar_height,
+            breadcrumb_height,
             expanded_dirs,
             visible_nodes: Vec::new(),
             selected_file: None,
@@ -162,11 +171,15 @@ impl UiState {
             });
         self.ui_line_height = ui_font_metrics.new_line_size.round();
         self.ui_font_ascent = ui_font_metrics.ascent.round();
+        self.titlebar_height = (self.ui_line_height * 1.8).round().max(32.0);
+        self.status_height = (self.ui_line_height * 1.5).round().max(24.0);
+        self.tabbar_height = (self.ui_line_height * 1.6).round().max(30.0);
+        self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
     }
 
     pub fn scroll_to_cursor(&mut self, cursor: &Cursor, buffer_len: usize, height: f32) {
-        let main_height = height - self.titlebar_height - self.status_height;
-        let visible_lines = (main_height / self.buffer_line_height).floor() as usize;
+        let editor_height = height - self.titlebar_height - self.status_height - self.tabbar_height - self.breadcrumb_height;
+        let visible_lines = (editor_height / self.buffer_line_height).floor() as usize;
         if visible_lines == 0 {
             return;
         }
@@ -193,8 +206,8 @@ impl UiState {
                     let path = entry.path();
                     let name = entry.file_name().to_string_lossy().to_string();
                     
-                    // Skip hidden files/folders and build target directories
-                    if name.starts_with('.') || name == "target" || name == "Cargo.lock" {
+                    // Skip the .git directory to keep the explorer clean
+                    if name == ".git" {
                         continue;
                     }
                     
@@ -536,6 +549,134 @@ impl UiState {
         }
     }
 
+    /// Parse enclosing function/struct backwards from cursor line
+    pub fn find_current_function(&self, buffer: &Buffer, cursor_line: usize) -> Option<String> {
+        for i in (0..=cursor_line).rev() {
+            if i >= buffer.len() {
+                continue;
+            }
+            let line = &buffer.lines()[i];
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("pub fn ") || trimmed.starts_with("fn ") || trimmed.starts_with("pub(crate) fn ") {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                for (idx, &part) in parts.iter().enumerate() {
+                    if part == "fn" && idx + 1 < parts.len() {
+                        let fn_name_full = parts[idx + 1];
+                        let fn_name = fn_name_full.split('(').next().unwrap_or(fn_name_full);
+                        return Some(format!("fn {}", fn_name));
+                    }
+                }
+            } else if trimmed.starts_with("impl ") || trimmed.starts_with("pub struct ") || trimmed.starts_with("struct ") {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                for (idx, &part) in parts.iter().enumerate() {
+                    if (part == "struct" || part == "impl") && idx + 1 < parts.len() {
+                        let name_full = parts[idx + 1];
+                        let name = name_full.split('{').next().unwrap_or(name_full);
+                        return Some(format!("{} {}", part, name));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Fast token coloring logic for Rust code lines
+    pub fn get_line_char_colors(&self, line_text: &str) -> Vec<[f32; 4]> {
+        let chars: Vec<char> = line_text.chars().collect();
+        let mut colors = vec![[0.12, 0.12, 0.12, 1.0]; chars.len()]; // default dark grey
+
+        let keywords = [
+            "use", "fn", "pub", "struct", "bool", "true", "false", "let", "mut",
+            "impl", "for", "in", "if", "else", "return", "match", "self", "as",
+            "ref", "type", "enum", "mod", "crate", "const", "static", "where",
+            "break", "continue", "loop", "while",
+        ];
+
+        let mut i = 0;
+        while i < chars.len() {
+            // 1. Comment check
+            if i + 1 < chars.len() && chars[i] == '/' && chars[i+1] == '/' {
+                for j in i..chars.len() {
+                    colors[j] = [0.45, 0.45, 0.45, 1.0]; // comment color: grey
+                }
+                break;
+            }
+
+            // 2. String literal check
+            if chars[i] == '"' {
+                colors[i] = [0.64, 0.08, 0.08, 1.0]; // string quote color (red/brown)
+                i += 1;
+                while i < chars.len() {
+                    colors[i] = [0.64, 0.08, 0.08, 1.0];
+                    if chars[i] == '"' && (i == 0 || chars[i-1] != '\\') {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+
+            // 3. Char literal check
+            if chars[i] == '\'' {
+                colors[i] = [0.64, 0.08, 0.08, 1.0];
+                i += 1;
+                while i < chars.len() {
+                    colors[i] = [0.64, 0.08, 0.08, 1.0];
+                    if chars[i] == '\'' && (i == 0 || chars[i-1] != '\\') {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+
+            // 4. Attribute check
+            if chars[i] == '#' {
+                colors[i] = [0.4, 0.4, 0.2, 1.0]; // attribute brown/gold
+                i += 1;
+                continue;
+            }
+
+            // 5. Identifier check
+            if chars[i].is_alphabetic() || chars[i] == '_' {
+                let start = i;
+                while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                    i += 1;
+                }
+                let word: String = chars[start..i].iter().collect();
+                let color = if keywords.contains(&word.as_str()) {
+                    [0.68, 0.0, 0.85, 1.0] // keyword purple
+                } else if word.chars().next().map_or(false, |c| c.is_uppercase()) {
+                    [0.15, 0.5, 0.6, 1.0] // type/capitalized identifier teal
+                } else {
+                    [0.12, 0.12, 0.12, 1.0] // default text
+                };
+                for j in start..i {
+                    colors[j] = color;
+                }
+                continue;
+            }
+
+            // 6. Number check
+            if chars[i].is_ascii_digit() {
+                let start = i;
+                while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
+                    i += 1;
+                }
+                for j in start..i {
+                    colors[j] = [0.09, 0.45, 0.27, 1.0]; // number color: green/teal
+                }
+                continue;
+            }
+
+            i += 1;
+        }
+
+        colors
+    }
+
     /// Build entire UI frame (Titlebar, Sidebar, Scrollbar, Dropdowns, Modals)
     pub fn build_frame(
         &mut self,
@@ -564,14 +705,15 @@ impl UiState {
         let text_area_x = self.sidebar_width + gutter_width;
         
         let scrollbar_width = 12.0;
-        // Text viewport width is limited by scrollbar
         let _text_viewport_w = width - text_area_x - scrollbar_width;
 
-        let visible_lines = (main_height / self.buffer_line_height).floor() as usize;
+        let editor_y = main_y + self.tabbar_height + self.breadcrumb_height;
+        let editor_height = main_height - self.tabbar_height - self.breadcrumb_height;
+        let visible_lines = (editor_height / self.buffer_line_height).floor() as usize;
         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as usize;
         self.scroll_y = self.scroll_y.min(max_scroll);
 
-        // --- 1. Draw Titlebar Menu Headers ---
+        // --- 1. Draw Titlebar Menu Headers (Light Theme) ---
         self.push_quad(
             vertices,
             indices,
@@ -580,7 +722,7 @@ impl UiState {
             width,
             self.titlebar_height,
             white_uv,
-            [0.07, 0.07, 0.09, 1.0],
+            [0.95, 0.95, 0.95, 1.0], // light grey #F3F3F3
         );
         self.push_quad(
             vertices,
@@ -590,7 +732,7 @@ impl UiState {
             width,
             1.0,
             white_uv,
-            [0.16, 0.16, 0.2, 1.0],
+            [0.82, 0.82, 0.82, 1.0], // bottom border line #D1D1D1
         );
 
         let menu_items_raw = [
@@ -628,17 +770,16 @@ impl UiState {
                     *x_max - *x_min + 12.0,
                     ui_hover_height,
                     white_uv,
-                    [0.16, 0.16, 0.22, 1.0],
+                    [0.88, 0.88, 0.9, 1.0], // hover highlight #E4E4E6
                 );
             }
             
-            // Bold brand title
             let label_color = if *menu_type == MenuType::Garage {
-                [0.0, 0.9, 0.8, 1.0] // Teal brand highlights
-            } else if is_active {
-                [1.0, 1.0, 1.0, 1.0]
+                [0.12, 0.12, 0.12, 1.0] // bold brand title dark
+            } else if is_active || is_hovered {
+                [0.0, 0.0, 0.0, 1.0]
             } else {
-                [0.75, 0.75, 0.8, 1.0]
+                [0.2, 0.2, 0.2, 1.0]
             };
 
             self.push_str(
@@ -671,13 +812,13 @@ impl UiState {
                 &title_str,
                 title_x,
                 (self.titlebar_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-                [0.5, 0.5, 0.55, 1.0],
+                [0.35, 0.35, 0.35, 1.0], // dark grey text
                 self.ui_font_size,
                 self.ui_char_width,
             );
         }
 
-        // --- 2. Draw Sidebar Project Tree ---
+        // --- 2. Draw Sidebar Project Tree (Light Theme) ---
         if self.sidebar_width > 0.0 {
             self.push_quad(
                 vertices,
@@ -687,7 +828,7 @@ impl UiState {
                 self.sidebar_width,
                 main_height,
                 white_uv,
-                [0.05, 0.05, 0.07, 1.0],
+                [0.95, 0.95, 0.95, 1.0], // sidebar light background
             );
             self.push_quad(
                 vertices,
@@ -697,11 +838,26 @@ impl UiState {
                 1.0,
                 main_height,
                 white_uv,
-                [0.15, 0.15, 0.18, 1.0],
+                [0.88, 0.88, 0.88, 1.0], // right vertical divider line #E0E0E0
+            );
+
+            // Draw sidebar title header
+            self.push_str(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                " someshit",
+                10.0,
+                (main_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round(),
+                [0.15, 0.15, 0.15, 1.0],
+                self.ui_font_size,
+                self.ui_char_width,
             );
 
             for (idx, node) in self.visible_nodes.iter().enumerate() {
-                let row_y = main_y + idx as f32 * self.ui_line_height;
+                // Shift down by 1 row to accommodate the sidebar header
+                let row_y = main_y + (idx + 1) as f32 * self.ui_line_height;
                 if row_y + self.ui_line_height > main_y + main_height {
                     break;
                 }
@@ -718,7 +874,7 @@ impl UiState {
                         self.sidebar_width - 1.0,
                         self.ui_line_height,
                         white_uv,
-                        if is_selected { [0.12, 0.16, 0.22, 1.0] } else { [0.08, 0.08, 0.11, 1.0] },
+                        if is_selected { [0.82, 0.82, 0.82, 1.0] } else { [0.9, 0.9, 0.9, 1.0] },
                     );
                 }
 
@@ -730,9 +886,9 @@ impl UiState {
                 };
 
                 let text_color = if node.is_dir {
-                    [0.8, 0.8, 0.85, 1.0]
+                    [0.2, 0.2, 0.2, 1.0] // Darker directory names
                 } else {
-                    [0.65, 0.65, 0.7, 1.0]
+                    [0.12, 0.12, 0.12, 1.0] // Very dark file names
                 };
 
                 let node_text = format!("{}{}", icon, node.name);
@@ -766,33 +922,188 @@ impl UiState {
             }
         }
 
-        // --- 3. Draw Editor Text Area & Gutter ---
+        // --- Tab Bar & Control Buttons (New) ---
+        // Tab Bar background (gray)
         self.push_quad(
             vertices,
             indices,
             self.sidebar_width,
             main_y,
-            gutter_width,
-            main_height,
+            width - self.sidebar_width,
+            self.tabbar_height,
             white_uv,
-            [0.07, 0.07, 0.09, 1.0],
+            [0.93, 0.93, 0.93, 1.0], // Tab bar background #ECECEC
+        );
+        // Tab bar bottom border
+        self.push_quad(
+            vertices,
+            indices,
+            self.sidebar_width,
+            main_y + self.tabbar_height - 1.0,
+            width - self.sidebar_width,
+            1.0,
+            white_uv,
+            [0.82, 0.82, 0.82, 1.0], // bottom border line #D1D1D1
+        );
+
+        // Draw active file tab
+        let tab_w = (file_name.chars().count() as f32 * self.ui_char_width + 40.0).max(120.0);
+        self.push_quad(
+            vertices,
+            indices,
+            self.sidebar_width,
+            main_y,
+            tab_w,
+            self.tabbar_height - 1.0,
+            white_uv,
+            [1.0, 1.0, 1.0, 1.0], // active white tab
+        );
+        // Active tab right border
+        self.push_quad(
+            vertices,
+            indices,
+            self.sidebar_width + tab_w - 1.0,
+            main_y,
+            1.0,
+            self.tabbar_height,
+            white_uv,
+            [0.82, 0.82, 0.82, 1.0], // Tab divider line
+        );
+        // Active tab label
+        self.push_str(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            &file_name,
+            self.sidebar_width + 15.0,
+            (main_y + self.tabbar_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
+            [0.12, 0.12, 0.12, 1.0], // dark text
+            self.ui_font_size,
+            self.ui_char_width,
+        );
+
+        // Draw control buttons on the right of the tab bar
+        // Buttons: search [S] at width-90, Settings [O] at width-60, About [I] at width-30
+        let btn_y = main_y + (self.tabbar_height - 20.0) / 2.0;
+        let control_btns = [
+            ("S", width - 90.0, UiAction::None), // Search / Split simulation
+            ("O", width - 60.0, UiAction::ShowSettings),
+            ("I", width - 30.0, UiAction::ShowAbout),
+        ];
+        for (btn_label, btn_x, _btn_action) in &control_btns {
+            let is_hovered = self.active_modal.is_none() && mouse_x >= *btn_x && mouse_x < *btn_x + 22.0 && mouse_y >= btn_y && mouse_y < btn_y + 20.0;
+            self.push_quad(
+                vertices,
+                indices,
+                *btn_x,
+                btn_y,
+                22.0,
+                20.0,
+                white_uv,
+                if is_hovered { [0.8, 0.8, 0.82, 1.0] } else { [0.93, 0.93, 0.93, 0.0] },
+            );
+            self.push_str(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                btn_label,
+                *btn_x + 6.0,
+                (btn_y + 10.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
+                [0.2, 0.2, 0.2, 1.0],
+                self.ui_font_size,
+                self.ui_char_width,
+            );
+        }
+
+        // --- Breadcrumb Bar (New) ---
+        // Breadcrumb bar background (white)
+        self.push_quad(
+            vertices,
+            indices,
+            self.sidebar_width,
+            main_y + self.tabbar_height,
+            width - self.sidebar_width,
+            self.breadcrumb_height,
+            white_uv,
+            [0.98, 0.98, 0.98, 1.0], // breadcrumb background #FAFAFA
+        );
+        // Breadcrumb bottom border
+        self.push_quad(
+            vertices,
+            indices,
+            self.sidebar_width,
+            main_y + self.tabbar_height + self.breadcrumb_height - 1.0,
+            width - self.sidebar_width,
+            1.0,
+            white_uv,
+            [0.88, 0.88, 0.9, 1.0], // bottom border line #E1E4E8
+        );
+        
+        // Construct breadcrumb text: relative_path > current_function
+        let relative_path = self.selected_file.as_ref()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Untitled".to_string());
+        
+        let current_fn = self.find_current_function(buffer, cursor.line);
+        let breadcrumb_text = if let Some(ref func) = current_fn {
+            format!("{} > {}", relative_path, func)
+        } else {
+            relative_path
+        };
+        self.push_str(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            &breadcrumb_text,
+            self.sidebar_width + 15.0,
+            (main_y + self.tabbar_height + self.breadcrumb_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
+            [0.4, 0.4, 0.45, 1.0], // grey text
+            self.ui_font_size,
+            self.ui_char_width,
+        );
+
+        // --- 3. Draw Editor Text Area & Gutter (Light Theme) ---
+        self.push_quad(
+            vertices,
+            indices,
+            self.sidebar_width,
+            editor_y,
+            gutter_width,
+            editor_height,
+            white_uv,
+            [0.97, 0.97, 0.97, 1.0], // Gutter background #FAFAFA
         );
         self.push_quad(
             vertices,
             indices,
             text_area_x - 1.0,
-            main_y,
+            editor_y,
             1.0,
-            main_height,
+            editor_height,
             white_uv,
-            [0.14, 0.14, 0.18, 1.0],
+            [0.88, 0.88, 0.88, 1.0], // Gutter right vertical line #E0E0E0
+        );
+
+        // Draw main editor background area
+        self.push_quad(
+            vertices,
+            indices,
+            text_area_x,
+            editor_y,
+            width - text_area_x - scrollbar_width,
+            editor_height,
+            white_uv,
+            [1.0, 1.0, 1.0, 1.0], // White editor background
         );
 
         let start_idx = self.scroll_y;
         let end_idx = (start_idx + visible_lines).min(buffer.len());
 
         for line_idx in start_idx..end_idx {
-            let row_y = main_y + (line_idx - start_idx) as f32 * self.buffer_line_height;
+            let row_y = editor_y + (line_idx - start_idx) as f32 * self.buffer_line_height;
             let baseline_y = (row_y + self.buffer_font_ascent).round();
 
             // Active line highlight
@@ -802,19 +1113,19 @@ impl UiState {
                     indices,
                     text_area_x,
                     row_y,
-                    width - text_area_x,
+                    width - text_area_x - scrollbar_width,
                     self.buffer_line_height,
                     white_uv,
-                    [0.09, 0.09, 0.12, 1.0],
+                    [0.95, 0.95, 0.95, 1.0], // Light grey active line highlight #F2F2F2
                 );
             }
 
             // Draw line numbers
             let line_num_str = format!("{:>width$}", line_idx + 1, width = max_line_digits);
             let num_color = if line_idx == cursor.line {
-                [0.75, 0.75, 0.8, 1.0]
+                [0.15, 0.15, 0.15, 1.0] // dark active line number
             } else {
-                [0.3, 0.3, 0.35, 1.0]
+                [0.6, 0.6, 0.6, 1.0] // inactive line number
             };
             self.push_str(
                 vertices,
@@ -847,29 +1158,26 @@ impl UiState {
                             sel_w,
                             self.buffer_line_height,
                             white_uv,
-                            [0.15, 0.25, 0.42, 0.6],
+                            [0.68, 0.84, 1.0, 0.4], // Light blue selection highlight
                         );
                     }
                 }
             }
 
-            // Draw source code text characters
+            // Draw source code text characters (with custom Rust syntax highlighting)
             let line_text = &buffer.lines()[line_idx];
             let mut pen_x = text_area_x;
+            let char_colors = self.get_line_char_colors(line_text);
             
-            for c in line_text.chars() {
-                let char_color = match c {
-                    '0'..='9' => [0.85, 0.6, 0.35, 1.0],
-                    '{' | '}' | '(' | ')' | '[' | ']' => [0.8, 0.8, 0.3, 1.0],
-                    _ => [0.85, 0.85, 0.9, 1.0],
-                };
+            for (char_idx, c) in line_text.chars().enumerate() {
+                let char_color = char_colors.get(char_idx).copied().unwrap_or([0.12, 0.12, 0.12, 1.0]);
                 pen_x += self.push_char(vertices, indices, atlas, queue, c, pen_x, baseline_y, char_color, self.buffer_font_size, self.buffer_char_width);
             }
         }
 
         // Draw active cursor
         if cursor.line >= self.scroll_y && cursor.line < self.scroll_y + visible_lines {
-            let cur_row_y = main_y + (cursor.line - self.scroll_y) as f32 * self.buffer_line_height;
+            let cur_row_y = editor_y + (cursor.line - self.scroll_y) as f32 * self.buffer_line_height;
             let cur_x = text_area_x + cursor.col as f32 * self.buffer_char_width;
             
             self.push_quad(
@@ -880,47 +1188,47 @@ impl UiState {
                 2.0,
                 self.buffer_line_height - 2.0,
                 white_uv,
-                [0.0, 0.9, 0.8, 1.0],
+                [0.0, 0.48, 0.8, 1.0], // Blue cursor #007ACC
             );
         }
 
         // --- 4. Draw Scrollbar (on the right edge) ---
         let sb_x = width - scrollbar_width;
-        let is_sb_hovered = self.active_modal.is_none() && mouse_x >= sb_x && mouse_y >= main_y && mouse_y < main_y + main_height;
+        let is_sb_hovered = self.active_modal.is_none() && mouse_x >= sb_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
 
         // Scrollbar Track background
         self.push_quad(
             vertices,
             indices,
             sb_x,
-            main_y,
+            editor_y,
             scrollbar_width,
-            main_height,
+            editor_height,
             white_uv,
-            [0.08, 0.08, 0.1, 1.0],
+            [0.98, 0.98, 0.98, 1.0], // light grey track
         );
         // Vertical track separator
         self.push_quad(
             vertices,
             indices,
             sb_x - 1.0,
-            main_y,
+            editor_y,
             1.0,
-            main_height,
+            editor_height,
             white_uv,
-            [0.15, 0.15, 0.18, 1.0],
+            [0.9, 0.9, 0.9, 1.0], // border line #E8E8E8
         );
 
         let ratio = visible_lines as f32 / buffer.len() as f32;
-        let thumb_h = (main_height * ratio).clamp(20.0, main_height);
+        let thumb_h = (editor_height * ratio).clamp(20.0, editor_height);
         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
         let scroll_ratio = if max_scroll > 0.0 { self.scroll_y as f32 / max_scroll } else { 0.0 };
-        let thumb_y = main_y + scroll_ratio * (main_height - thumb_h);
+        let thumb_y = editor_y + scroll_ratio * (editor_height - thumb_h);
 
         let thumb_color = if is_sb_hovered {
-            [0.32, 0.32, 0.38, 1.0] // Brighter thumb on hover
+            [0.65, 0.65, 0.65, 1.0] // darker grey on hover
         } else {
-            [0.22, 0.22, 0.26, 1.0]
+            [0.75, 0.75, 0.75, 1.0] // default grey thumb
         };
 
         // Draw Scrollbar Thumb
@@ -945,7 +1253,7 @@ impl UiState {
             width,
             self.status_height,
             white_uv,
-            [0.08, 0.08, 0.1, 1.0],
+            [0.95, 0.95, 0.95, 1.0], // light statusbar
         );
         self.push_quad(
             vertices,
@@ -955,7 +1263,7 @@ impl UiState {
             width,
             1.0,
             white_uv,
-            [0.15, 0.15, 0.18, 1.0],
+            [0.82, 0.82, 0.82, 1.0], // top border line
         );
 
         let status_left = format!(" GARAGE | Line {}, Col {}", cursor.line + 1, cursor.col + 1);
@@ -969,7 +1277,7 @@ impl UiState {
             &status_left,
             10.0,
             (status_y + self.status_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-            [0.6, 0.6, 0.65, 1.0],
+            [0.3, 0.3, 0.35, 1.0],
             self.ui_font_size,
             self.ui_char_width,
         );
@@ -985,7 +1293,7 @@ impl UiState {
                 &status_right,
                 right_x,
                 (status_y + self.status_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-                [0.5, 0.5, 0.55, 1.0],
+                [0.3, 0.3, 0.35, 1.0],
                 self.ui_font_size,
                 self.ui_char_width,
             );
@@ -1025,7 +1333,7 @@ impl UiState {
             let max_chars = items.iter().map(|s| s.chars().count()).max().unwrap_or(10) as f32;
             let dropdown_w = (max_chars * self.ui_char_width + 30.0).round();
 
-            // Draw Dropdown Card Background
+            // Draw Dropdown Card Background (white)
             self.push_quad(
                 vertices,
                 indices,
@@ -1034,9 +1342,9 @@ impl UiState {
                 dropdown_w,
                 dropdown_h,
                 white_uv,
-                [0.08, 0.08, 0.1, 0.98],
+                [1.0, 1.0, 1.0, 0.98], // white card background
             );
-            // Draw card borders
+            // Draw card borders (gray)
             self.push_quad(
                 vertices,
                 indices,
@@ -1045,7 +1353,7 @@ impl UiState {
                 dropdown_w,
                 1.0,
                 white_uv,
-                [0.2, 0.2, 0.25, 1.0],
+                [0.82, 0.82, 0.82, 1.0],
             );
             self.push_quad(
                 vertices,
@@ -1055,7 +1363,7 @@ impl UiState {
                 dropdown_w,
                 1.0,
                 white_uv,
-                [0.2, 0.2, 0.25, 1.0],
+                [0.82, 0.82, 0.82, 1.0],
             );
             self.push_quad(
                 vertices,
@@ -1065,7 +1373,7 @@ impl UiState {
                 1.0,
                 dropdown_h,
                 white_uv,
-                [0.2, 0.2, 0.25, 1.0],
+                [0.82, 0.82, 0.82, 1.0],
             );
             self.push_quad(
                 vertices,
@@ -1075,7 +1383,7 @@ impl UiState {
                 1.0,
                 dropdown_h,
                 white_uv,
-                [0.2, 0.2, 0.25, 1.0],
+                [0.82, 0.82, 0.82, 1.0],
             );
 
             for (idx, label) in items.iter().enumerate() {
@@ -1091,7 +1399,7 @@ impl UiState {
                         dropdown_w - 2.0,
                         item_height - 2.0,
                         white_uv,
-                        [0.18, 0.18, 0.24, 1.0],
+                        [0.9, 0.9, 0.92, 1.0], // hover gray #E6E6EB
                     );
                 }
 
@@ -1103,7 +1411,7 @@ impl UiState {
                     label,
                     menu_x + 8.0,
                     (row_y + item_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-                    if is_hovered { [1.0, 1.0, 1.0, 1.0] } else { [0.75, 0.75, 0.8, 1.0] },
+                    if is_hovered { [0.0, 0.0, 0.0, 1.0] } else { [0.2, 0.2, 0.2, 1.0] },
                     self.ui_font_size,
                     self.ui_char_width,
                 );
@@ -1121,7 +1429,7 @@ impl UiState {
                 width,
                 height,
                 white_uv,
-                [0.0, 0.0, 0.0, 0.6],
+                [0.0, 0.0, 0.0, 0.4],
             );
 
             let modal_w = 400.0;
@@ -1132,7 +1440,7 @@ impl UiState {
             let modal_x = ((width - modal_w) / 2.0).round();
             let modal_y = ((height - modal_h) / 2.0).round();
 
-            // Draw Modal Box Background
+            // Draw Modal Box Background (white)
             self.push_quad(
                 vertices,
                 indices,
@@ -1141,9 +1449,9 @@ impl UiState {
                 modal_w,
                 modal_h,
                 white_uv,
-                [0.09, 0.09, 0.12, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
             );
-            // Draw modal border
+            // Draw modal borders
             self.push_quad(
                 vertices,
                 indices,
@@ -1152,7 +1460,7 @@ impl UiState {
                 modal_w,
                 1.0,
                 white_uv,
-                [0.25, 0.25, 0.3, 1.0],
+                [0.78, 0.78, 0.78, 1.0],
             );
             self.push_quad(
                 vertices,
@@ -1162,7 +1470,7 @@ impl UiState {
                 modal_w,
                 1.0,
                 white_uv,
-                [0.25, 0.25, 0.3, 1.0],
+                [0.78, 0.78, 0.78, 1.0],
             );
             self.push_quad(
                 vertices,
@@ -1172,7 +1480,7 @@ impl UiState {
                 1.0,
                 modal_h,
                 white_uv,
-                [0.25, 0.25, 0.3, 1.0],
+                [0.78, 0.78, 0.78, 1.0],
             );
             self.push_quad(
                 vertices,
@@ -1182,7 +1490,7 @@ impl UiState {
                 1.0,
                 modal_h,
                 white_uv,
-                [0.25, 0.25, 0.3, 1.0],
+                [0.78, 0.78, 0.78, 1.0],
             );
 
             match modal {
@@ -1195,7 +1503,7 @@ impl UiState {
                         "GARAGE CODE EDITOR",
                         modal_x + 20.0,
                         modal_y + 35.0,
-                        [0.0, 0.9, 0.8, 1.0], // Teal title
+                        [0.12, 0.12, 0.12, 1.0], // Dark title
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1207,7 +1515,7 @@ impl UiState {
                         "A supercharged GPU-accelerated",
                         modal_x + 20.0,
                         modal_y + 70.0,
-                        [0.8, 0.8, 0.85, 1.0],
+                        [0.2, 0.2, 0.2, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1219,7 +1527,7 @@ impl UiState {
                         "text editor written in Rust.",
                         modal_x + 20.0,
                         modal_y + 95.0,
-                        [0.8, 0.8, 0.85, 1.0],
+                        [0.2, 0.2, 0.2, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1231,7 +1539,7 @@ impl UiState {
                         "Version: 0.1.0 (main)",
                         modal_x + 20.0,
                         modal_y + 130.0,
-                        [0.5, 0.5, 0.55, 1.0],
+                        [0.45, 0.45, 0.45, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1245,7 +1553,7 @@ impl UiState {
                         "SETTINGS",
                         modal_x + 20.0,
                         modal_y + 35.0,
-                        [1.0, 1.0, 1.0, 1.0],
+                        [0.12, 0.12, 0.12, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1260,12 +1568,12 @@ impl UiState {
                         &font_size_str,
                         modal_x + 20.0,
                         modal_y + 70.0,
-                        [0.8, 0.8, 0.85, 1.0],
+                        [0.2, 0.2, 0.2, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
                     
-                    // Decrease button [-] at x: 200..230, y: 55..80
+                    // Decrease button [-]
                     let dec_hover = mouse_x >= modal_x + 200.0 && mouse_x <= modal_x + 230.0 && mouse_y >= modal_y + 55.0 && mouse_y <= modal_y + 80.0;
                     self.push_quad(
                         vertices,
@@ -1275,7 +1583,47 @@ impl UiState {
                         30.0,
                         25.0,
                         white_uv,
-                        if dec_hover { [0.18, 0.18, 0.22, 1.0] } else { [0.12, 0.12, 0.15, 1.0] },
+                        if dec_hover { [0.85, 0.85, 0.85, 1.0] } else { [0.92, 0.92, 0.92, 1.0] },
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 200.0,
+                        modal_y + 55.0,
+                        30.0,
+                        1.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 200.0,
+                        modal_y + 79.0,
+                        30.0,
+                        1.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 200.0,
+                        modal_y + 55.0,
+                        1.0,
+                        25.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 230.0,
+                        modal_y + 55.0,
+                        1.0,
+                        25.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
                     );
                     self.push_str(
                         vertices,
@@ -1285,12 +1633,12 @@ impl UiState {
                         "-",
                         modal_x + 211.0,
                         (modal_y + 72.0).round(),
-                        [0.85, 0.85, 0.9, 1.0],
+                        [0.2, 0.2, 0.2, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
 
-                    // Increase button [+] at x: 240..270, y: 55..80
+                    // Increase button [+]
                     let inc_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 270.0 && mouse_y >= modal_y + 55.0 && mouse_y <= modal_y + 80.0;
                     self.push_quad(
                         vertices,
@@ -1300,7 +1648,47 @@ impl UiState {
                         30.0,
                         25.0,
                         white_uv,
-                        if inc_hover { [0.18, 0.18, 0.22, 1.0] } else { [0.12, 0.12, 0.15, 1.0] },
+                        if inc_hover { [0.85, 0.85, 0.85, 1.0] } else { [0.92, 0.92, 0.92, 1.0] },
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 240.0,
+                        modal_y + 55.0,
+                        30.0,
+                        1.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 240.0,
+                        modal_y + 79.0,
+                        30.0,
+                        1.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 240.0,
+                        modal_y + 55.0,
+                        1.0,
+                        25.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 270.0,
+                        modal_y + 55.0,
+                        1.0,
+                        25.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
                     );
                     self.push_str(
                         vertices,
@@ -1310,7 +1698,7 @@ impl UiState {
                         "+",
                         modal_x + 251.0,
                         (modal_y + 72.0).round(),
-                        [0.85, 0.85, 0.9, 1.0],
+                        [0.2, 0.2, 0.2, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1325,12 +1713,12 @@ impl UiState {
                         &ui_size_str,
                         modal_x + 20.0,
                         modal_y + 110.0,
-                        [0.8, 0.8, 0.85, 1.0],
+                        [0.2, 0.2, 0.2, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
 
-                    // Decrease button [-] at x: 200..230, y: 95..120
+                    // Decrease button [-]
                     let ui_dec_hover = mouse_x >= modal_x + 200.0 && mouse_x <= modal_x + 230.0 && mouse_y >= modal_y + 95.0 && mouse_y <= modal_y + 120.0;
                     self.push_quad(
                         vertices,
@@ -1340,7 +1728,47 @@ impl UiState {
                         30.0,
                         25.0,
                         white_uv,
-                        if ui_dec_hover { [0.18, 0.18, 0.22, 1.0] } else { [0.12, 0.12, 0.15, 1.0] },
+                        if ui_dec_hover { [0.85, 0.85, 0.85, 1.0] } else { [0.92, 0.92, 0.92, 1.0] },
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 200.0,
+                        modal_y + 95.0,
+                        30.0,
+                        1.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 200.0,
+                        modal_y + 119.0,
+                        30.0,
+                        1.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 200.0,
+                        modal_y + 95.0,
+                        1.0,
+                        25.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 230.0,
+                        modal_y + 95.0,
+                        1.0,
+                        25.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
                     );
                     self.push_str(
                         vertices,
@@ -1350,12 +1778,12 @@ impl UiState {
                         "-",
                         modal_x + 211.0,
                         (modal_y + 112.0).round(),
-                        [0.85, 0.85, 0.9, 1.0],
+                        [0.2, 0.2, 0.2, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
 
-                    // Increase button [+] at x: 240..270, y: 95..120
+                    // Increase button [+]
                     let ui_inc_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 270.0 && mouse_y >= modal_y + 95.0 && mouse_y <= modal_y + 120.0;
                     self.push_quad(
                         vertices,
@@ -1365,7 +1793,47 @@ impl UiState {
                         30.0,
                         25.0,
                         white_uv,
-                        if ui_inc_hover { [0.18, 0.18, 0.22, 1.0] } else { [0.12, 0.12, 0.15, 1.0] },
+                        if ui_inc_hover { [0.85, 0.85, 0.85, 1.0] } else { [0.92, 0.92, 0.92, 1.0] },
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 240.0,
+                        modal_y + 95.0,
+                        30.0,
+                        1.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 240.0,
+                        modal_y + 119.0,
+                        30.0,
+                        1.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 240.0,
+                        modal_y + 95.0,
+                        1.0,
+                        25.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 270.0,
+                        modal_y + 95.0,
+                        1.0,
+                        25.0,
+                        white_uv,
+                        [0.78, 0.78, 0.78, 1.0],
                     );
                     self.push_str(
                         vertices,
@@ -1375,7 +1843,7 @@ impl UiState {
                         "+",
                         modal_x + 251.0,
                         (modal_y + 112.0).round(),
-                        [0.85, 0.85, 0.9, 1.0],
+                        [0.2, 0.2, 0.2, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1389,20 +1857,20 @@ impl UiState {
                         "Backend:",
                         modal_x + 20.0,
                         modal_y + 150.0,
-                        [0.8, 0.8, 0.85, 1.0],
+                        [0.2, 0.2, 0.2, 1.0],
                         self.ui_font_size,
                         self.ui_char_width,
                     );
 
-                    // Vulkan Button at x: 110..200, y: 135..165
+                    // Vulkan Button
                     let is_vulkan = current_backend == wgpu::Backend::Vulkan;
                     let vulkan_hover = mouse_x >= modal_x + 110.0 && mouse_x <= modal_x + 200.0 && mouse_y >= modal_y + 135.0 && mouse_y <= modal_y + 165.0;
                     let vulkan_bg = if is_vulkan {
-                        [0.0, 0.45, 0.4, 1.0]
+                        [0.0, 0.48, 0.8, 1.0] // blue #007ACC
                     } else if vulkan_hover {
-                        [0.18, 0.18, 0.22, 1.0]
+                        [0.85, 0.85, 0.85, 1.0]
                     } else {
-                        [0.12, 0.12, 0.15, 1.0]
+                        [0.92, 0.92, 0.92, 1.0]
                     };
                     self.push_quad(
                         vertices,
@@ -1414,6 +1882,46 @@ impl UiState {
                         white_uv,
                         vulkan_bg,
                     );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 110.0,
+                        modal_y + 135.0,
+                        90.0,
+                        1.0,
+                        white_uv,
+                        if is_vulkan { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 110.0,
+                        modal_y + 164.0,
+                        90.0,
+                        1.0,
+                        white_uv,
+                        if is_vulkan { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 110.0,
+                        modal_y + 135.0,
+                        1.0,
+                        30.0,
+                        white_uv,
+                        if is_vulkan { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 200.0,
+                        modal_y + 135.0,
+                        1.0,
+                        30.0,
+                        white_uv,
+                        if is_vulkan { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                    );
                     self.push_str(
                         vertices,
                         indices,
@@ -1422,20 +1930,20 @@ impl UiState {
                         "Vulkan",
                         modal_x + 125.0,
                         (modal_y + 155.0).round(),
-                        if is_vulkan { [1.0, 1.0, 1.0, 1.0] } else { [0.85, 0.85, 0.9, 1.0] },
+                        if is_vulkan { [1.0, 1.0, 1.0, 1.0] } else { [0.2, 0.2, 0.2, 1.0] },
                         self.ui_font_size,
                         self.ui_char_width,
                     );
 
-                    // OpenGL Button at x: 210..300, y: 135..165
+                    // OpenGL Button
                     let is_opengl = current_backend == wgpu::Backend::Gl;
                     let opengl_hover = mouse_x >= modal_x + 210.0 && mouse_x <= modal_x + 300.0 && mouse_y >= modal_y + 135.0 && mouse_y <= modal_y + 165.0;
                     let opengl_bg = if is_opengl {
-                        [0.0, 0.45, 0.4, 1.0]
+                        [0.0, 0.48, 0.8, 1.0]
                     } else if opengl_hover {
-                        [0.18, 0.18, 0.22, 1.0]
+                        [0.85, 0.85, 0.85, 1.0]
                     } else {
-                        [0.12, 0.12, 0.15, 1.0]
+                        [0.92, 0.92, 0.92, 1.0]
                     };
                     self.push_quad(
                         vertices,
@@ -1447,6 +1955,46 @@ impl UiState {
                         white_uv,
                         opengl_bg,
                     );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 210.0,
+                        modal_y + 135.0,
+                        90.0,
+                        1.0,
+                        white_uv,
+                        if is_opengl { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 210.0,
+                        modal_y + 164.0,
+                        90.0,
+                        1.0,
+                        white_uv,
+                        if is_opengl { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 210.0,
+                        modal_y + 135.0,
+                        1.0,
+                        30.0,
+                        white_uv,
+                        if is_opengl { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                    );
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x + 300.0,
+                        modal_y + 135.0,
+                        1.0,
+                        30.0,
+                        white_uv,
+                        if is_opengl { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                    );
                     self.push_str(
                         vertices,
                         indices,
@@ -1455,7 +2003,7 @@ impl UiState {
                         "OpenGL",
                         modal_x + 225.0,
                         (modal_y + 155.0).round(),
-                        if is_opengl { [1.0, 1.0, 1.0, 1.0] } else { [0.85, 0.85, 0.9, 1.0] },
+                        if is_opengl { [1.0, 1.0, 1.0, 1.0] } else { [0.2, 0.2, 0.2, 1.0] },
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1472,7 +2020,7 @@ impl UiState {
                 120.0,
                 35.0,
                 white_uv,
-                if close_btn_hover { [0.18, 0.18, 0.22, 1.0] } else { [0.12, 0.12, 0.15, 1.0] },
+                if close_btn_hover { [0.85, 0.85, 0.85, 1.0] } else { [0.92, 0.92, 0.92, 1.0] },
             );
             self.push_quad(
                 vertices,
@@ -1482,7 +2030,7 @@ impl UiState {
                 120.0,
                 1.0,
                 white_uv,
-                [0.25, 0.25, 0.3, 1.0],
+                [0.78, 0.78, 0.78, 1.0],
             );
             self.push_quad(
                 vertices,
@@ -1492,7 +2040,7 @@ impl UiState {
                 120.0,
                 1.0,
                 white_uv,
-                [0.25, 0.25, 0.3, 1.0],
+                [0.78, 0.78, 0.78, 1.0],
             );
             self.push_quad(
                 vertices,
@@ -1502,7 +2050,7 @@ impl UiState {
                 1.0,
                 35.0,
                 white_uv,
-                [0.25, 0.25, 0.3, 1.0],
+                [0.78, 0.78, 0.78, 1.0],
             );
             self.push_quad(
                 vertices,
@@ -1512,7 +2060,7 @@ impl UiState {
                 1.0,
                 35.0,
                 white_uv,
-                [0.25, 0.25, 0.3, 1.0],
+                [0.78, 0.78, 0.78, 1.0],
             );
 
             self.push_str(
@@ -1523,7 +2071,7 @@ impl UiState {
                 "Close",
                 modal_x + 180.0,
                 modal_y + modal_h - 37.0,
-                [0.85, 0.85, 0.9, 1.0],
+                [0.2, 0.2, 0.2, 1.0],
                 self.ui_font_size,
                 self.ui_char_width,
             );
