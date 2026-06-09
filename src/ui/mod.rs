@@ -127,7 +127,7 @@ impl UiState {
         // Expand root by default
         expanded_dirs.insert(PathBuf::from("."));
 
-        let titlebar_height = (ui_line_height * 1.8).round().max(32.0);
+        let titlebar_height = (ui_line_height * 1.45).round().max(25.0);
         let status_height = (ui_line_height * 1.5).round().max(24.0);
         let tabbar_height = (ui_line_height * 1.6).round().max(30.0);
         let breadcrumb_height = (ui_line_height * 1.3).round().max(22.0);
@@ -196,7 +196,7 @@ impl UiState {
             });
         self.ui_line_height = ui_font_metrics.new_line_size.round();
         self.ui_font_ascent = ui_font_metrics.ascent.round();
-        self.titlebar_height = (self.ui_line_height * 1.8).round().max(32.0);
+        self.titlebar_height = (self.ui_line_height * 1.45).round().max(25.0);
         self.status_height = (self.ui_line_height * 1.5).round().max(24.0);
         self.tabbar_height = (self.ui_line_height * 1.6).round().max(30.0);
         self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
@@ -1196,8 +1196,9 @@ impl UiState {
                     self.config.theme.sidebar_text_file
                 };
 
+                let text_baseline = (row_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round();
                 let icon_sz = (self.ui_font_size * 1.05).round().max(13.0);
-                let icon_y_center = row_y + (self.ui_line_height / 2.0).round() - 1.0;
+                let icon_y_center = text_baseline - (self.ui_font_ascent * 0.33).round();
                 let icon_x = indent_x + (self.ui_char_width * 1.2).round().max(8.0);
                 let icon_y = icon_y_center - (icon_sz / 2.0).round();
 
@@ -1323,7 +1324,7 @@ impl UiState {
                         queue,
                         &truncated_text,
                         text_x,
-                        (row_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round(),
+                        text_baseline,
                         text_color,
                         self.ui_font_size,
                         self.ui_char_width,
@@ -1379,6 +1380,7 @@ impl UiState {
             white_uv,
             self.config.theme.tabbar_border,
         );
+        let tab_baseline = (main_y + self.tabbar_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
         // Active tab label
         self.push_str(
             vertices,
@@ -1387,7 +1389,7 @@ impl UiState {
             queue,
             &file_name,
             activity_bar_width + self.sidebar_width + 15.0,
-            (main_y + self.tabbar_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
+            tab_baseline,
             self.config.theme.tab_text,
             self.ui_font_size,
             self.ui_char_width,
@@ -1423,7 +1425,8 @@ impl UiState {
                 if is_hovered { self.config.theme.titlebar_hover_bg } else { [0.0, 0.0, 0.0, 0.0] },
             );
             
-            let icon_y = main_y + ((self.tabbar_height - icon_sz) / 2.0).round() - 2.0;
+            let icon_y_center = tab_baseline - (self.ui_font_ascent * 0.33).round();
+            let icon_y = icon_y_center - (icon_sz / 2.0).round();
             self.push_icon(
                 vertices,
                 indices,
@@ -1741,7 +1744,8 @@ impl UiState {
                 
                 // Draw branch icon
                 let icon_sz = (self.ui_font_size * 0.9).round().max(12.0);
-                let icon_y = status_y + ((self.status_height - icon_sz) / 2.0).round() - 2.0;
+                let icon_y_center = baseline_y - (self.ui_font_ascent * 0.33).round();
+                let icon_y = icon_y_center - (icon_sz / 2.0).round();
                 self.push_icon(
                     vertices,
                     indices,
