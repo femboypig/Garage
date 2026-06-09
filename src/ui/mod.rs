@@ -1010,7 +1010,10 @@ impl UiState {
         let text_area_x = activity_bar_width + self.sidebar_width + gutter_width;
         
         let scrollbar_width = 12.0;
-        let _text_viewport_w = width - text_area_x - scrollbar_width;
+        let minimap_width = 80.0f32;
+        let minimap_x = width - minimap_width;
+        let sb_x = minimap_x - scrollbar_width;
+        let text_viewport_w = sb_x - text_area_x;
 
         let editor_y = main_y + self.tabbar_height + self.breadcrumb_height;
         let editor_height = main_height - self.tabbar_height - self.breadcrumb_height;
@@ -1461,7 +1464,7 @@ impl UiState {
             indices,
             text_area_x,
             editor_y,
-            width - text_area_x - scrollbar_width,
+            text_viewport_w,
             editor_height,
             white_uv,
             self.config.theme.editor_bg,
@@ -1481,7 +1484,7 @@ impl UiState {
                     indices,
                     text_area_x,
                     row_y,
-                    width - text_area_x - scrollbar_width,
+                    text_viewport_w,
                     self.buffer_line_height,
                     white_uv,
                     self.config.theme.active_line_bg,
@@ -1579,9 +1582,8 @@ impl UiState {
             );
         }
 
-        // --- 4. Draw Scrollbar (on the right edge) ---
-        let sb_x = width - scrollbar_width;
-        let is_sb_hovered = self.active_modal.is_none() && mouse_x >= sb_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
+        // --- 4. Draw Scrollbar ---
+        let is_sb_hovered = self.active_modal.is_none() && mouse_x >= sb_x && mouse_x < minimap_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
 
         // Scrollbar Track background
         self.push_quad(
@@ -1628,6 +1630,148 @@ impl UiState {
             thumb_h,
             white_uv,
             thumb_color,
+        );
+
+        // --- 4.5. Draw Minimap (on the right edge) ---
+        // Draw Minimap Track background
+        self.push_quad(
+            vertices,
+            indices,
+            minimap_x,
+            editor_y,
+            minimap_width,
+            editor_height,
+            white_uv,
+            self.config.theme.editor_bg,
+        );
+        // Vertical border separating scrollbar and minimap
+        self.push_quad(
+            vertices,
+            indices,
+            minimap_x - 1.0,
+            editor_y,
+            1.0,
+            editor_height,
+            white_uv,
+            self.config.theme.scrollbar_border,
+        );
+
+        let minimap_line_height = 3.0f32;
+        let minimap_total_h = buffer.len() as f32 * minimap_line_height;
+        let minimap_offset_y = if minimap_total_h > editor_height {
+            scroll_ratio * (minimap_total_h - editor_height)
+        } else {
+            0.0
+        };
+
+        // Determine visible lines in the minimap to optimize rendering
+        let start_line = ((minimap_offset_y - 2.0) / minimap_line_height).floor().max(0.0) as usize;
+        let end_line = ((editor_height + minimap_offset_y) / minimap_line_height).ceil().max(0.0) as usize;
+        let end_line = end_line.min(buffer.len());
+
+        for line_idx in start_line..end_line {
+            let row_y = editor_y + line_idx as f32 * minimap_line_height - minimap_offset_y;
+            
+            let line_text = &buffer.lines()[line_idx];
+            let char_colors = self.get_line_char_colors(line_text);
+            
+            let mut current_col = 0.0f32;
+            let mut start_x = 0.0f32;
+            let mut current_color = None;
+            let mut block_w = 0.0f32;
+            
+            for (char_idx, c) in line_text.chars().enumerate() {
+                let char_w = if c == '\t' { 4.0 * 1.5 } else { 1.5 };
+                let color = char_colors.get(char_idx).copied().unwrap_or(self.config.theme.syntax_default);
+                let is_whitespace = c == ' ' || c == '\t';
+                
+                if is_whitespace {
+                    if let Some(col) = current_color {
+                        let draw_w = block_w.min(minimap_width - start_x);
+                        if draw_w > 0.0 {
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                minimap_x + start_x,
+                                row_y,
+                                draw_w,
+                                2.0,
+                                white_uv,
+                                col,
+                            );
+                        }
+                        current_color = None;
+                    }
+                    current_col += char_w;
+                } else {
+                    if let Some(col) = current_color {
+                        if col == color {
+                            block_w += char_w;
+                        } else {
+                            let draw_w = block_w.min(minimap_width - start_x);
+                            if draw_w > 0.0 {
+                                self.push_quad(
+                                    vertices,
+                                    indices,
+                                    minimap_x + start_x,
+                                    row_y,
+                                    draw_w,
+                                    2.0,
+                                    white_uv,
+                                    col,
+                                );
+                            }
+                            start_x = current_col;
+                            current_color = Some(color);
+                            block_w = char_w;
+                        }
+                    } else {
+                        start_x = current_col;
+                        current_color = Some(color);
+                        block_w = char_w;
+                    }
+                    current_col += char_w;
+                }
+                if current_col >= minimap_width {
+                    break;
+                }
+            }
+            if let Some(col) = current_color {
+                let draw_w = block_w.min(minimap_width - start_x);
+                if draw_w > 0.0 {
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        minimap_x + start_x,
+                        row_y,
+                        draw_w,
+                        2.0,
+                        white_uv,
+                        col,
+                    );
+                }
+            }
+        }
+
+        // Draw Viewport Indicator highlight overlay
+        let highlight_y_start = self.scroll_y as f32 * minimap_line_height - minimap_offset_y;
+        let highlight_h = (visible_lines as f32 * minimap_line_height).min(editor_height);
+        
+        let highlight_color = if self.config.theme.editor_bg[0] > 0.5 {
+            [0.0, 0.0, 0.0, 0.08] // Light theme -> dark highlight
+        } else {
+            [1.0, 1.0, 1.0, 0.08] // Dark theme -> light highlight
+        };
+
+        self.push_quad(
+            vertices,
+            indices,
+            minimap_x,
+            editor_y + highlight_y_start,
+            minimap_width,
+            highlight_h,
+            white_uv,
+            highlight_color,
         );
 
         // --- 5. Draw Statusbar ---
