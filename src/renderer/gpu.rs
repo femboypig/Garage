@@ -61,7 +61,7 @@ pub struct GpuContext {
 }
 
 impl GpuContext {
-    pub async fn new(window: Arc<Window>, atlas_texture: &wgpu::Texture, atlas_sampler: &wgpu::Sampler) -> Self {
+    pub async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -159,8 +159,25 @@ impl GpuContext {
             ],
         });
 
+        // Create Dummy texture and sampler for initial bind group configuration
+        let dummy_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Dummy Texture"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let dummy_sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+
         // Create Bind Group
-        let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let atlas_view = dummy_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Main Bind Group"),
             layout: &bind_group_layout,
@@ -175,10 +192,11 @@ impl GpuContext {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(atlas_sampler),
+                    resource: wgpu::BindingResource::Sampler(&dummy_sampler),
                 },
             ],
         });
+
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
