@@ -80,7 +80,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 && ui.active_menu.is_none()
                 && mouse_x >= text_area_x
                 && mouse_x < size.width as f32 - 12.0
-                && mouse_y >= ui.titlebar_height
+                && mouse_y >= ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height
                 && mouse_y < size.height as f32 - ui.status_height;
                 
             if is_in_editor {
@@ -163,13 +163,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         ui.sidebar_width = new_width;
                         ui.target_sidebar_width = new_width;
                     } else if is_dragging_scroll {
-                        let main_height = size.height as f32 - ui.titlebar_height - ui.status_height;
-                        let visible_lines = (main_height / ui.buffer_line_height).floor() as usize;
+                        let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
+                        let editor_height = size.height as f32 - editor_top - ui.status_height;
+                        let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                         let ratio = visible_lines as f32 / buffer.len() as f32;
-                        let thumb_h = (main_height * ratio).clamp(20.0, main_height);
+                        let thumb_h = (editor_height * ratio).clamp(20.0, editor_height);
                         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
-                        let relative_y = mouse_y - ui.titlebar_height - scroll_drag_offset_y;
-                        let scroll_range = main_height - thumb_h;
+                        let relative_y = mouse_y - editor_top - scroll_drag_offset_y;
+                        let scroll_range = editor_height - thumb_h;
                         let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
                         ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
                     } else if is_dragging {
@@ -177,8 +178,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
                         let text_area_x = ui.sidebar_width + gutter_width;
 
-                        let line_idx = if mouse_y >= ui.titlebar_height {
-                            ((mouse_y - ui.titlebar_height) / ui.buffer_line_height).floor() as usize + ui.scroll_y
+                        let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
+                        let line_idx = if mouse_y >= editor_top {
+                            ((mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y
                         } else {
                             ui.scroll_y
                         };
@@ -198,6 +200,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                         ui.scroll_to_cursor(&cursor, buffer.len(), size.height as f32);
                     }
+
                     update_cursor_icon(&window, &ui, &buffer, mouse_x, mouse_y);
                     window.request_redraw();
                 }
@@ -365,25 +368,26 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             elwt.exit();
                                         }
                                         UiAction::None => {
+                                            let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
+                                            let editor_height = size.height as f32 - editor_top - ui.status_height;
                                             // Check if click is on scrollbar
                                             let sb_x = size.width as f32 - 12.0;
-                                            if mouse_x >= sb_x && mouse_y >= ui.titlebar_height && mouse_y < size.height as f32 - ui.status_height {
+                                            if mouse_x >= sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
                                                 is_dragging_scroll = true;
-                                                let main_height = size.height as f32 - ui.titlebar_height - ui.status_height;
-                                                let visible_lines = (main_height / ui.buffer_line_height).floor() as usize;
+                                                let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                                 let ratio = visible_lines as f32 / buffer.len() as f32;
-                                                let thumb_h = (main_height * ratio).clamp(20.0, main_height);
+                                                let thumb_h = (editor_height * ratio).clamp(20.0, editor_height);
                                                 let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
                                                 
                                                 let scroll_ratio = if max_scroll > 0.0 { ui.scroll_y as f32 / max_scroll } else { 0.0 };
-                                                let thumb_y = ui.titlebar_height + scroll_ratio * (main_height - thumb_h);
+                                                let thumb_y = editor_top + scroll_ratio * (editor_height - thumb_h);
                                                 
                                                 if mouse_y >= thumb_y && mouse_y < thumb_y + thumb_h {
                                                     scroll_drag_offset_y = mouse_y - thumb_y;
                                                 } else {
                                                     scroll_drag_offset_y = thumb_h / 2.0;
-                                                    let relative_y = mouse_y - ui.titlebar_height - scroll_drag_offset_y;
-                                                    let scroll_range = main_height - thumb_h;
+                                                    let relative_y = mouse_y - editor_top - scroll_drag_offset_y;
+                                                    let scroll_range = editor_height - thumb_h;
                                                     let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
                                                     ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
                                                 }
@@ -393,11 +397,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
                                                 let text_area_x = ui.sidebar_width + gutter_width;
 
-                                                if mouse_x >= text_area_x && mouse_y >= ui.titlebar_height && mouse_y < size.height as f32 - ui.status_height {
+                                                if mouse_x >= text_area_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
                                                     buffer.commit_transaction();
                                                     is_dragging = true;
 
-                                                    let line_idx = ((mouse_y - ui.titlebar_height) / ui.buffer_line_height).floor() as usize + ui.scroll_y;
+                                                    let line_idx = ((mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y;
                                                     let line_idx = line_idx.min(buffer.len() - 1);
 
                                                     let col_idx = ((mouse_x - text_area_x) / ui.buffer_char_width).round() as usize + ui.scroll_x;
@@ -448,8 +452,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         MouseScrollDelta::PixelDelta(pos) => (pos.y / (ui.buffer_line_height as f64)) as isize * -1,
                     };
 
-                    let main_height = window.inner_size().height as f32 - ui.titlebar_height - ui.status_height;
-                    let visible_lines = (main_height / ui.buffer_line_height).floor() as usize;
+                    let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
+                    let editor_height = window.inner_size().height as f32 - editor_top - ui.status_height;
+                    let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                     let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0);
 
                     let new_scroll = ui.scroll_y as isize + scroll_lines;
