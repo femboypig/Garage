@@ -82,6 +82,12 @@ pub struct UiState {
 
     pub config: crate::config::AppConfig,
     pub active_device_name: String,
+
+    pub last_blame_file: Option<String>,
+    pub last_blame_line: Option<usize>,
+    pub last_blame_result: Option<String>,
+    pub git_branch: Option<String>,
+    pub last_branch_check: Option<std::time::Instant>,
 }
 
 impl UiState {
@@ -149,6 +155,11 @@ impl UiState {
             theme_dropdown_open: false,
             config,
             active_device_name: String::new(),
+            last_blame_file: None,
+            last_blame_line: None,
+            last_blame_result: None,
+            git_branch: None,
+            last_branch_check: None,
         };
 
         state.rebuild_tree();
@@ -793,6 +804,98 @@ impl UiState {
         colors
     }
 
+    pub fn update_git_branch(&mut self) {
+        let output = std::process::Command::new("git")
+            .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .output();
+        
+        self.git_branch = match output {
+            Ok(out) if out.status.success() => {
+                let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if branch.is_empty() {
+                    None
+                } else {
+                    Some(branch)
+                }
+            }
+            _ => None,
+        };
+    }
+
+    pub fn get_or_update_blame(&mut self, file_path: Option<&str>, line_idx: usize) -> Option<String> {
+        let file_path = file_path?;
+        // Check if cached
+        if self.last_blame_file.as_deref() == Some(file_path) && self.last_blame_line == Some(line_idx) {
+            return self.last_blame_result.clone();
+        }
+
+        // Update cache
+        self.last_blame_file = Some(file_path.to_string());
+        self.last_blame_line = Some(line_idx);
+
+        // Run git blame for a single line (1-based index)
+        let git_line = line_idx + 1;
+        let output = std::process::Command::new("git")
+            .args(&["blame", "-L", &format!("{},{}", git_line, git_line), "--porcelain", file_path])
+            .output();
+
+        let blame_res = match output {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let mut author = None;
+                let mut author_time = None;
+                let mut summary = None;
+
+                for line in stdout.lines() {
+                    if line.starts_with("author ") {
+                        author = Some(line["author ".len()..].trim().to_string());
+                    } else if line.starts_with("author-time ") {
+                        author_time = line["author-time ".len()..].trim().parse::<u64>().ok();
+                    } else if line.starts_with("summary ") {
+                        summary = Some(line["summary ".len()..].trim().to_string());
+                    }
+                }
+
+                if let (Some(auth), Some(time), Some(sum)) = (author, author_time, summary) {
+                    if auth == "Not Committed Yet" {
+                        Some("Not Committed Yet".to_string())
+                    } else {
+                        // Calculate relative time
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        let diff = now.saturating_sub(time);
+                        let time_str = if diff < 60 {
+                            "just now".to_string()
+                        } else if diff < 3600 {
+                            format!("{}m ago", diff / 60)
+                        } else if diff < 86400 {
+                            format!("{}h ago", diff / 3600)
+                        } else if diff < 2592000 {
+                            let days = diff / 86400;
+                            if days == 1 { "yesterday".to_string() } else { format!("{} days ago", days) }
+                        } else if diff < 31536000 {
+                            let months = diff / 2592000;
+                            if months == 1 { "1 month ago".to_string() } else { format!("{} months ago", months) }
+                        } else {
+                            let years = diff / 31536000;
+                            if years == 1 { "1 year ago".to_string() } else { format!("{} years ago", years) }
+                        };
+
+                        Some(format!("{} • {} • {}", auth, time_str, sum))
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        self.last_blame_result = blame_res.clone();
+        blame_res
+    }
+
     /// Build entire UI frame (Titlebar, Sidebar, Scrollbar, Dropdowns, Modals)
     pub fn build_frame(
         &mut self,
@@ -807,8 +910,15 @@ impl UiState {
         mouse_x: f32,
         mouse_y: f32,
         current_backend: wgpu::Backend,
+        file_path: Option<&str>,
     ) {
         let white_uv = atlas.white_pixel_uv();
+
+        // Throttled git branch check
+        if self.last_branch_check.is_none() || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(5) {
+            self.update_git_branch();
+            self.last_branch_check = Some(std::time::Instant::now());
+        }
         let main_y = self.titlebar_height;
         let main_height = height - self.titlebar_height - self.status_height;
 
@@ -1010,20 +1120,60 @@ impl UiState {
                 };
 
                 if node.is_dir {
-                    // Draw Chevron
-                    let chevron = if self.expanded_dirs.contains(&node.path) { "▼" } else { "▶" };
-                    self.push_str(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        chevron,
-                        indent_x,
-                        (row_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round(),
-                        text_color,
-                        self.ui_font_size,
-                        self.ui_char_width,
-                    );
+                    // Draw Chevron via vector lines to avoid font fallback rectangles
+                    let is_expanded = self.expanded_dirs.contains(&node.path);
+                    let chev_size = (self.ui_font_size * 0.2).round().max(2.0);
+                    let chev_cx = indent_x + 4.0;
+                    let chev_cy = row_y + (self.ui_line_height / 2.0).round();
+                    if is_expanded {
+                        // Down-pointing chevron (v)
+                        for offset in 0..=(chev_size as i32) {
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                chev_cx - chev_size + offset as f32,
+                                chev_cy - (chev_size / 2.0).round() + offset as f32,
+                                1.5,
+                                1.5,
+                                white_uv,
+                                text_color,
+                            );
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                chev_cx + chev_size - offset as f32,
+                                chev_cy - (chev_size / 2.0).round() + offset as f32,
+                                1.5,
+                                1.5,
+                                white_uv,
+                                text_color,
+                            );
+                        }
+                    } else {
+                        // Right-pointing chevron (>)
+                        for offset in 0..=(chev_size as i32) {
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                chev_cx - (chev_size / 2.0).round() + offset as f32,
+                                chev_cy - chev_size + offset as f32,
+                                1.5,
+                                1.5,
+                                white_uv,
+                                text_color,
+                            );
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                chev_cx - (chev_size / 2.0).round() + offset as f32,
+                                chev_cy + chev_size - offset as f32,
+                                1.5,
+                                1.5,
+                                white_uv,
+                                text_color,
+                            );
+                        }
+                    }
 
                     // Draw Folder Outline Icon (Inspired by Zed Editor)
                     let folder_w = (self.ui_char_width * 1.5).round().max(12.0);
@@ -1466,6 +1616,25 @@ impl UiState {
                 let char_color = char_colors.get(char_idx).copied().unwrap_or(self.config.theme.syntax_default);
                 pen_x += self.push_char(vertices, indices, atlas, queue, c, pen_x, baseline_y, char_color, self.buffer_font_size, self.buffer_char_width);
             }
+
+            // Draw Git Blame inline annotation at the end of the active line
+            if line_idx == cursor.line {
+                if let Some(blame_str) = self.get_or_update_blame(file_path, line_idx) {
+                    let blame_x = pen_x + self.buffer_char_width * 4.0;
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        &blame_str,
+                        blame_x,
+                        baseline_y,
+                        self.config.theme.syntax_comment,
+                        self.buffer_font_size,
+                        self.buffer_char_width,
+                    );
+                }
+            }
         }
 
         // Draw active cursor
@@ -1559,7 +1728,10 @@ impl UiState {
             self.config.theme.statusbar_border,
         );
 
-        let status_left = format!(" GARAGE | Line {}, Col {}", cursor.line + 1, cursor.col + 1);
+        let mut status_left = format!(" GARAGE | Line {}, Col {}", cursor.line + 1, cursor.col + 1);
+        if let Some(ref branch) = self.git_branch {
+            status_left.push_str(&format!(" | git: {}", branch));
+        }
         let status_right = format!("Lines: {} | UTF-8 | LF ", buffer.len());
         self.push_str(
             vertices,
