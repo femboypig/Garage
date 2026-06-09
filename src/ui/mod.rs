@@ -351,7 +351,7 @@ impl UiState {
         cursor: &mut Cursor,
         tab_paths: &[Option<String>],
         tab_modified: &[bool],
-        dock_terminals_len: usize,
+        _dock_terminals_len: usize,
     ) -> UiAction {
         // If a modal is open, check click boundaries and buttons
         if let Some(modal) = self.active_modal {
@@ -1241,9 +1241,9 @@ impl UiState {
         tab_modified: &[bool],
         active_tab_idx: usize,
         terminals: &[TerminalInstance],
-        active_terminal_idx: usize,
+        _active_terminal_idx: usize,
         terminal_focus: bool,
-        is_window_maximized: bool,
+        _is_window_maximized: bool,
     ) {
         let active_file_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
         let white_uv = atlas.white_pixel_uv();
@@ -2435,11 +2435,18 @@ impl UiState {
                 
                 // Draw left active indicator
                 if is_active {
-                    self.push_quad(vertices, indices, cur_x, tab_y, 2.0, tab_h, white_uv, self.config.theme.tab_active_border);
+                    let indicator_color = [0.3f32, 0.5f32, 0.9f32, 1.0f32]; // Accent blue
+                    self.push_quad(vertices, indices, cur_x, tab_y, 2.0, tab_h, white_uv, indicator_color);
                 }
                 
                 // Draw terminal icon
-                let icon_color = if is_active { self.config.theme.tab_active_text } else { self.config.theme.tab_text };
+                let icon_color = if is_active {
+                    self.config.theme.tab_text
+                } else {
+                    let mut c = self.config.theme.tab_text;
+                    c[3] *= 0.6;
+                    c
+                };
                 self.push_icon(
                     vertices,
                     indices,
@@ -2584,7 +2591,7 @@ impl UiState {
                         let cell = grid.cells[ty * grid.cols + tx];
 
                         // Draw non-default background
-                        if cell.bg != DEFAULT_BG {
+                        if cell.bg != crate::terminal::DEFAULT_BG {
                             self.push_quad(
                                 vertices,
                                 indices,
@@ -2600,7 +2607,7 @@ impl UiState {
                         // Draw character if not space
                         if cell.c != ' ' {
                             let mut color = cell.fg;
-                            if grid.bold && color == DEFAULT_FG {
+                            if grid.bold && color == crate::terminal::DEFAULT_FG {
                                 color = [1.0, 1.0, 1.0, 1.0];
                             }
                             
