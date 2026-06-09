@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use fontdue::{Font, FontSettings};
+use resvg::usvg::TreeParsing;
 
 pub struct GlyphInfo {
     pub uv_min: [f32; 2],
@@ -17,6 +18,7 @@ pub struct FontAtlas {
     pub atlas_width: u32,
     pub atlas_height: u32,
     glyphs: HashMap<(char, u32), GlyphInfo>,
+    pub icons: HashMap<(String, u32), GlyphInfo>,
     current_x: u32,
     current_y: u32,
     max_row_height: u32,
@@ -89,6 +91,7 @@ impl FontAtlas {
             atlas_width,
             atlas_height,
             glyphs: HashMap::new(),
+            icons: HashMap::new(),
             // Start allocating font glyphs after the 2x2 white region
             current_x: 4,
             current_y: 0,
@@ -192,5 +195,115 @@ impl FontAtlas {
 
         self.glyphs.insert(key, info);
         self.glyphs.get(&key)
+    }
+
+    pub fn get_or_rasterize_icon(
+        &mut self,
+        queue: &wgpu::Queue,
+        icon_path: &str,
+        size: f32,
+    ) -> Option<&GlyphInfo> {
+        let size_key = size.round() as u32;
+        let key = (icon_path.to_string(), size_key);
+        if self.icons.contains_key(&key) {
+            return self.icons.get(&key);
+        }
+
+        // Load SVG file
+        let svg_content = std::fs::read_to_string(icon_path)
+            .map_err(|e| {
+                log::warn!("Failed to read SVG icon '{}': {}", icon_path, e);
+                e
+            })
+            .ok()?;
+
+        // Parse and render SVG
+        let opt = resvg::usvg::Options::default();
+        let tree = resvg::usvg::Tree::from_str(&svg_content, &opt)
+            .map_err(|e| {
+                log::warn!("Failed to parse SVG icon '{}': {:?}", icon_path, e);
+                e
+            })
+            .ok()?;
+
+        let w = size_key;
+        let h = size_key;
+
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h)?;
+        let size_obj = tree.size;
+        let scale_x = w as f32 / size_obj.width() as f32;
+        let scale_y = h as f32 / size_obj.height() as f32;
+        let transform = resvg::tiny_skia::Transform::from_scale(scale_x, scale_y);
+        resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+        // Extract alpha channel
+        let pixels = pixmap.data();
+        let mut bitmap = Vec::with_capacity((w * h) as usize);
+        for chunk in pixels.chunks_exact(4) {
+            bitmap.push(chunk[3]);
+        }
+
+        // Shelf packing algorithm check
+        if self.current_x + w + self.padding > self.atlas_width {
+            // Move to next row
+            self.current_x = 4;
+            self.current_y += self.max_row_height + self.padding;
+            self.max_row_height = 0;
+        }
+
+        if self.current_y + h + self.padding > self.atlas_height {
+            log::warn!("Font atlas is completely full! Icons might render incorrectly.");
+            return None;
+        }
+
+        // Upload the new icon to the GPU texture
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: self.current_x,
+                    y: self.current_y,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &bitmap,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(w),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let uv_min = [
+            self.current_x as f32 / self.atlas_width as f32,
+            self.current_y as f32 / self.atlas_height as f32,
+        ];
+        let uv_max = [
+            (self.current_x + w) as f32 / self.atlas_width as f32,
+            (self.current_y + h) as f32 / self.atlas_height as f32,
+        ];
+
+        let info = GlyphInfo {
+            uv_min,
+            uv_max,
+            width: w as f32,
+            height: h as f32,
+            bearing_x: 0.0,
+            bearing_y: 0.0,
+        };
+
+        // Advance layout pointer
+        self.current_x += w + self.padding;
+        self.max_row_height = self.max_row_height.max(h);
+
+        self.icons.insert(key, info);
+        self.icons.get(&(icon_path.to_string(), size_key))
     }
 }
