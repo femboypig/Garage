@@ -14,15 +14,25 @@ pub enum UiAction {
     Redo,
     ToggleSidebar,
     Exit,
+    ShowSettings,
+    ShowAbout,
+    CloseModal,
     None,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MenuType {
+    Garage,
     File,
     Edit,
     Selection,
     View,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ModalType {
+    Settings,
+    About,
 }
 
 pub struct FileNode {
@@ -43,15 +53,16 @@ pub struct UiState {
     pub titlebar_height: f32,
     pub status_height: f32,
     pub sidebar_width: f32,
-    pub target_sidebar_width: f32, // to animate or toggle
+    pub target_sidebar_width: f32,
     
     // Project Tree State
     pub expanded_dirs: HashSet<PathBuf>,
     pub visible_nodes: Vec<FileNode>,
     pub selected_file: Option<PathBuf>,
     
-    // Menu State
+    // Menu & Modal State
     pub active_menu: Option<MenuType>,
+    pub active_modal: Option<ModalType>,
 }
 
 impl UiState {
@@ -88,6 +99,7 @@ impl UiState {
             visible_nodes: Vec::new(),
             selected_file: None,
             active_menu: None,
+            active_modal: None,
         };
 
         state.rebuild_tree();
@@ -108,7 +120,7 @@ impl UiState {
                     let path = entry.path();
                     let name = entry.file_name().to_string_lossy().to_string();
                     
-                    // Skip hidden files/folders and target directories to stay optimized
+                    // Skip hidden files/folders and build target directories
                     if name.starts_with('.') || name == "target" || name == "Cargo.lock" {
                         continue;
                     }
@@ -142,35 +154,58 @@ impl UiState {
         }
     }
 
-    /// Handle click coordinates to determine if a menu or tree item was clicked
+    /// Handle click coordinates to determine if a menu, tree, or scroll item was clicked
     pub fn handle_click(
         &mut self,
         mx: f32,
         my: f32,
-        _width: f32,
+        width: f32,
         height: f32,
         buffer: &mut Buffer,
         cursor: &mut Cursor,
     ) -> UiAction {
+        // If a modal is open, any click outside the modal boundaries or on modal buttons closes it
+        if let Some(modal) = self.active_modal {
+            let modal_w = 400.0;
+            let modal_h = 240.0;
+            let modal_x = (width - modal_w) / 2.0;
+            let modal_y = (height - modal_h) / 2.0;
+
+            // Check if clicked close button (e.g. at x: modal_x + 150..modal_x + 250, y: modal_y + 180..modal_y + 220)
+            let inside_close_btn = mx >= modal_x + 140.0 && mx <= modal_x + 260.0 && my >= modal_y + 180.0 && my <= modal_y + 215.0;
+            let clicked_outside = mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h;
+
+            if inside_close_btn || clicked_outside {
+                self.active_modal = None;
+                return UiAction::CloseModal;
+            }
+            return UiAction::None;
+        }
+
         // 1. Check Titlebar Menu Clicks
         if my < self.titlebar_height {
-            // File: 10..50
-            if mx >= 10.0 && mx <= 60.0 {
+            // Garage Menu: 10..70
+            if mx >= 10.0 && mx <= 70.0 {
+                self.active_menu = if self.active_menu == Some(MenuType::Garage) { None } else { Some(MenuType::Garage) };
+                return UiAction::None;
+            }
+            // File: 80..130
+            if mx >= 80.0 && mx <= 130.0 {
                 self.active_menu = if self.active_menu == Some(MenuType::File) { None } else { Some(MenuType::File) };
                 return UiAction::None;
             }
-            // Edit: 70..110
-            if mx >= 70.0 && mx <= 120.0 {
+            // Edit: 140..190
+            if mx >= 140.0 && mx <= 190.0 {
                 self.active_menu = if self.active_menu == Some(MenuType::Edit) { None } else { Some(MenuType::Edit) };
                 return UiAction::None;
             }
-            // Selection: 130..210
-            if mx >= 130.0 && mx <= 210.0 {
+            // Selection: 200..280
+            if mx >= 200.0 && mx <= 280.0 {
                 self.active_menu = if self.active_menu == Some(MenuType::Selection) { None } else { Some(MenuType::Selection) };
                 return UiAction::None;
             }
-            // View: 220..260
-            if mx >= 220.0 && mx <= 270.0 {
+            // View: 290..340
+            if mx >= 290.0 && mx <= 340.0 {
                 self.active_menu = if self.active_menu == Some(MenuType::View) { None } else { Some(MenuType::View) };
                 return UiAction::None;
             }
@@ -181,9 +216,23 @@ impl UiState {
         // 2. Check Dropdown Clicks (if active)
         if let Some(menu) = self.active_menu {
             let menu_action = match menu {
-                MenuType::File => {
-                    // Box: x: 10..160, y: 32..122
+                MenuType::Garage => {
+                    // Box: x: 10..180, y: 32..122
                     if mx >= 10.0 && mx <= 180.0 && my >= 32.0 && my <= 122.0 {
+                        let idx = ((my - 32.0) / 30.0).floor() as usize;
+                        match idx {
+                            0 => Some(UiAction::ShowSettings),
+                            1 => Some(UiAction::ShowAbout),
+                            2 => Some(UiAction::Exit),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                }
+                MenuType::File => {
+                    // Box: x: 80..250, y: 32..122
+                    if mx >= 80.0 && mx <= 250.0 && my >= 32.0 && my <= 122.0 {
                         let idx = ((my - 32.0) / 30.0).floor() as usize;
                         match idx {
                             0 => Some(UiAction::SaveFile),
@@ -196,8 +245,8 @@ impl UiState {
                     }
                 }
                 MenuType::Edit => {
-                    // Box: x: 70..220, y: 32..92
-                    if mx >= 70.0 && mx <= 220.0 && my >= 32.0 && my <= 92.0 {
+                    // Box: x: 140..290, y: 32..92
+                    if mx >= 140.0 && mx <= 290.0 && my >= 32.0 && my <= 92.0 {
                         let idx = ((my - 32.0) / 30.0).floor() as usize;
                         match idx {
                             0 => Some(UiAction::Undo),
@@ -209,8 +258,8 @@ impl UiState {
                     }
                 }
                 MenuType::Selection => {
-                    // Box: x: 130..280, y: 32..92
-                    if mx >= 130.0 && mx <= 280.0 && my >= 32.0 && my <= 92.0 {
+                    // Box: x: 200..350, y: 32..92
+                    if mx >= 200.0 && mx <= 350.0 && my >= 32.0 && my <= 92.0 {
                         let idx = ((my - 32.0) / 30.0).floor() as usize;
                         match idx {
                             0 => {
@@ -231,8 +280,8 @@ impl UiState {
                     }
                 }
                 MenuType::View => {
-                    // Box: x: 220..370, y: 32..62
-                    if mx >= 220.0 && mx <= 370.0 && my >= 32.0 && my <= 62.0 {
+                    // Box: x: 290..440, y: 32..62
+                    if mx >= 290.0 && mx <= 440.0 && my >= 32.0 && my <= 62.0 {
                         let idx = ((my - 32.0) / 30.0).floor() as usize;
                         match idx {
                             0 => Some(UiAction::ToggleSidebar),
@@ -289,24 +338,30 @@ impl UiState {
         white_uv: [f32; 2],
         color: [f32; 4],
     ) {
+        // Round panel coordinates to integer pixels for crisp borders
+        let rx = x.round();
+        let ry = y.round();
+        let rw = w.round();
+        let rh = h.round();
+
         let start = vertices.len() as u16;
         vertices.push(Vertex {
-            position: [x, y],
+            position: [rx, ry],
             tex_coords: white_uv,
             color,
         });
         vertices.push(Vertex {
-            position: [x + w, y],
+            position: [rx + rw, ry],
             tex_coords: white_uv,
             color,
         });
         vertices.push(Vertex {
-            position: [x + w, y + h],
+            position: [rx + rw, ry + rh],
             tex_coords: white_uv,
             color,
         });
         vertices.push(Vertex {
-            position: [x, y + h],
+            position: [rx, ry + rh],
             tex_coords: white_uv,
             color,
         });
@@ -330,10 +385,11 @@ impl UiState {
                 return self.char_width;
             }
 
-            let x = pen_x + info.bearing_x;
-            let y = baseline_y - info.bearing_y - info.height;
-            let w = info.width;
-            let h = info.height;
+            // CRITICAL: Round coordinates to exact integer pixels to eliminate bilinear filtering blur!
+            let x = (pen_x + info.bearing_x).round();
+            let y = (baseline_y - info.bearing_y - info.height).round();
+            let w = info.width.round();
+            let h = info.height.round();
 
             let start = vertices.len() as u16;
             vertices.push(Vertex {
@@ -377,7 +433,7 @@ impl UiState {
         }
     }
 
-    /// Build entire UI frame (Titlebar, Sidebar, Dropdowns, Text Area, Gutter, Statusbar)
+    /// Build entire UI frame (Titlebar, Sidebar, Scrollbar, Dropdowns, Modals)
     pub fn build_frame(
         &mut self,
         vertices: &mut Vec<Vertex>,
@@ -395,7 +451,7 @@ impl UiState {
         let main_y = self.titlebar_height;
         let main_height = height - self.titlebar_height - self.status_height;
 
-        // Smoothly expand/collapse sidebar width for a polished feel
+        // Smoothly expand/collapse sidebar width
         let step = 20.0;
         if self.sidebar_width < self.target_sidebar_width {
             self.sidebar_width = (self.sidebar_width + step).min(self.target_sidebar_width);
@@ -403,10 +459,14 @@ impl UiState {
             self.sidebar_width = (self.sidebar_width - step).max(self.target_sidebar_width);
         }
 
-        // Calculate dynamic line number gutter width
+        // Calculate dynamic layouts
         let max_line_digits = buffer.len().to_string().len().max(3);
         let gutter_width = (max_line_digits as f32 + 2.0) * self.char_width;
         let text_area_x = self.sidebar_width + gutter_width;
+        
+        let scrollbar_width = 12.0;
+        // Text viewport width is limited by scrollbar
+        let text_viewport_w = width - text_area_x - scrollbar_width;
 
         // Ensure vertical scrolling viewport matches active cursor position
         let visible_lines = (main_height / self.line_height).floor() as usize;
@@ -439,10 +499,11 @@ impl UiState {
         );
 
         let menu_items = [
-            ("File", 10.0, 60.0, MenuType::File),
-            ("Edit", 70.0, 120.0, MenuType::Edit),
-            ("Selection", 130.0, 210.0, MenuType::Selection),
-            ("View", 220.0, 270.0, MenuType::View),
+            ("Garage", 10.0, 70.0, MenuType::Garage),
+            ("File", 80.0, 130.0, MenuType::File),
+            ("Edit", 140.0, 190.0, MenuType::Edit),
+            ("Selection", 200.0, 280.0, MenuType::Selection),
+            ("View", 290.0, 340.0, MenuType::View),
         ];
 
         for (label, x_min, x_max, menu_type) in &menu_items {
@@ -458,10 +519,19 @@ impl UiState {
                     *x_max - *x_min + 8.0,
                     24.0,
                     white_uv,
-                    [0.16, 0.16, 0.22, 1.0], // Hover background
+                    [0.16, 0.16, 0.22, 1.0],
                 );
             }
             
+            // Bold brand title
+            let label_color = if *menu_type == MenuType::Garage {
+                [0.0, 0.9, 0.8, 1.0] // Teal brand highlights
+            } else if is_active {
+                [1.0, 1.0, 1.0, 1.0]
+            } else {
+                [0.75, 0.75, 0.8, 1.0]
+            };
+
             self.push_str(
                 vertices,
                 indices,
@@ -469,8 +539,8 @@ impl UiState {
                 queue,
                 label,
                 *x_min,
-                20.0,
-                if is_active { [1.0, 1.0, 1.0, 1.0] } else { [0.75, 0.75, 0.8, 1.0] },
+                (self.titlebar_height / 2.0 + self.font_ascent / 2.0 - 2.0).round(),
+                label_color,
             );
         }
 
@@ -481,7 +551,7 @@ impl UiState {
         let title_str = format!("Garage - {}", file_name);
         let title_width = title_str.chars().count() as f32 * self.char_width;
         let title_x = (width - title_width) / 2.0;
-        if title_x > 300.0 {
+        if title_x > 360.0 {
             self.push_str(
                 vertices,
                 indices,
@@ -489,7 +559,7 @@ impl UiState {
                 queue,
                 &title_str,
                 title_x,
-                20.0,
+                (self.titlebar_height / 2.0 + self.font_ascent / 2.0 - 2.0).round(),
                 [0.5, 0.5, 0.55, 1.0],
             );
         }
@@ -504,7 +574,7 @@ impl UiState {
                 self.sidebar_width,
                 main_height,
                 white_uv,
-                [0.05, 0.05, 0.07, 1.0], // Darker sidebar background
+                [0.05, 0.05, 0.07, 1.0],
             );
             self.push_quad(
                 vertices,
@@ -517,7 +587,6 @@ impl UiState {
                 [0.15, 0.15, 0.18, 1.0],
             );
 
-            // Render project tree files/folders
             for (idx, node) in self.visible_nodes.iter().enumerate() {
                 let row_y = main_y + idx as f32 * self.line_height;
                 if row_y + self.line_height > main_y + main_height {
@@ -540,7 +609,6 @@ impl UiState {
                     );
                 }
 
-                // Draw tree structure indents
                 let indent_x = 10.0 + node.depth as f32 * 12.0;
                 let icon = if node.is_dir {
                     if self.expanded_dirs.contains(&node.path) { "▼ " } else { "▶ " }
@@ -549,9 +617,9 @@ impl UiState {
                 };
 
                 let text_color = if node.is_dir {
-                    [0.8, 0.8, 0.85, 1.0] // Light gray folder
+                    [0.8, 0.8, 0.85, 1.0]
                 } else {
-                    [0.65, 0.65, 0.7, 1.0] // Off-white file
+                    [0.65, 0.65, 0.7, 1.0]
                 };
 
                 let node_text = format!("{}{}", icon, node.name);
@@ -562,7 +630,7 @@ impl UiState {
                     queue,
                     &node_text,
                     indent_x,
-                    row_y + self.font_ascent,
+                    (row_y + self.font_ascent).round(),
                     text_color,
                 );
             }
@@ -577,7 +645,7 @@ impl UiState {
             gutter_width,
             main_height,
             white_uv,
-            [0.07, 0.07, 0.09, 1.0], // Editor sidebar background
+            [0.07, 0.07, 0.09, 1.0],
         );
         self.push_quad(
             vertices,
@@ -595,9 +663,9 @@ impl UiState {
 
         for line_idx in start_idx..end_idx {
             let row_y = main_y + (line_idx - start_idx) as f32 * self.line_height;
-            let baseline_y = row_y + self.font_ascent;
+            let baseline_y = (row_y + self.font_ascent).round();
 
-            // Current active line highlight
+            // Active line highlight
             if line_idx == cursor.line {
                 self.push_quad(
                     vertices,
@@ -629,7 +697,7 @@ impl UiState {
                 num_color,
             );
 
-            // Draw selections
+            // Draw selection ranges
             if let Some((s_line, s_col, e_line, e_col)) = cursor.selection_range() {
                 if line_idx >= s_line && line_idx <= e_line {
                     let line_chars_count = buffer.lines()[line_idx].chars().count();
@@ -647,27 +715,27 @@ impl UiState {
                             sel_w,
                             self.line_height,
                             white_uv,
-                            [0.15, 0.25, 0.42, 0.6], // Semitransparent blue highlight
+                            [0.15, 0.25, 0.42, 0.6],
                         );
                     }
                 }
             }
 
-            // Draw source code text
+            // Draw source code text characters
             let line_text = &buffer.lines()[line_idx];
             let mut pen_x = text_area_x;
             
             for c in line_text.chars() {
                 let char_color = match c {
-                    '0'..='9' => [0.85, 0.6, 0.35, 1.0], // Numbers
-                    '{' | '}' | '(' | ')' | '[' | ']' => [0.8, 0.8, 0.3, 1.0], // Brackets
-                    _ => [0.85, 0.85, 0.9, 1.0], // Normal characters
+                    '0'..='9' => [0.85, 0.6, 0.35, 1.0],
+                    '{' | '}' | '(' | ')' | '[' | ']' => [0.8, 0.8, 0.3, 1.0],
+                    _ => [0.85, 0.85, 0.9, 1.0],
                 };
                 pen_x += self.push_char(vertices, indices, atlas, queue, c, pen_x, baseline_y, char_color);
             }
         }
 
-        // Draw active text cursor
+        // Draw active cursor
         if cursor.line >= self.scroll_y && cursor.line < self.scroll_y + visible_lines {
             let cur_row_y = main_y + (cursor.line - self.scroll_y) as f32 * self.line_height;
             let cur_x = text_area_x + cursor.col as f32 * self.char_width;
@@ -680,11 +748,62 @@ impl UiState {
                 2.0,
                 self.line_height - 2.0,
                 white_uv,
-                [0.0, 0.9, 0.8, 1.0], // Teal cursor
+                [0.0, 0.9, 0.8, 1.0],
             );
         }
 
-        // --- 4. Draw Statusbar ---
+        // --- 4. Draw Scrollbar (on the right edge) ---
+        let sb_x = width - scrollbar_width;
+        let is_sb_hovered = mouse_x >= sb_x && mouse_y >= main_y && mouse_y < main_y + main_height;
+
+        // Scrollbar Track background
+        self.push_quad(
+            vertices,
+            indices,
+            sb_x,
+            main_y,
+            scrollbar_width,
+            main_height,
+            white_uv,
+            [0.08, 0.08, 0.1, 1.0],
+        );
+        // Vertical track separator
+        self.push_quad(
+            vertices,
+            indices,
+            sb_x - 1.0,
+            main_y,
+            1.0,
+            main_height,
+            white_uv,
+            [0.15, 0.15, 0.18, 1.0],
+        );
+
+        let ratio = visible_lines as f32 / buffer.len() as f32;
+        let thumb_h = (main_height * ratio).clamp(20.0, main_height);
+        let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
+        let scroll_ratio = if max_scroll > 0.0 { self.scroll_y as f32 / max_scroll } else { 0.0 };
+        let thumb_y = main_y + scroll_ratio * (main_height - thumb_h);
+
+        let thumb_color = if is_sb_hovered {
+            [0.32, 0.32, 0.38, 1.0] // Brighter thumb on hover
+        } else {
+            [0.22, 0.22, 0.26, 1.0]
+        };
+
+        // Draw Scrollbar Thumb
+        self.push_quad(
+            vertices,
+            indices,
+            sb_x + 2.0,
+            thumb_y,
+            scrollbar_width - 4.0,
+            thumb_h,
+            white_uv,
+            thumb_color,
+        );
+
+        // --- 5. Draw Statusbar ---
         let status_y = height - self.status_height;
         self.push_quad(
             vertices,
@@ -717,7 +836,7 @@ impl UiState {
             queue,
             &status_left,
             10.0,
-            status_y + self.font_ascent + 2.0,
+            (status_y + self.font_ascent / 2.0 + 2.0).round(),
             [0.6, 0.6, 0.65, 1.0],
         );
 
@@ -731,34 +850,40 @@ impl UiState {
                 queue,
                 &status_right,
                 right_x,
-                status_y + self.font_ascent + 2.0,
+                (status_y + self.font_ascent / 2.0 + 2.0).round(),
                 [0.5, 0.5, 0.55, 1.0],
             );
         }
 
-        // --- 5. Draw Context Dropdown Menus (On top of everything) ---
+        // --- 6. Draw Context Dropdown Menus (On top of everything) ---
         if let Some(menu) = self.active_menu {
             let (menu_x, dropdown_w, dropdown_h, items) = match menu {
-                MenuType::File => (
+                MenuType::Garage => (
                     10.0,
+                    150.0,
+                    90.0,
+                    vec!["Settings", "About", "Exit"],
+                ),
+                MenuType::File => (
+                    80.0,
                     170.0,
                     90.0,
                     vec!["Save (Ctrl+S)", "Toggle Sidebar", "Exit"],
                 ),
                 MenuType::Edit => (
-                    70.0,
+                    140.0,
                     150.0,
                     60.0,
                     vec!["Undo (Ctrl+Z)", "Redo (Ctrl+Y)"],
                 ),
                 MenuType::Selection => (
-                    130.0,
+                    200.0,
                     150.0,
                     60.0,
                     vec!["Select All", "Clear Selection"],
                 ),
                 MenuType::View => (
-                    220.0,
+                    290.0,
                     150.0,
                     30.0,
                     vec!["Toggle Sidebar"],
@@ -774,9 +899,9 @@ impl UiState {
                 dropdown_w,
                 dropdown_h,
                 white_uv,
-                [0.08, 0.08, 0.1, 0.98], // Translucent dark background
+                [0.08, 0.08, 0.1, 0.98],
             );
-            // Draw thin card border
+            // Draw card borders
             self.push_quad(
                 vertices,
                 indices,
@@ -842,10 +967,234 @@ impl UiState {
                     queue,
                     label,
                     menu_x + 8.0,
-                    row_y + 20.0,
+                    (row_y + 20.0).round(),
                     if is_hovered { [1.0, 1.0, 1.0, 1.0] } else { [0.75, 0.75, 0.8, 1.0] },
                 );
             }
+        }
+
+        // --- 7. Draw Modal Dialogs (On top of dropdowns/everything) ---
+        if let Some(modal) = self.active_modal {
+            // Semi-transparent black background overlay
+            self.push_quad(
+                vertices,
+                indices,
+                0.0,
+                0.0,
+                width,
+                height,
+                white_uv,
+                [0.0, 0.0, 0.0, 0.6],
+            );
+
+            let modal_w = 400.0;
+            let modal_h = 240.0;
+            let modal_x = ((width - modal_w) / 2.0).round();
+            let modal_y = ((height - modal_h) / 2.0).round();
+
+            // Draw Modal Box Background
+            self.push_quad(
+                vertices,
+                indices,
+                modal_x,
+                modal_y,
+                modal_w,
+                modal_h,
+                white_uv,
+                [0.09, 0.09, 0.12, 1.0],
+            );
+            // Draw modal border
+            self.push_quad(
+                vertices,
+                indices,
+                modal_x,
+                modal_y,
+                modal_w,
+                1.0,
+                white_uv,
+                [0.25, 0.25, 0.3, 1.0],
+            );
+            self.push_quad(
+                vertices,
+                indices,
+                modal_x,
+                modal_y + modal_h - 1.0,
+                modal_w,
+                1.0,
+                white_uv,
+                [0.25, 0.25, 0.3, 1.0],
+            );
+            self.push_quad(
+                vertices,
+                indices,
+                modal_x,
+                modal_y,
+                1.0,
+                modal_h,
+                white_uv,
+                [0.25, 0.25, 0.3, 1.0],
+            );
+            self.push_quad(
+                vertices,
+                indices,
+                modal_x + modal_w - 1.0,
+                modal_y,
+                1.0,
+                modal_h,
+                white_uv,
+                [0.25, 0.25, 0.3, 1.0],
+            );
+
+            match modal {
+                ModalType::About => {
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "GARAGE CODE EDITOR",
+                        modal_x + 20.0,
+                        modal_y + 35.0,
+                        [0.0, 0.9, 0.8, 1.0], // Teal title
+                    );
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "A supercharged GPU-accelerated",
+                        modal_x + 20.0,
+                        modal_y + 70.0,
+                        [0.8, 0.8, 0.85, 1.0],
+                    );
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "text editor written in Rust.",
+                        modal_x + 20.0,
+                        modal_y + 95.0,
+                        [0.8, 0.8, 0.85, 1.0],
+                    );
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "Version: 0.1.0 (main)",
+                        modal_x + 20.0,
+                        modal_y + 130.0,
+                        [0.5, 0.5, 0.55, 1.0],
+                    );
+                }
+                ModalType::Settings => {
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "SETTINGS",
+                        modal_x + 20.0,
+                        modal_y + 35.0,
+                        [1.0, 1.0, 1.0, 1.0],
+                    );
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        " Font Size:  16.0 px",
+                        modal_x + 20.0,
+                        modal_y + 75.0,
+                        [0.8, 0.8, 0.85, 1.0],
+                    );
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        " Font Family: IBM Plex Mono",
+                        modal_x + 20.0,
+                        modal_y + 105.0,
+                        [0.8, 0.8, 0.85, 1.0],
+                    );
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        " Tab Width:   4 spaces",
+                        modal_x + 20.0,
+                        modal_y + 135.0,
+                        [0.8, 0.8, 0.85, 1.0],
+                    );
+                }
+            }
+
+            // Draw generic Close Button
+            let close_btn_hover = mouse_x >= modal_x + 140.0 && mouse_x <= modal_x + 260.0 && mouse_y >= modal_y + 180.0 && mouse_y <= modal_y + 215.0;
+            self.push_quad(
+                vertices,
+                indices,
+                modal_x + 140.0,
+                modal_y + 180.0,
+                120.0,
+                35.0,
+                white_uv,
+                if close_btn_hover { [0.18, 0.18, 0.22, 1.0] } else { [0.12, 0.12, 0.15, 1.0] },
+            );
+            self.push_quad(
+                vertices,
+                indices,
+                modal_x + 140.0,
+                modal_y + 180.0,
+                120.0,
+                1.0,
+                white_uv,
+                [0.25, 0.25, 0.3, 1.0],
+            );
+            self.push_quad(
+                vertices,
+                indices,
+                modal_x + 140.0,
+                modal_y + 214.0,
+                120.0,
+                1.0,
+                white_uv,
+                [0.25, 0.25, 0.3, 1.0],
+            );
+            self.push_quad(
+                vertices,
+                indices,
+                modal_x + 140.0,
+                modal_y + 180.0,
+                1.0,
+                35.0,
+                white_uv,
+                [0.25, 0.25, 0.3, 1.0],
+            );
+            self.push_quad(
+                vertices,
+                indices,
+                modal_x + 259.0,
+                modal_y + 180.0,
+                1.0,
+                35.0,
+                white_uv,
+                [0.25, 0.25, 0.3, 1.0],
+            );
+
+            self.push_str(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                "Close",
+                modal_x + 180.0,
+                modal_y + 203.0,
+                [0.85, 0.85, 0.9, 1.0],
+            );
         }
     }
 }
