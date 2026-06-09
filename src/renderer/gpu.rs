@@ -64,33 +64,72 @@ impl GpuContext {
     pub async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
 
-        // The instance is a handle to our GPU
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
-        
-        // Create the surface from the window.
-        // We use Arc<Window> to ensure the window outlives the surface.
-        let surface = instance.create_surface(window.clone()).expect("Failed to create surface");
+        // Helper to try creating surface, adapter, device, queue for a given instance and backend
+        async fn try_create(
+            window: &Arc<Window>,
+            backends: wgpu::Backends,
+            flags: wgpu::InstanceFlags,
+        ) -> Option<(wgpu::Surface<'static>, wgpu::Device, wgpu::Queue, wgpu::Adapter)> {
+            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                backends,
+                flags,
+                ..Default::default()
+            });
 
-        let adapter = instance.request_adapter(
-            &wgpu::RequestAdapterOptions {
+            let surface = instance.create_surface(window.clone()).ok()?;
+
+            let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
-            },
-        ).await.expect("Failed to find an appropriate adapter");
+            }).await?;
 
-        let (device, queue) = adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                label: None,
-                memory_hints: Default::default(),
-            },
-            None,
-        ).await.expect("Failed to create device");
+            let (device, queue) = adapter.request_device(
+                &wgpu::DeviceDescriptor {
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                    label: None,
+                    memory_hints: Default::default(),
+                },
+                None,
+            ).await.ok()?;
+
+            Some((surface, device, queue, adapter))
+        }
+
+        // Try Vulkan first (including non-compliant adapters for older GPUs/drivers)
+        let mut creation_result = try_create(
+            &window,
+            wgpu::Backends::VULKAN,
+            wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
+        ).await;
+
+        if creation_result.is_none() {
+            log::warn!("Failed to initialize Vulkan. Falling back to OpenGL/GL backend...");
+            // Try GL/GLES next
+            creation_result = try_create(
+                &window,
+                wgpu::Backends::GL,
+                wgpu::InstanceFlags::default(),
+            ).await;
+        }
+
+        if creation_result.is_none() {
+            log::warn!("Failed to initialize GL. Trying any available backend...");
+            // Try any backend with fallback allowed
+            creation_result = try_create(
+                &window,
+                wgpu::Backends::all(),
+                wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
+            ).await;
+        }
+
+        let (surface, device, queue, adapter) = creation_result.expect(
+            "Failed to find an appropriate adapter using Vulkan, GL, or any other backend."
+        );
+
+        let adapter_info = adapter.get_info();
+        log::warn!("Selected Graphics Backend: {:?}, Device: {}", adapter_info.backend, adapter_info.name);
 
         let surface_caps = surface.get_capabilities(&adapter);
         // Find an sRGB surface format
