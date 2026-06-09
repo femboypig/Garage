@@ -40,6 +40,7 @@ pub enum MenuType {
 pub enum ModalType {
     Settings,
     About,
+    CommandPalette,
 }
 
 pub struct FileNode {
@@ -90,6 +91,9 @@ pub struct UiState {
     pub last_blame_result: Option<String>,
     pub git_branch: Option<String>,
     pub last_branch_check: Option<std::time::Instant>,
+
+    pub command_palette_query: String,
+    pub command_palette_selected: usize,
 }
 
 impl UiState {
@@ -162,6 +166,8 @@ impl UiState {
             last_blame_result: None,
             git_branch: None,
             last_branch_check: None,
+            command_palette_query: String::new(),
+            command_palette_selected: 0,
         };
 
         state.rebuild_tree();
@@ -280,6 +286,7 @@ impl UiState {
             let modal_w = match modal {
                 ModalType::Settings => (45.0 * self.ui_char_width).max(500.0).round(),
                 ModalType::About => 400.0,
+                ModalType::CommandPalette => 550.0,
             };
             let modal_h = match modal {
                 ModalType::Settings => {
@@ -287,9 +294,13 @@ impl UiState {
                     (row_height * 8.2).max(430.0).round()
                 }
                 ModalType::About => 240.0,
+                ModalType::CommandPalette => 320.0,
             };
             let modal_x = ((width - modal_w) / 2.0).round();
-            let modal_y = ((height - modal_h) / 2.0).round();
+            let modal_y = match modal {
+                ModalType::CommandPalette => 100.0f32,
+                _ => ((height - modal_h) / 2.0).round(),
+            };
 
             let clicked_outside = mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h;
 
@@ -395,13 +406,30 @@ impl UiState {
                 }
             }
 
+            if modal == ModalType::CommandPalette {
+                let input_y = modal_y + 15.0;
+                let sep_y = input_y + self.ui_line_height + 15.0;
+                let list_y = sep_y + 1.0;
+                let item_height = (self.ui_line_height * 1.6).round().max(26.0);
+                
+                if mx >= modal_x && mx <= modal_x + modal_w && my >= list_y && my <= modal_y + modal_h {
+                    let idx = ((my - list_y) / item_height).floor() as usize;
+                    let filtered = self.get_filtered_commands();
+                    if idx < filtered.len() {
+                        let cmd = filtered[idx];
+                        self.active_modal = None;
+                        return self.execute_command(cmd, buffer, cursor);
+                    }
+                }
+            }
+
             // Check if clicked close button (centered horizontally)
             let btn_w = (12.0 * self.ui_char_width).max(100.0).round();
             let btn_h = (self.ui_line_height * 1.6).max(30.0).round();
             let btn_x = modal_x + ((modal_w - btn_w) / 2.0).round();
             let btn_y = modal_y + modal_h - btn_h - (self.ui_line_height * 1.0).round();
 
-            let inside_close_btn = mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+            let inside_close_btn = modal != ModalType::CommandPalette && mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
 
             if inside_close_btn || clicked_outside {
                 self.active_modal = None;
@@ -968,6 +996,69 @@ impl UiState {
         blame_res
     }
 
+    pub fn get_all_commands(&self) -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("Theme: Light Theme", "Switch to the Light Theme"),
+            ("Theme: Dark Theme", "Switch to the default Dark Theme"),
+            ("Theme: Dracula", "Switch to the Dracula Theme"),
+            ("Sidebar: Toggle Visibility", "Show or hide the file tree sidebar"),
+            ("Font Size: Increase Editor Font", "Increase the text size of the editor"),
+            ("Font Size: Decrease Editor Font", "Decrease the text size of the editor"),
+            ("Git Blame: Toggle Inline Annotations", "Enable/disable inline git blame"),
+            ("Git Branch: Toggle Branch Statusbar", "Enable/disable git branch status"),
+            ("Settings: Open settings modal", "Configure editor options"),
+            ("About: Open about dialog", "View editor information"),
+            ("Exit: Quit Garage", "Close the code editor"),
+        ]
+    }
+
+    pub fn get_filtered_commands(&self) -> Vec<(&'static str, &'static str)> {
+        let query = self.command_palette_query.to_lowercase();
+        if query.is_empty() {
+            return self.get_all_commands();
+        }
+        self.get_all_commands()
+            .into_iter()
+            .filter(|(name, desc)| {
+                name.to_lowercase().contains(&query) || desc.to_lowercase().contains(&query)
+            })
+            .collect()
+    }
+
+    pub fn execute_command(
+        &mut self,
+        cmd: (&'static str, &'static str),
+        _buffer: &mut Buffer,
+        _cursor: &mut Cursor,
+    ) -> UiAction {
+        match cmd.0 {
+            "Theme: Light Theme" => UiAction::ChangeTheme("Light Theme".to_string()),
+            "Theme: Dark Theme" => UiAction::ChangeTheme("Dark Theme".to_string()),
+            "Theme: Dracula" => UiAction::ChangeTheme("Dracula".to_string()),
+            "Sidebar: Toggle Visibility" => UiAction::ToggleSidebar,
+            "Font Size: Increase Editor Font" => UiAction::ChangeBufferFontSize(1.0),
+            "Font Size: Decrease Editor Font" => UiAction::ChangeBufferFontSize(-1.0),
+            "Git Blame: Toggle Inline Annotations" => {
+                let enabled = !self.config.show_git_blame;
+                UiAction::ChangeGitBlame(enabled)
+            }
+            "Git Branch: Toggle Branch Statusbar" => {
+                let enabled = !self.config.show_git_branch;
+                UiAction::ChangeGitBranch(enabled)
+            }
+            "Settings: Open settings modal" => {
+                self.active_modal = Some(ModalType::Settings);
+                UiAction::None
+            }
+            "About: Open about dialog" => {
+                self.active_modal = Some(ModalType::About);
+                UiAction::None
+            }
+            "Exit: Quit Garage" => UiAction::Exit,
+            _ => UiAction::None,
+        }
+    }
+
     /// Build entire UI frame (Titlebar, Sidebar, Scrollbar, Dropdowns, Modals)
     pub fn build_frame(
         &mut self,
@@ -1010,10 +1101,10 @@ impl UiState {
         let text_area_x = activity_bar_width + self.sidebar_width + gutter_width;
         
         let scrollbar_width = 12.0;
-        let minimap_width = 80.0f32;
-        let minimap_x = width - minimap_width;
-        let sb_x = minimap_x - scrollbar_width;
-        let text_viewport_w = sb_x - text_area_x;
+        let minimap_width = 100.0f32;
+        let sb_x = width - scrollbar_width;
+        let minimap_x = sb_x - minimap_width;
+        let text_viewport_w = minimap_x - text_area_x;
 
         let editor_y = main_y + self.tabbar_height + self.breadcrumb_height;
         let editor_height = main_height - self.tabbar_height - self.breadcrumb_height;
@@ -1583,20 +1674,20 @@ impl UiState {
         }
 
         // --- 4. Draw Scrollbar ---
-        let is_sb_hovered = self.active_modal.is_none() && mouse_x >= sb_x && mouse_x < minimap_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
+        let is_sb_hovered = self.active_modal.is_none() && mouse_x >= sb_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
 
-        // Scrollbar Track background
+        // Scrollbar Track background (inset by 2px top and bottom)
         self.push_quad(
             vertices,
             indices,
             sb_x,
-            editor_y,
+            editor_y + 2.0,
             scrollbar_width,
-            editor_height,
+            editor_height - 4.0,
             white_uv,
             self.config.theme.scrollbar_track,
         );
-        // Vertical track separator
+        // Vertical track separator (left of scrollbar)
         self.push_quad(
             vertices,
             indices,
@@ -1608,11 +1699,12 @@ impl UiState {
             self.config.theme.scrollbar_border,
         );
 
+        let track_h = editor_height - 4.0;
         let ratio = visible_lines as f32 / buffer.len() as f32;
-        let thumb_h = (editor_height * ratio).clamp(20.0, editor_height);
+        let thumb_h = (track_h * ratio).clamp(20.0, track_h);
         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
         let scroll_ratio = if max_scroll > 0.0 { self.scroll_y as f32 / max_scroll } else { 0.0 };
-        let thumb_y = editor_y + scroll_ratio * (editor_height - thumb_h);
+        let thumb_y = editor_y + 2.0 + scroll_ratio * (track_h - thumb_h);
 
         let thumb_color = if is_sb_hovered {
             self.config.theme.scrollbar_thumb_hover
@@ -1632,7 +1724,7 @@ impl UiState {
             thumb_color,
         );
 
-        // --- 4.5. Draw Minimap (on the right edge) ---
+        // --- 4.5. Draw Minimap ---
         // Draw Minimap Track background
         self.push_quad(
             vertices,
@@ -1644,7 +1736,7 @@ impl UiState {
             white_uv,
             self.config.theme.editor_bg,
         );
-        // Vertical border separating scrollbar and minimap
+        // Vertical border separating editor and minimap
         self.push_quad(
             vertices,
             indices,
@@ -2014,6 +2106,7 @@ impl UiState {
             let modal_w = match modal {
                 ModalType::Settings => (45.0 * self.ui_char_width).max(500.0).round(),
                 ModalType::About => 400.0,
+                ModalType::CommandPalette => 550.0,
             };
             let modal_h = match modal {
                 ModalType::Settings => {
@@ -2021,9 +2114,13 @@ impl UiState {
                     (row_height * 8.2).max(430.0).round()
                 }
                 ModalType::About => 240.0,
+                ModalType::CommandPalette => 320.0,
             };
             let modal_x = ((width - modal_w) / 2.0).round();
-            let modal_y = ((height - modal_h) / 2.0).round();
+            let modal_y = match modal {
+                ModalType::CommandPalette => 100.0f32,
+                _ => ((height - modal_h) / 2.0).round(),
+            };
 
             // Draw Modal Box Background
             self.push_quad(
@@ -2079,6 +2176,125 @@ impl UiState {
             );
 
             match modal {
+                ModalType::CommandPalette => {
+                    let input_y = modal_y + 15.0;
+                    let prefix = "> ";
+                    let mut input_text = prefix.to_string();
+                    input_text.push_str(&self.command_palette_query);
+                    
+                    let text_color = self.config.theme.modal_text_normal;
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        &input_text,
+                        modal_x + 20.0,
+                        (input_y + self.ui_font_ascent).round(),
+                        text_color,
+                        self.ui_font_size,
+                        self.ui_char_width,
+                    );
+
+                    // Draw caret in the input box
+                    let query_len = prefix.chars().count() + self.command_palette_query.chars().count();
+                    let caret_x = modal_x + 20.0 + query_len as f32 * self.ui_char_width;
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        caret_x,
+                        input_y + 2.0,
+                        2.0,
+                        self.ui_line_height - 4.0,
+                        white_uv,
+                        self.config.theme.cursor_color,
+                    );
+
+                    // Draw horizontal separator below input
+                    let sep_y = input_y + self.ui_line_height + 15.0;
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        modal_x,
+                        sep_y,
+                        modal_w,
+                        1.0,
+                        white_uv,
+                        self.config.theme.modal_border,
+                    );
+
+                    // Draw Filtered List of Commands
+                    let list_y = sep_y + 1.0;
+                    let item_height = (self.ui_line_height * 1.6).round().max(26.0);
+                    let max_visible_items = ((modal_y + modal_h - 15.0 - list_y) / item_height).floor() as usize;
+
+                    let filtered = self.get_filtered_commands();
+                    for idx in 0..filtered.len().min(max_visible_items) {
+                        let item = filtered[idx];
+                        let item_y = list_y + idx as f32 * item_height;
+                        let is_selected = idx == self.command_palette_selected;
+
+                        // Highlight selected command row
+                        if is_selected {
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                modal_x + 1.0,
+                                item_y,
+                                modal_w - 2.0,
+                                item_height,
+                                white_uv,
+                                self.config.theme.sidebar_hover_bg,
+                            );
+                        }
+
+                        // Left text: display name
+                        let display_name = item.0;
+                        let item_text_color = if is_selected {
+                            self.config.theme.modal_text_title
+                        } else {
+                            self.config.theme.modal_text_normal
+                        };
+
+                        self.push_str(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            display_name,
+                            modal_x + 20.0,
+                            (item_y + item_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
+                            item_text_color,
+                            self.ui_font_size,
+                            self.ui_char_width,
+                        );
+
+                        // Right text: description (if room fits)
+                        let desc = item.1;
+                        let desc_color = self.config.theme.modal_text_muted;
+                        let desc_len = desc.chars().count() as f32;
+                        let desc_w = desc_len * self.ui_char_width;
+                        let desc_x = modal_x + modal_w - 20.0 - desc_w;
+                        
+                        let name_len = display_name.chars().count() as f32;
+                        let name_w = name_len * self.ui_char_width;
+                        
+                        if desc_x > modal_x + name_w + 40.0 {
+                            self.push_str(
+                                vertices,
+                                indices,
+                                atlas,
+                                queue,
+                                desc,
+                                desc_x,
+                                (item_y + item_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
+                                desc_color,
+                                self.ui_font_size,
+                                self.ui_char_width,
+                            );
+                        }
+                    }
+                }
                 ModalType::About => {
                     self.push_str(
                         vertices,
@@ -2401,46 +2617,48 @@ impl UiState {
                 }
             }
 
-            // Draw generic Close Button (centered horizontally)
-            let btn_w = (12.0 * self.ui_char_width).max(100.0).round();
-            let btn_h = (self.ui_line_height * 1.6).max(30.0).round();
-            let btn_x = modal_x + ((modal_w - btn_w) / 2.0).round();
-            let btn_y = modal_y + modal_h - btn_h - (self.ui_line_height * 1.0).round();
+            if modal != ModalType::CommandPalette {
+                // Draw generic Close Button (centered horizontally)
+                let btn_w = (12.0 * self.ui_char_width).max(100.0).round();
+                let btn_h = (self.ui_line_height * 1.6).max(30.0).round();
+                let btn_x = modal_x + ((modal_w - btn_w) / 2.0).round();
+                let btn_y = modal_y + modal_h - btn_h - (self.ui_line_height * 1.0).round();
 
-            let close_btn_hover = mouse_x >= btn_x && mouse_x <= btn_x + btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h;
-            self.push_quad(
-                vertices,
-                indices,
-                btn_x,
-                btn_y,
-                btn_w,
-                btn_h,
-                white_uv,
-                if close_btn_hover { self.config.theme.button_hover_bg } else { self.config.theme.button_bg },
-            );
-            // Draw borders
-            self.push_quad(vertices, indices, btn_x, btn_y, btn_w, 1.0, white_uv, self.config.theme.button_border);
-            self.push_quad(vertices, indices, btn_x, btn_y + btn_h - 1.0, btn_w, 1.0, white_uv, self.config.theme.button_border);
-            self.push_quad(vertices, indices, btn_x, btn_y, 1.0, btn_h, white_uv, self.config.theme.button_border);
-            self.push_quad(vertices, indices, btn_x + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, self.config.theme.button_border);
+                let close_btn_hover = mouse_x >= btn_x && mouse_x <= btn_x + btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h;
+                self.push_quad(
+                    vertices,
+                    indices,
+                    btn_x,
+                    btn_y,
+                    btn_w,
+                    btn_h,
+                    white_uv,
+                    if close_btn_hover { self.config.theme.button_hover_bg } else { self.config.theme.button_bg },
+                );
+                // Draw borders
+                self.push_quad(vertices, indices, btn_x, btn_y, btn_w, 1.0, white_uv, self.config.theme.button_border);
+                self.push_quad(vertices, indices, btn_x, btn_y + btn_h - 1.0, btn_w, 1.0, white_uv, self.config.theme.button_border);
+                self.push_quad(vertices, indices, btn_x, btn_y, 1.0, btn_h, white_uv, self.config.theme.button_border);
+                self.push_quad(vertices, indices, btn_x + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, self.config.theme.button_border);
 
-            let close_text = "Close";
-            let close_text_w = close_text.chars().count() as f32 * self.ui_char_width;
-            let close_text_x = btn_x + ((btn_w - close_text_w) / 2.0).round();
-            let close_text_y = (btn_y + btn_h / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
+                let close_text = "Close";
+                let close_text_w = close_text.chars().count() as f32 * self.ui_char_width;
+                let close_text_x = btn_x + ((btn_w - close_text_w) / 2.0).round();
+                let close_text_y = (btn_y + btn_h / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
 
-            self.push_str(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                close_text,
-                close_text_x,
-                close_text_y,
-                self.config.theme.button_text,
-                self.ui_font_size,
-                self.ui_char_width,
-            );
+                self.push_str(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    close_text,
+                    close_text_x,
+                    close_text_y,
+                    self.config.theme.button_text,
+                    self.ui_font_size,
+                    self.ui_char_width,
+                );
+            }
         }
     }
 }
