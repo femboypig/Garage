@@ -149,6 +149,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         mouse_x,
                         mouse_y,
                         gpu.as_ref().unwrap().backend,
+                        save_path.as_deref(),
                     );
 
                     // Update cursor icon when screen redraws
@@ -556,8 +557,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         return;
                     }
                     let scroll_lines = match delta {
-                        MouseScrollDelta::LineDelta(_, dy) => -dy as isize,
-                        MouseScrollDelta::PixelDelta(pos) => (pos.y / (ui.buffer_line_height as f64)) as isize * -1,
+                        MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
+                        MouseScrollDelta::PixelDelta(pos) => ((pos.y / (ui.buffer_line_height as f64)) * 3.0) as isize * -1,
                     };
 
                     let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
