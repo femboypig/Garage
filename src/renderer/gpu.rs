@@ -96,10 +96,16 @@ impl GpuContext {
 
             let adapter = adapter?;
 
+            let required_limits = if backends == wgpu::Backends::GL {
+                wgpu::Limits::downlevel_webgl2_defaults()
+            } else {
+                wgpu::Limits::default()
+            };
+
             let (device, queue) = adapter.request_device(
                 &wgpu::DeviceDescriptor {
                     required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
+                    required_limits,
                     label: None,
                     memory_hints: Default::default(),
                 },
