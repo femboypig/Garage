@@ -165,7 +165,7 @@ impl UiState {
         cursor: &mut Cursor,
     ) -> UiAction {
         // If a modal is open, any click outside the modal boundaries or on modal buttons closes it
-        if let Some(modal) = self.active_modal {
+        if let Some(_modal) = self.active_modal {
             let modal_w = 400.0;
             let modal_h = 240.0;
             let modal_x = (width - modal_w) / 2.0;
@@ -466,7 +466,7 @@ impl UiState {
         
         let scrollbar_width = 12.0;
         // Text viewport width is limited by scrollbar
-        let text_viewport_w = width - text_area_x - scrollbar_width;
+        let _text_viewport_w = width - text_area_x - scrollbar_width;
 
         // Ensure vertical scrolling viewport matches active cursor position
         let visible_lines = (main_height / self.line_height).floor() as usize;
