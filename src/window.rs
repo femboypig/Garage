@@ -81,9 +81,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
         let size = window.inner_size();
         let max_line_digits = buffer.len().to_string().len().max(3);
         let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
-        let text_area_x = ui.sidebar_width + gutter_width;
+        let text_area_x = 48.0 + ui.sidebar_width + gutter_width;
         
-        let on_sidebar_border = ui.sidebar_width > 0.0 && (mouse_x - ui.sidebar_width).abs() <= 4.0;
+        let on_sidebar_border = ui.sidebar_width > 0.0 && (mouse_x - (48.0 + ui.sidebar_width)).abs() <= 4.0;
         
         if on_sidebar_border {
             window.set_cursor_icon(winit::window::CursorIcon::ColResize);
@@ -171,7 +171,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     let size = window.inner_size();
 
                     if is_dragging_sidebar {
-                        let new_width = if mouse_x < 30.0 { 0.0 } else { mouse_x.clamp(50.0, 600.0) };
+                        let new_width_full = mouse_x - 48.0;
+                        let new_width = if new_width_full < 30.0 { 0.0 } else { new_width_full.clamp(50.0, 600.0) };
                         ui.sidebar_width = new_width;
                         ui.target_sidebar_width = new_width;
                     } else if is_dragging_scroll {
@@ -188,7 +189,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     } else if is_dragging {
                         let max_line_digits = buffer.len().to_string().len().max(3);
                         let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
-                        let text_area_x = ui.sidebar_width + gutter_width;
+                        let text_area_x = 48.0 + ui.sidebar_width + gutter_width;
 
                         let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
                         let line_idx = if mouse_y >= editor_top {
@@ -316,10 +317,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     _ => {}
                                 }
                             } else {
-                                // Check if click is on sidebar resize border
-                                let on_sidebar_border = ui.sidebar_width > 0.0 && (mouse_x - ui.sidebar_width).abs() <= 4.0;
-                                if on_sidebar_border {
-                                    is_dragging_sidebar = true;
+                                 // Check if click is on sidebar resize border
+                                 let on_sidebar_border = ui.sidebar_width > 0.0 && (mouse_x - (48.0 + ui.sidebar_width)).abs() <= 4.0;
+                                 if on_sidebar_border {
+                                     is_dragging_sidebar = true;
                                 } else {
                                     let action = ui.handle_click(
                                         mouse_x,
@@ -498,7 +499,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 // Click inside editor area
                                                 let max_line_digits = buffer.len().to_string().len().max(3);
                                                 let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
-                                                let text_area_x = ui.sidebar_width + gutter_width;
+                                                let text_area_x = 48.0 + ui.sidebar_width + gutter_width;
 
                                                 if mouse_x >= text_area_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
                                                     buffer.commit_transaction();
