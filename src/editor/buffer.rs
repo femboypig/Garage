@@ -136,7 +136,7 @@ impl Buffer {
         let left = &cur_line[..byte_idx];
         let right = &cur_line[byte_idx..];
 
-        let mut parts = text.split('\n').collect::<Vec<&str>>();
+        let parts = text.split('\n').collect::<Vec<&str>>();
         if parts.len() == 1 {
             // Single line insert
             let new_line = format!("{}{}{}", left, parts[0], right);
