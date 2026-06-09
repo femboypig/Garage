@@ -513,9 +513,9 @@ impl UiState {
         let main_y = self.titlebar_height;
         if my >= main_y && my < main_y + self.tabbar_height {
             let control_btns_raw = [
-                ("assets/icons/info.svg", UiAction::ShowAbout),
-                ("assets/icons/settings.svg", UiAction::ShowSettings),
-                ("assets/icons/magnifying_glass.svg", UiAction::None),
+                ("info", UiAction::ShowAbout),
+                ("settings", UiAction::ShowSettings),
+                ("search", UiAction::None),
             ];
             let icon_sz = (self.ui_font_size * 1.1).round().max(14.0);
             let item_w = icon_sz + 16.0;
@@ -1230,9 +1230,9 @@ impl UiState {
 
                     let is_expanded = self.expanded_dirs.contains(&node.path);
                     let icon_path = if is_expanded {
-                        "assets/icons/folder_open.svg"
+                        "folder_open"
                     } else {
-                        "assets/icons/folder.svg"
+                        "folder"
                     };
 
                     self.push_icon(
@@ -1250,11 +1250,11 @@ impl UiState {
                     // Check file extension for specific icon types and colors
                     let ext = node.path.extension().and_then(|e| e.to_str()).unwrap_or("");
                     let (icon_path, icon_color) = match ext {
-                        "rs" => ("assets/icons/file_icons/rust.svg", [0.87, 0.29, 0.15, 1.0]), // Rust red-orange
-                        "toml" => ("assets/icons/file_icons/toml.svg", [0.65, 0.53, 0.43, 1.0]), // TOML beige
-                        "json" => ("assets/icons/json.svg", [0.8, 0.68, 0.0, 1.0]), // JSON yellow
-                        "md" => ("assets/icons/file_markdown.svg", [0.26, 0.53, 0.79, 1.0]), // Markdown blue
-                        _ => ("assets/icons/file.svg", text_color),
+                        "rs" => ("rust", [0.87, 0.29, 0.15, 1.0]), // Rust red-orange
+                        "toml" => ("toml", [0.65, 0.53, 0.43, 1.0]), // TOML beige
+                        "json" => ("json", [0.8, 0.68, 0.0, 1.0]), // JSON yellow
+                        "md" => ("md", [0.26, 0.53, 0.79, 1.0]), // Markdown blue
+                        _ => ("file", text_color),
                     };
 
                     let file_sz = (self.ui_char_width * 1.4).round().max(12.0);
@@ -1370,9 +1370,9 @@ impl UiState {
         // Draw control buttons on the right of the tab bar
         // Layout buttons: Search, Settings, About from right to left using SVG icons
         let control_btns_raw = [
-            ("assets/icons/info.svg", UiAction::ShowAbout),
-            ("assets/icons/settings.svg", UiAction::ShowSettings),
-            ("assets/icons/magnifying_glass.svg", UiAction::None),
+            ("info", UiAction::ShowAbout),
+            ("settings", UiAction::ShowSettings),
+            ("search", UiAction::None),
         ];
 
         let icon_sz = (self.ui_font_size * 1.1).round().max(14.0);
@@ -1720,7 +1720,7 @@ impl UiState {
                 indices,
                 atlas,
                 queue,
-                "assets/icons/git_branch.svg",
+                "branch",
                 pen_x,
                 icon_y,
                 text_color,
