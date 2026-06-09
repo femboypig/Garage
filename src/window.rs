@@ -23,6 +23,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
         WindowBuilder::new()
             .with_title("Garage")
             .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
+            .with_transparent(true)
             .build(&event_loop)?,
     );
 
@@ -285,6 +286,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         let new_win_res = WindowBuilder::new()
                             .with_title("Garage")
                             .with_inner_size(current_size)
+                            .with_transparent(true)
                             .build(elwt);
                         match new_win_res {
                             Ok(w) => {
