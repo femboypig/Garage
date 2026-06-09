@@ -1,0 +1,427 @@
+use std::fs::File;
+use std::io::{self, BufRead, BufReader, Write};
+use std::path::Path;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Action {
+    Insert {
+        line: usize,
+        col: usize,
+        text: String,
+    },
+    Delete {
+        line: usize,
+        col: usize,
+        text: String,
+    },
+}
+
+pub struct Buffer {
+    lines: Vec<String>,
+    undo_stack: Vec<Vec<Action>>,
+    redo_stack: Vec<Vec<Action>>,
+    current_transaction: Option<Vec<Action>>,
+}
+
+impl Buffer {
+    /// Create a new, empty Buffer with at least one empty line.
+    pub fn new() -> Self {
+        Self {
+            lines: vec![String::new()],
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            current_transaction: None,
+        }
+    }
+
+    /// Load a file into the buffer.
+    pub fn load_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let mut loaded_lines = Vec::new();
+
+        for line in reader.lines() {
+            loaded_lines.push(line?);
+        }
+
+        if loaded_lines.is_empty() {
+            loaded_lines.push(String::new());
+        }
+
+        self.lines = loaded_lines;
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+        self.current_transaction = None;
+        Ok(())
+    }
+
+    /// Save the buffer contents to a file.
+    pub fn save_file<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
+        let mut file = File::create(path)?;
+        for (i, line) in self.lines.iter().enumerate() {
+            file.write_all(line.as_bytes())?;
+            if i < self.lines.len() - 1 {
+                file.write_all(b"\n")?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Get a reference to the lines of text.
+    pub fn lines(&self) -> &[String] {
+        &self.lines
+    }
+
+    /// Get the number of lines in the buffer.
+    pub fn len(&self) -> usize {
+        self.lines.len()
+    }
+
+    /// Check if the buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.lines.len() == 1 && self.lines[0].is_empty()
+    }
+
+    /// Start a group of edits that should be undone/redone together.
+    pub fn start_transaction(&mut self) {
+        if self.current_transaction.is_none() {
+            self.current_transaction = Some(Vec::new());
+        }
+    }
+
+    /// Commit the current group of edits.
+    pub fn commit_transaction(&mut self) {
+        if let Some(tx) = self.current_transaction.take() {
+            if !tx.is_empty() {
+                self.undo_stack.push(tx);
+                self.redo_stack.clear();
+            }
+        }
+    }
+
+    /// Insert text at a specific line and column.
+    pub fn insert(&mut self, line: usize, col: usize, text: &str) {
+        if line >= self.lines.len() {
+            return;
+        }
+
+        // Keep track of the edit in the current transaction
+        let action = Action::Insert {
+            line,
+            col,
+            text: text.to_string(),
+        };
+        if let Some(ref mut tx) = self.current_transaction {
+            tx.push(action);
+        } else {
+            self.undo_stack.push(vec![action]);
+            self.redo_stack.clear();
+        }
+
+        self.insert_raw(line, col, text);
+    }
+
+    /// Perform raw insertion without touching undo/redo stacks.
+    fn insert_raw(&mut self, line: usize, col: usize, text: &str) {
+        let cur_line = &mut self.lines[line];
+        
+        // Clamp column to line boundaries
+        let col = col.min(cur_line.chars().count());
+        let byte_idx = cur_line
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(col)
+            .unwrap_or(cur_line.len());
+
+        let left = &cur_line[..byte_idx];
+        let right = &cur_line[byte_idx..];
+
+        let mut parts = text.split('\n').collect::<Vec<&str>>();
+        if parts.len() == 1 {
+            // Single line insert
+            let new_line = format!("{}{}{}", left, parts[0], right);
+            self.lines[line] = new_line;
+        } else {
+            // Multi-line insert
+            let first_line = format!("{}{}", left, parts[0]);
+            let last_line = format!("{}{}", parts.last().unwrap(), right);
+
+            self.lines[line] = first_line;
+
+            // Insert middle lines
+            let mut insert_idx = line + 1;
+            for mid in &parts[1..parts.len() - 1] {
+                self.lines.insert(insert_idx, mid.to_string());
+                insert_idx += 1;
+            }
+            self.lines.insert(insert_idx, last_line);
+        }
+    }
+
+    /// Delete text from start coordinates to end coordinates.
+    /// Returns the deleted text.
+    pub fn delete(&mut self, start_line: usize, start_col: usize, end_line: usize, end_col: usize) -> String {
+        let (s_line, s_col, e_line, e_col) = self.normalize_range(start_line, start_col, end_line, end_col);
+
+        let deleted_text = self.get_range_text(s_line, s_col, e_line, e_col);
+
+        let action = Action::Delete {
+            line: s_line,
+            col: s_col,
+            text: deleted_text.clone(),
+        };
+
+        if let Some(ref mut tx) = self.current_transaction {
+            tx.push(action);
+        } else {
+            self.undo_stack.push(vec![action]);
+            self.redo_stack.clear();
+        }
+
+        self.delete_raw(s_line, s_col, e_line, e_col);
+        deleted_text
+    }
+
+    /// Perform raw deletion without touching undo/redo stacks.
+    fn delete_raw(&mut self, start_line: usize, start_col: usize, end_line: usize, end_col: usize) {
+        if start_line >= self.lines.len() || end_line >= self.lines.len() {
+            return;
+        }
+
+        let start_byte = self.char_to_byte_idx(start_line, start_col);
+        let end_byte = self.char_to_byte_idx(end_line, end_col);
+
+        if start_line == end_line {
+            let line_text = &self.lines[start_line];
+            let new_text = format!("{}{}", &line_text[..start_byte], &line_text[end_byte..]);
+            self.lines[start_line] = new_text;
+        } else {
+            let first_line_text = &self.lines[start_line];
+            let last_line_text = &self.lines[end_line];
+
+            let new_first = format!("{}{}", &first_line_text[..start_byte], &last_line_text[end_byte..]);
+            self.lines[start_line] = new_first;
+
+            // Remove middle and end lines
+            self.lines.drain((start_line + 1)..=end_line);
+        }
+
+        if self.lines.is_empty() {
+            self.lines.push(String::new());
+        }
+    }
+
+    /// Undo the last transaction. Returns true if successful.
+    pub fn undo(&mut self) -> bool {
+        if let Some(tx) = self.undo_stack.pop() {
+            let mut redo_tx = Vec::new();
+            // Apply in reverse order
+            for action in tx.iter().rev() {
+                match action {
+                    Action::Insert { line, col, text } => {
+                        let lines_count = text.split('\n').count();
+                        let end_line = line + lines_count - 1;
+                        let end_col = if lines_count == 1 {
+                            col + text.chars().count()
+                        } else {
+                            text.split('\n').last().unwrap().chars().count()
+                        };
+                        self.delete_raw(*line, *col, end_line, end_col);
+                        redo_tx.push(Action::Delete {
+                            line: *line,
+                            col: *col,
+                            text: text.clone(),
+                        });
+                    }
+                    Action::Delete { line, col, text } => {
+                        self.insert_raw(*line, *col, text);
+                        redo_tx.push(Action::Insert {
+                            line: *line,
+                            col: *col,
+                            text: text.clone(),
+                        });
+                    }
+                }
+            }
+            self.redo_stack.push(redo_tx);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Redo the last undone transaction. Returns true if successful.
+    pub fn redo(&mut self) -> bool {
+        if let Some(tx) = self.redo_stack.pop() {
+            let mut undo_tx = Vec::new();
+            // Apply in reverse order
+            for action in tx.iter().rev() {
+                match action {
+                    Action::Insert { line, col, text } => {
+                        let lines_count = text.split('\n').count();
+                        let end_line = line + lines_count - 1;
+                        let end_col = if lines_count == 1 {
+                            col + text.chars().count()
+                        } else {
+                            text.split('\n').last().unwrap().chars().count()
+                        };
+                        self.delete_raw(*line, *col, end_line, end_col);
+                        undo_tx.push(Action::Delete {
+                            line: *line,
+                            col: *col,
+                            text: text.clone(),
+                        });
+                    }
+                    Action::Delete { line, col, text } => {
+                        self.insert_raw(*line, *col, text);
+                        undo_tx.push(Action::Insert {
+                            line: *line,
+                            col: *col,
+                            text: text.clone(),
+                        });
+                    }
+                }
+            }
+            self.undo_stack.push(undo_tx);
+            true
+        } else {
+            false
+        }
+    }
+
+    // --- Helper Methods ---
+
+    /// Helper to convert character index to byte index in a specific line.
+    fn char_to_byte_idx(&self, line: usize, char_col: usize) -> usize {
+        let line_text = &self.lines[line];
+        line_text
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(char_col)
+            .unwrap_or(line_text.len())
+    }
+
+    /// Ensure start comes before end.
+    fn normalize_range(
+        &self,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+    ) -> (usize, usize, usize, usize) {
+        if start_line < end_line {
+            (start_line, start_col, end_line, end_col)
+        } else if start_line > end_line {
+            (end_line, end_col, start_line, start_col)
+        } else {
+            (start_line, start_col.min(end_col), start_line, start_col.max(end_col))
+        }
+    }
+
+    /// Retrieve the text within a specific coordinate range.
+    pub fn get_range_text(&self, start_line: usize, start_col: usize, end_line: usize, end_col: usize) -> String {
+        let (s_line, s_col, e_line, e_col) = self.normalize_range(start_line, start_col, end_line, end_col);
+
+        if s_line >= self.lines.len() {
+            return String::new();
+        }
+
+        let s_byte = self.char_to_byte_idx(s_line, s_col);
+        let e_byte = self.char_to_byte_idx(e_line, e_col);
+
+        if s_line == e_line {
+            self.lines[s_line][s_byte..e_byte].to_string()
+        } else {
+            let mut result = String::new();
+            result.push_str(&self.lines[s_line][s_byte..]);
+            result.push('\n');
+
+            for line in &self.lines[(s_line + 1)..e_line] {
+                result.push_str(line);
+                result.push('\n');
+            }
+
+            result.push_str(&self.lines[e_line][..e_byte]);
+            result
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_insert_single_line() {
+        let mut buf = Buffer::new();
+        buf.insert(0, 0, "Hello");
+        assert_eq!(buf.lines(), &["Hello".to_string()]);
+
+        buf.insert(0, 5, " World");
+        assert_eq!(buf.lines(), &["Hello World".to_string()]);
+
+        buf.insert(0, 5, ",");
+        assert_eq!(buf.lines(), &["Hello, World".to_string()]);
+    }
+
+    #[test]
+    fn test_insert_multi_line() {
+        let mut buf = Buffer::new();
+        buf.insert(0, 0, "Hello\nWorld\nRust");
+        assert_eq!(
+            buf.lines(),
+            &[
+                "Hello".to_string(),
+                "World".to_string(),
+                "Rust".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_delete_single_line() {
+        let mut buf = Buffer::new();
+        buf.insert(0, 0, "Hello World");
+        let deleted = buf.delete(0, 5, 0, 11);
+        assert_eq!(deleted, " World");
+        assert_eq!(buf.lines(), &["Hello".to_string()]);
+    }
+
+    #[test]
+    fn test_delete_multi_line() {
+        let mut buf = Buffer::new();
+        buf.insert(0, 0, "Hello\nWorld\nRust");
+        let deleted = buf.delete(0, 3, 2, 2);
+        assert_eq!(deleted, "lo\nWorld\nRu");
+        assert_eq!(buf.lines(), &["Helst".to_string()]);
+    }
+
+    #[test]
+    fn test_undo_redo() {
+        let mut buf = Buffer::new();
+        buf.insert(0, 0, "Hello");
+        assert_eq!(buf.lines(), &["Hello".to_string()]);
+
+        buf.undo();
+        assert_eq!(buf.lines(), &["".to_string()]);
+
+        buf.redo();
+        assert_eq!(buf.lines(), &["Hello".to_string()]);
+    }
+
+    #[test]
+    fn test_transaction() {
+        let mut buf = Buffer::new();
+        buf.start_transaction();
+        buf.insert(0, 0, "H");
+        buf.insert(0, 1, "e");
+        buf.insert(0, 2, "l");
+        buf.insert(0, 3, "l");
+        buf.insert(0, 4, "o");
+        buf.commit_transaction();
+
+        assert_eq!(buf.lines(), &["Hello".to_string()]);
+        buf.undo();
+        assert_eq!(buf.lines(), &["".to_string()]);
+    }
+}
