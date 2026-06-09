@@ -1406,19 +1406,28 @@ impl UiState {
                 icon_sz,
             );
 
-            // Draw root folder name text
-            self.push_str(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                &root_name,
-                root_text_x,
-                root_text_baseline,
-                self.config.theme.sidebar_text_dir,
-                self.ui_font_size,
-                self.ui_char_width,
-            );
+            // Draw root folder name text (clipped to sidebar width)
+            {
+                let max_x = activity_bar_width + self.sidebar_width - 4.0;
+                let mut current_x = root_text_x;
+                for c in root_name.chars() {
+                    if current_x + self.ui_char_width > max_x {
+                        break;
+                    }
+                    current_x += self.push_char(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        c,
+                        current_x,
+                        root_text_baseline,
+                        self.config.theme.sidebar_text_dir,
+                        self.ui_font_size,
+                        self.ui_char_width,
+                    );
+                }
+            }
 
             // Draw line from root icon down to children if there are visible nodes
             if !self.visible_nodes.is_empty() {
@@ -1571,18 +1580,28 @@ impl UiState {
                 }
 
                 let text_x = icon_x + icon_sz + (self.ui_char_width * 0.6).round().max(4.0);
-                self.push_str(
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    &node.name,
-                    text_x,
-                    text_baseline,
-                    text_color,
-                    self.ui_font_size,
-                    self.ui_char_width,
-                );
+                // Draw file/directory name text (clipped to sidebar width)
+                {
+                    let max_x = activity_bar_width + self.sidebar_width - 4.0;
+                    let mut current_x = text_x;
+                    for c in node.name.chars() {
+                        if current_x + self.ui_char_width > max_x {
+                            break;
+                        }
+                        current_x += self.push_char(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            c,
+                            current_x,
+                            text_baseline,
+                            text_color,
+                            self.ui_font_size,
+                            self.ui_char_width,
+                        );
+                    }
+                }
             }
         }
 
@@ -1964,7 +1983,7 @@ impl UiState {
                     let mut blame_pen_x = pen_x + self.buffer_char_width * 4.0;
                     let blame_width = blame_str.chars().count() as f32 * self.buffer_char_width;
                     if blame_pen_x + blame_width > minimap_x {
-                        blame_pen_x = (minimap_x - blame_width - 8.0).max(pen_x + self.buffer_char_width * 2.0);
+                        blame_pen_x = (minimap_x - blame_width - 8.0).max(text_area_x + self.buffer_char_width * 2.0);
                     }
                     for c in blame_str.chars() {
                         if blame_pen_x + self.buffer_char_width > minimap_x {
