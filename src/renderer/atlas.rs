@@ -230,12 +230,13 @@ impl FontAtlas {
 
         // Parse and render SVG
         let opt = resvg::usvg::Options::default();
-        let tree = resvg::usvg::Tree::from_str(svg_content, &opt)
+        let mut tree = resvg::usvg::Tree::from_str(svg_content, &opt)
             .map_err(|e| {
                 log::warn!("Failed to parse embedded SVG icon '{}': {:?}", icon_name, e);
                 e
             })
             .ok()?;
+        tree.calculate_bounding_boxes();
 
         let w = size_key;
         let h = size_key;
