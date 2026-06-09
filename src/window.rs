@@ -27,7 +27,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     );
 
     // Initialize wgpu rendering context and pipeline synchronously
-    let mut gpu = pollster::block_on(GpuContext::new(window.clone()));
+    let mut gpu = pollster::block_on(GpuContext::new(window.clone(), None));
 
     // Load bundled IBM Plex Mono font bytes
     let font_bytes = include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf");
@@ -60,7 +60,29 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let mut modifiers = winit::keyboard::ModifiersState::default();
     let mut is_dragging = false;
     let mut is_dragging_scroll = false;
+    let mut scroll_drag_offset_y = 0.0f32;
     let mut internal_clipboard = String::new();
+    
+    // Helper to update cursor icon
+    let update_cursor_icon = |window: &winit::window::Window, ui: &UiState, buffer: &Buffer, mouse_x: f32, mouse_y: f32| {
+        let size = window.inner_size();
+        let max_line_digits = buffer.len().to_string().len().max(3);
+        let gutter_width = (max_line_digits as f32 + 2.0) * ui.char_width;
+        let text_area_x = ui.sidebar_width + gutter_width;
+        
+        let is_in_editor = ui.active_modal.is_none()
+            && ui.active_menu.is_none()
+            && mouse_x >= text_area_x
+            && mouse_x < size.width as f32 - 12.0
+            && mouse_y >= ui.titlebar_height
+            && mouse_y < size.height as f32 - ui.status_height;
+            
+        if is_in_editor {
+            window.set_cursor_icon(winit::window::CursorIcon::Text);
+        } else {
+            window.set_cursor_icon(winit::window::CursorIcon::Default);
+        }
+    };
     
     // Track mouse pixel coordinates
     let mut mouse_x = 0.0f32;
@@ -107,7 +129,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         size.height as f32,
                         mouse_x,
                         mouse_y,
+                        gpu.backend,
                     );
+
+                    // Update cursor icon when screen redraws
+                    update_cursor_icon(&window, &ui, &buffer, mouse_x, mouse_y);
 
                     // Render to swapchain
                     if let Err(e) = gpu.render(&vertices, &indices) {
@@ -131,7 +157,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         let ratio = visible_lines as f32 / buffer.len() as f32;
                         let thumb_h = (main_height * ratio).clamp(20.0, main_height);
                         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
-                        let relative_y = mouse_y - ui.titlebar_height - thumb_h / 2.0;
+                        let relative_y = mouse_y - ui.titlebar_height - scroll_drag_offset_y;
                         let scroll_range = main_height - thumb_h;
                         let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
                         ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
@@ -158,7 +184,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         cursor.line = line_idx;
                         cursor.col = col_idx;
                         cursor.intended_col = col_idx;
+
+                        ui.scroll_to_cursor(&cursor, buffer.len(), size.height as f32);
                     }
+                    update_cursor_icon(&window, &ui, &buffer, mouse_x, mouse_y);
                     window.request_redraw();
                 }
 
@@ -227,6 +256,53 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 UiAction::CloseModal => {
                                     ui.active_modal = None;
                                 }
+                                UiAction::ChangeFontSize(delta) => {
+                                    let new_size = (atlas.font_size + delta).clamp(8.0, 36.0);
+                                    if let Ok(new_atlas) = FontAtlas::new(&gpu.device, &gpu.queue, font_bytes, new_size) {
+                                        atlas = new_atlas;
+                                        gpu.update_bind_group(&atlas.texture, &atlas.sampler);
+                                        let new_ui = UiState::new(&mut atlas, &gpu.queue);
+                                        let old_expanded = ui.expanded_dirs.clone();
+                                        let old_selected = ui.selected_file.clone();
+                                        let old_sidebar_w = ui.sidebar_width;
+                                        let old_target_sidebar_w = ui.target_sidebar_width;
+                                        ui = new_ui;
+                                        ui.expanded_dirs = old_expanded;
+                                        ui.selected_file = old_selected;
+                                        ui.sidebar_width = old_sidebar_w;
+                                        ui.target_sidebar_width = old_target_sidebar_w;
+                                        ui.active_modal = Some(crate::ui::ModalType::Settings);
+                                        ui.rebuild_tree();
+                                    }
+                                }
+                                UiAction::ChangeBackend(backend) => {
+                                    if gpu.backend != backend {
+                                        let forced_backends = match backend {
+                                            wgpu::Backend::Vulkan => wgpu::Backends::VULKAN,
+                                            wgpu::Backend::Gl => wgpu::Backends::GL,
+                                            _ => wgpu::Backends::all(),
+                                        };
+                                        // Recreate GPU context
+                                        gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
+                                        // Re-initialize font atlas with the new device/queue
+                                        if let Ok(new_atlas) = FontAtlas::new(&gpu.device, &gpu.queue, font_bytes, atlas.font_size) {
+                                            atlas = new_atlas;
+                                            gpu.update_bind_group(&atlas.texture, &atlas.sampler);
+                                            let new_ui = UiState::new(&mut atlas, &gpu.queue);
+                                            let old_expanded = ui.expanded_dirs.clone();
+                                            let old_selected = ui.selected_file.clone();
+                                            let old_sidebar_w = ui.sidebar_width;
+                                            let old_target_sidebar_w = ui.target_sidebar_width;
+                                            ui = new_ui;
+                                            ui.expanded_dirs = old_expanded;
+                                            ui.selected_file = old_selected;
+                                            ui.sidebar_width = old_sidebar_w;
+                                            ui.target_sidebar_width = old_target_sidebar_w;
+                                            ui.active_modal = Some(crate::ui::ModalType::Settings);
+                                            ui.rebuild_tree();
+                                        }
+                                    }
+                                }
                                 UiAction::Exit => {
                                     elwt.exit();
                                 }
@@ -240,10 +316,20 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         let ratio = visible_lines as f32 / buffer.len() as f32;
                                         let thumb_h = (main_height * ratio).clamp(20.0, main_height);
                                         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
-                                        let relative_y = mouse_y - ui.titlebar_height - thumb_h / 2.0;
-                                        let scroll_range = main_height - thumb_h;
-                                        let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
-                                        ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                                        
+                                        let scroll_ratio = if max_scroll > 0.0 { ui.scroll_y as f32 / max_scroll } else { 0.0 };
+                                        let thumb_y = ui.titlebar_height + scroll_ratio * (main_height - thumb_h);
+                                        
+                                        if mouse_y >= thumb_y && mouse_y < thumb_y + thumb_h {
+                                            scroll_drag_offset_y = mouse_y - thumb_y;
+                                        } else {
+                                            scroll_drag_offset_y = thumb_h / 2.0;
+                                            // Jump immediately
+                                            let relative_y = mouse_y - ui.titlebar_height - scroll_drag_offset_y;
+                                            let scroll_range = main_height - thumb_h;
+                                            let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
+                                            ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                                        }
                                     } else {
                                         // Click inside editor area
                                         let max_line_digits = buffer.len().to_string().len().max(3);
@@ -273,6 +359,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             cursor.line = line_idx;
                                             cursor.col = col_idx;
                                             cursor.intended_col = col_idx;
+
+                                            ui.scroll_to_cursor(&cursor, buffer.len(), size.height as f32);
                                         }
                                     }
                                 }
@@ -286,6 +374,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 }
                             }
                         }
+                        update_cursor_icon(&window, &ui, &buffer, mouse_x, mouse_y);
                         window.request_redraw();
                     }
                 }
@@ -296,8 +385,12 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         MouseScrollDelta::PixelDelta(pos) => (pos.y / (ui.line_height as f64)) as isize * -1,
                     };
 
+                    let main_height = window.inner_size().height as f32 - ui.titlebar_height - ui.status_height;
+                    let visible_lines = (main_height / ui.line_height).floor() as usize;
+                    let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0);
+
                     let new_scroll = ui.scroll_y as isize + scroll_lines;
-                    ui.scroll_y = new_scroll.clamp(0, buffer.len() as isize - 1) as usize;
+                    ui.scroll_y = new_scroll.clamp(0, max_scroll) as usize;
 
                     window.request_redraw();
                 }
@@ -536,6 +629,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             }
                             _ => {}
                         }
+                        ui.scroll_to_cursor(&cursor, buffer.len(), window.inner_size().height as f32);
+                        update_cursor_icon(&window, &ui, &buffer, mouse_x, mouse_y);
+                        window.request_redraw();
                     }
                 }
                 _ => {}
