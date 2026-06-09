@@ -775,10 +775,28 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     buffer.commit_transaction();
                                 } else if cursor.col > 0 || cursor.line > 0 {
                                     buffer.start_transaction();
-                                    let mut prev_cursor = cursor;
-                                    prev_cursor.move_left(&buffer, false);
-                                    buffer.delete(prev_cursor.line, prev_cursor.col, cursor.line, cursor.col);
-                                    cursor = prev_cursor;
+                                    let is_paired = if cursor.col > 0 {
+                                        let line_chars: Vec<char> = buffer.lines()[cursor.line].chars().collect();
+                                        if cursor.col < line_chars.len() {
+                                            let left_char = line_chars[cursor.col - 1];
+                                            let right_char = line_chars[cursor.col];
+                                            match (left_char, right_char) {
+                                                ('(', ')') | ('[', ']') | ('{', '}') | ('"', '"') | ('\'', '\'') => true,
+                                                _ => false,
+                                            }
+                                        } else { false }
+                                    } else { false };
+
+                                    if is_paired {
+                                        buffer.delete(cursor.line, cursor.col - 1, cursor.line, cursor.col + 1);
+                                        cursor.col -= 1;
+                                        cursor.intended_col = cursor.col;
+                                    } else {
+                                        let mut prev_cursor = cursor;
+                                        prev_cursor.move_left(&buffer, false);
+                                        buffer.delete(prev_cursor.line, prev_cursor.col, cursor.line, cursor.col);
+                                        cursor = prev_cursor;
+                                    }
                                     buffer.commit_transaction();
                                 }
                                 window.request_redraw();
@@ -851,17 +869,111 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             }
                             Key::Character(text) => {
                                 if !ctrl {
-                                    if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                                    // Check if text is a single character
+                                    let chars: Vec<char> = text.chars().collect();
+                                    if chars.len() == 1 {
+                                        let c = chars[0];
+                                        // 1. Check if we should step over a closing character
+                                        let step_over = if cursor.selection_range().is_none() && (c == ')' || c == ']' || c == '}' || c == '"' || c == '\'') {
+                                            let line_chars: Vec<char> = buffer.lines()[cursor.line].chars().collect();
+                                            if cursor.col < line_chars.len() && line_chars[cursor.col] == c {
+                                                // Yes, character immediately to the right is the same as typed!
+                                                true
+                                            } else { false }
+                                        } else { false };
+
+                                        if step_over {
+                                            cursor.col += 1;
+                                            cursor.intended_col = cursor.col;
+                                        } else {
+                                            // 2. Check if we should wrap a selection
+                                            let wrapped = if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                                                let matching_close = match c {
+                                                    '(' => Some(')'),
+                                                    '[' => Some(']'),
+                                                    '{' => Some('}'),
+                                                    '"' => Some('"'),
+                                                    '\'' => Some('\''),
+                                                    _ => None,
+                                                };
+
+                                                if let Some(close_char) = matching_close {
+                                                    buffer.start_transaction();
+                                                    buffer.insert(s_l, s_c, &c.to_string());
+                                                    let adjusted_e_c = if s_l == e_l { e_c + 1 } else { e_c };
+                                                    buffer.insert(e_l, adjusted_e_c, &close_char.to_string());
+                                                    
+                                                    // Update cursor and selection range to keep selection over the inner text
+                                                    if cursor.selection_anchor.unwrap().0 == s_l && cursor.selection_anchor.unwrap().1 == s_c {
+                                                        cursor.selection_anchor = Some((s_l, s_c + 1));
+                                                        cursor.line = e_l;
+                                                        cursor.col = adjusted_e_c;
+                                                    } else {
+                                                        cursor.selection_anchor = Some((e_l, adjusted_e_c));
+                                                        cursor.line = s_l;
+                                                        cursor.col = s_c + 1;
+                                                    }
+                                                    cursor.intended_col = cursor.col;
+                                                    buffer.commit_transaction();
+                                                    true
+                                                } else { false }
+                                            } else { false };
+
+                                            if !wrapped {
+                                                // 3. Check if we should auto-pair an opening character
+                                                let paired = if cursor.selection_range().is_none() {
+                                                    let matching_close = match c {
+                                                        '(' => Some(')'),
+                                                        '[' => Some(']'),
+                                                        '{' => Some('}'),
+                                                        '"' => Some('"'),
+                                                        '\'' => Some('\''),
+                                                        _ => None,
+                                                    };
+
+                                                    if let Some(close_char) = matching_close {
+                                                        buffer.start_transaction();
+                                                        let pair_str = format!("{}{}", c, close_char);
+                                                        buffer.insert(cursor.line, cursor.col, &pair_str);
+                                                        cursor.col += 1;
+                                                        cursor.intended_col = cursor.col;
+                                                        buffer.commit_transaction();
+                                                        true
+                                                    } else { false }
+                                                } else { false };
+
+                                                if !paired {
+                                                    // Standard character typing (deletes selection if active)
+                                                    if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                                                        buffer.start_transaction();
+                                                        buffer.delete(s_l, s_c, e_l, e_c);
+                                                        cursor.line = s_l;
+                                                        cursor.col = s_c;
+                                                        cursor.clear_selection();
+                                                    }
+                                                    buffer.start_transaction();
+                                                    buffer.insert(cursor.line, cursor.col, text);
+                                                    cursor.col += 1;
+                                                    cursor.intended_col = cursor.col;
+                                                    buffer.commit_transaction();
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Text with multiple characters (e.g. pasted or fallback)
+                                        if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                                            buffer.start_transaction();
+                                            buffer.delete(s_l, s_c, e_l, e_c);
+                                            cursor.line = s_l;
+                                            cursor.col = s_c;
+                                            cursor.clear_selection();
+                                        }
                                         buffer.start_transaction();
-                                        buffer.delete(s_l, s_c, e_l, e_c);
-                                        cursor.line = s_l;
-                                        cursor.col = s_c;
-                                        cursor.clear_selection();
+                                        buffer.insert(cursor.line, cursor.col, text);
+                                        cursor.col += text.chars().count();
+                                        cursor.intended_col = cursor.col;
+                                        buffer.commit_transaction();
                                     }
-                                    buffer.start_transaction();
-                                    buffer.insert(cursor.line, cursor.col, text);
-                                    cursor.col += text.chars().count();
-                                    cursor.intended_col = cursor.col;
                                 }
                                 window.request_redraw();
                             }
