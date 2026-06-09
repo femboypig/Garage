@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::io::Write;
 use winit::{
     event::{ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -22,6 +23,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let mut window = Arc::new(
         WindowBuilder::new()
             .with_title("Garage")
+            .with_decorations(false)
             .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
             .build(&event_loop)?,
     );
@@ -110,7 +112,19 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let mut scroll_drag_offset_y = 0.0f32;
     let mut scroll_drag_offset_x = 0.0f32;
     let mut is_dragging_sidebar = false;
+    let mut is_dragging_dock_border = false;
     let mut internal_clipboard = String::new();
+    
+    // Terminal Dock state
+    let mut dock_terminals: Vec<crate::terminal::TerminalInstance> = Vec::new();
+    let mut active_terminal_idx: usize = 0;
+    let mut terminal_focus = false;
+    let mut last_click_time: Option<std::time::Instant> = None;
+
+    // Create default initial terminal
+    if let Ok(term) = crate::terminal::TerminalInstance::new(80, 24, window.clone()) {
+        dock_terminals.push(term);
+    }
     
     // Helper to update cursor icon
     let update_cursor_icon = |window: &winit::window::Window, ui: &UiState, buffer: &Buffer, mouse_x: f32, mouse_y: f32| {
@@ -121,21 +135,29 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
         
         let on_sidebar_border = ui.sidebar_width > 0.0 && (mouse_x - ui.sidebar_width).abs() <= 4.0;
         
+        let main_y = ui.titlebar_height;
+        let mut dock_start_y = size.height as f32 - ui.status_height;
+        if ui.show_dock {
+            dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
+        }
+        let on_dock_border = ui.show_dock && (mouse_y - dock_start_y).abs() <= 4.0;
+        
         if on_sidebar_border {
             window.set_cursor_icon(winit::window::CursorIcon::ColResize);
+        } else if on_dock_border {
+            window.set_cursor_icon(winit::window::CursorIcon::RowResize);
         } else {
             let scrollbar_width = ui.scrollbar_width();
             let minimap_width = ui.minimap_width();
             let sb_x = size.width as f32 - scrollbar_width;
             let minimap_x = sb_x - minimap_width;
-            let status_y = (size.height as f32 - ui.status_height).round();
 
             let is_in_editor = ui.active_modal.is_none()
                 && ui.active_menu.is_none()
                 && mouse_x >= text_area_x
                 && mouse_x < minimap_x
                 && mouse_y >= ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height
-                && mouse_y < status_y - 14.0;
+                && mouse_y < dock_start_y - 14.0;
                 
             if is_in_editor {
                 window.set_cursor_icon(winit::window::CursorIcon::Text);
@@ -409,6 +431,62 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         ui.active_modal = None;
                         ui.rebuild_tree();
                     }
+                    UiAction::MinimizeWindow => {
+                        window.set_minimized(true);
+                    }
+                    UiAction::MaximizeWindow => {
+                        let is_max = window.is_maximized();
+                        window.set_maximized(!is_max);
+                    }
+                    UiAction::ToggleDock => {
+                        ui.show_dock = !ui.show_dock;
+                        if !ui.show_dock {
+                            terminal_focus = false;
+                        } else if !dock_terminals.is_empty() {
+                            let size = window.inner_size();
+                            let width_content = size.width as f32 - 16.0;
+                            let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
+                            let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
+                            let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
+                            let active_term = &mut dock_terminals[active_terminal_idx];
+                            active_term.grid.resize(cols, rows);
+                            active_term.resize_pty(cols, rows);
+                        }
+                    }
+                    UiAction::NewTerminal => {
+                        let size = window.inner_size();
+                        let width_content = size.width as f32 - 16.0;
+                        let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
+                        let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
+                        let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
+                        if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone()) {
+                            dock_terminals.push(term);
+                            active_terminal_idx = dock_terminals.len() - 1;
+                        }
+                        terminal_focus = true;
+                    }
+                    UiAction::CloseTerminal(idx) => {
+                        if idx < dock_terminals.len() {
+                            dock_terminals.remove(idx);
+                            if dock_terminals.is_empty() {
+                                let size = window.inner_size();
+                                let width_content = size.width as f32 - 16.0;
+                                let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
+                                let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
+                                let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
+                                if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone()) {
+                                    dock_terminals.push(term);
+                                }
+                            }
+                            active_terminal_idx = active_terminal_idx.min(dock_terminals.len() - 1);
+                        }
+                    }
+                    UiAction::SelectTerminal(idx) => {
+                        if idx < dock_terminals.len() {
+                            active_terminal_idx = idx;
+                            terminal_focus = true;
+                        }
+                    }
                     UiAction::Exit => {
                         elwt.exit();
                     }
@@ -433,6 +511,29 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 }
 
                 WindowEvent::RedrawRequested => {
+                    let size = window.inner_size();
+                    if ui.show_dock && !dock_terminals.is_empty() {
+                        let width_content = size.width as f32 - 16.0;
+                        let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
+                        let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
+                        let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
+                        let active_term = &mut dock_terminals[active_terminal_idx];
+                        if active_term.grid.cols != cols || active_term.grid.rows != rows {
+                            active_term.grid.resize(cols, rows);
+                            active_term.resize_pty(cols, rows);
+                        }
+                    }
+
+                    // Read data from PTY channels for all terminals and parse ANSI sequences
+                    for term in &mut dock_terminals {
+                        let mut parser = vte::Parser::new();
+                        while let Ok(bytes) = term.rx.try_recv() {
+                            for b in bytes {
+                                parser.advance(&mut term.grid, b);
+                            }
+                        }
+                    }
+
                     // Sync active tab scroll offsets
                     tabs[active_tab_idx].scroll_x = ui.scroll_x;
                     tabs[active_tab_idx].scroll_y = ui.scroll_y;
@@ -462,6 +563,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         &tab_paths,
                         &tab_modified,
                         active_tab_idx,
+                        &dock_terminals,
+                        active_terminal_idx,
+                        terminal_focus,
+                        window.is_maximized(),
                     );
 
                     // Update cursor icon when screen redraws
@@ -487,6 +592,24 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         let new_width = if mouse_x < 30.0 { 0.0 } else { mouse_x.clamp(50.0, 600.0) };
                         ui.sidebar_width = new_width;
                         ui.target_sidebar_width = new_width;
+                    } else if is_dragging_dock_border {
+                        let main_y = ui.titlebar_height;
+                        let max_y = size.height as f32 - ui.status_height - 50.0;
+                        let min_y = main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0;
+                        let target_y = mouse_y.clamp(min_y, max_y);
+                        let new_height = size.height as f32 - ui.status_height - target_y;
+                        ui.dock_height = new_height;
+                        
+                        // Resize active terminal PTY
+                        if !dock_terminals.is_empty() {
+                            let width_content = size.width as f32 - 16.0;
+                            let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
+                            let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
+                            let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
+                            let active_term = &mut dock_terminals[active_terminal_idx];
+                            active_term.grid.resize(cols, rows);
+                            active_term.resize_pty(cols, rows);
+                        }
                     } else if is_dragging_scroll {
                         let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
                         let status_y = (size.height as f32 - ui.status_height).round();
@@ -578,8 +701,60 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     if button == MouseButton::Left {
                         let size = window.inner_size();
                         if state == ElementState::Pressed {
-                            if ui.active_modal.is_some() {
+                            // Check if click is on custom titlebar drag zone (CSD)
+                            let menu_items = ["Garage", "File", "Edit", "Selection", "View"];
+                            let mut menu_width = 0.0f32;
+                            for (i, label) in menu_items.iter().enumerate() {
+                                let label_len = label.chars().count() as f32;
+                                let text_w = label_len * ui.ui_char_width;
+                                let (left_pad, right_pad) = if i == 0 { (14.0, 10.0) } else { (10.0, 10.0) };
+                                menu_width += text_w + left_pad + right_pad;
+                            }
+                            
+                            let is_titlebar_drag_zone = mouse_y < ui.titlebar_height
+                                && mouse_x >= menu_width
+                                && mouse_x < size.width as f32 - 135.0;
+
+                            if is_titlebar_drag_zone {
+                                let now = std::time::Instant::now();
+                                let is_double_click = if let Some(last) = last_click_time {
+                                    now.duration_since(last) < std::time::Duration::from_millis(300)
+                                } else {
+                                    false
+                                };
+                                last_click_time = Some(now);
+
+                                if is_double_click {
+                                    let is_max = window.is_maximized();
+                                    window.set_maximized(!is_max);
+                                } else {
+                                    let _ = window.drag_window();
+                                }
+                                return;
+                            }
+
+                            // Calculate dock border position
+                            let main_y = ui.titlebar_height;
+                            let mut dock_start_y = size.height as f32 - ui.status_height;
+                            if ui.show_dock {
+                                dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
+                            }
+                            
+                            // Check if focus changes
+                            if ui.show_dock && mouse_y >= dock_start_y {
+                                terminal_focus = true;
+                            } else {
+                                terminal_focus = false;
+                            }
+
+                            // Check if click is on dock resize border
+                            let on_dock_border = ui.show_dock && (mouse_y - dock_start_y).abs() <= 4.0;
+
+                            if on_dock_border {
+                                is_dragging_dock_border = true;
+                            } else if ui.active_modal.is_some() {
                                 let tab_paths: Vec<Option<String>> = tabs.iter().map(|t| t.path.clone()).collect();
+                                let tab_modified: Vec<bool> = tabs.iter().map(|t| t.buffer.is_modified).collect();
                                 let action = {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     ui.handle_click(
@@ -590,6 +765,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         &mut active_tab.buffer,
                                         &mut active_tab.cursor,
                                         &tab_paths,
+                                        &tab_modified,
+                                        dock_terminals.len(),
                                     )
                                 };
                                 handle_action!(action);
@@ -600,6 +777,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     is_dragging_sidebar = true;
                                 } else {
                                     let tab_paths: Vec<Option<String>> = tabs.iter().map(|t| t.path.clone()).collect();
+                                    let tab_modified: Vec<bool> = tabs.iter().map(|t| t.buffer.is_modified).collect();
                                     let action = {
                                         let active_tab = &mut tabs[active_tab_idx];
                                         ui.handle_click(
@@ -610,6 +788,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             &mut active_tab.buffer,
                                             &mut active_tab.cursor,
                                             &tab_paths,
+                                            &tab_modified,
+                                            dock_terminals.len(),
                                         )
                                     };
 
@@ -733,6 +913,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             is_dragging_horizontal_scroll = false;
                             is_dragging_minimap = false;
                             is_dragging_sidebar = false;
+                            is_dragging_dock_border = false;
                             if was_dragging_sidebar {
                                 ui.config.sidebar_width = ui.sidebar_width;
                                 ui.config.save_in_background();
@@ -813,7 +994,47 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     window.request_redraw();
                 }
 
-                WindowEvent::KeyboardInput { event: kb_event, .. } => {
+                 WindowEvent::KeyboardInput { event: kb_event, .. } => {
+                    if terminal_focus && !dock_terminals.is_empty() {
+                        if kb_event.state == ElementState::Pressed {
+                            let active_term = &mut dock_terminals[active_terminal_idx];
+                            let bytes_to_write: Option<Vec<u8>> = match &kb_event.logical_key {
+                                Key::Character(text) => {
+                                    let ctrl = modifiers.control_key();
+                                    if ctrl && text.len() == 1 {
+                                        let c = text.chars().next().unwrap();
+                                        if c.is_ascii_alphabetic() {
+                                            let code = c.to_ascii_uppercase() as u8 - b'A' + 1;
+                                            Some(vec![code])
+                                        } else {
+                                            Some(text.as_bytes().to_vec())
+                                        }
+                                    } else {
+                                        Some(text.as_bytes().to_vec())
+                                    }
+                                }
+                                Key::Named(NamedKey::Enter) => Some(vec![b'\r']),
+                                Key::Named(NamedKey::Backspace) => Some(vec![127]),
+                                Key::Named(NamedKey::Tab) => Some(vec![b'\t']),
+                                Key::Named(NamedKey::Escape) => Some(vec![27]),
+                                Key::Named(NamedKey::ArrowUp) => Some(b"\x1b[A".to_vec()),
+                                Key::Named(NamedKey::ArrowDown) => Some(b"\x1b[B".to_vec()),
+                                Key::Named(NamedKey::ArrowRight) => Some(b"\x1b[C".to_vec()),
+                                Key::Named(NamedKey::ArrowLeft) => Some(b"\x1b[D".to_vec()),
+                                Key::Named(NamedKey::Home) => Some(b"\x1b[H".to_vec()),
+                                Key::Named(NamedKey::End) => Some(b"\x1b[F".to_vec()),
+                                _ => None,
+                            };
+
+                            if let Some(bytes) = bytes_to_write {
+                                let _ = active_term.pty_writer.write_all(&bytes);
+                                let _ = active_term.pty_writer.flush();
+                            }
+                            window.request_redraw();
+                        }
+                        return;
+                    }
+
                     if kb_event.state == ElementState::Pressed {
                         let ctrl = modifiers.control_key();
                         if ctrl {
