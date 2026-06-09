@@ -265,6 +265,22 @@ impl UiState {
         (self.buffer_font_size * 7.5).round().max(60.0)
     }
 
+    pub fn get_max_line_len(&mut self, buffer: &Buffer, active_file_path: Option<&str>, cursor_line: usize) -> usize {
+        let mut max_len = 0;
+        for (line_idx, line) in buffer.lines().iter().enumerate() {
+            let mut len = line.chars().count();
+            if self.config.show_git_blame && line_idx == cursor_line {
+                if let Some(blame_str) = self.get_or_update_blame(active_file_path, line_idx) {
+                    len += 4 + blame_str.chars().count();
+                }
+            }
+            if len > max_len {
+                max_len = len;
+            }
+        }
+        max_len
+    }
+
     fn scan_dir_recursive(&mut self, dir: &Path, depth: usize) {
         if let Ok(entries) = std::fs::read_dir(dir) {
             let mut entries_vec = Vec::new();
@@ -1981,10 +1997,6 @@ impl UiState {
             if self.config.show_git_blame && line_idx == cursor.line {
                 if let Some(blame_str) = self.get_or_update_blame(active_file_path, line_idx) {
                     let mut blame_pen_x = pen_x + self.buffer_char_width * 4.0;
-                    let blame_width = blame_str.chars().count() as f32 * self.buffer_char_width;
-                    if blame_pen_x + blame_width > minimap_x {
-                        blame_pen_x = (minimap_x - blame_width - 8.0).max(text_area_x + self.buffer_char_width * 2.0);
-                    }
                     for c in blame_str.chars() {
                         if blame_pen_x + self.buffer_char_width > minimap_x {
                             break;
@@ -2078,7 +2090,7 @@ impl UiState {
         );
 
         // --- 4.1 Draw Horizontal Scrollbar ---
-        let max_line_len = buffer.lines().iter().map(|l| l.chars().count()).max().unwrap_or(0);
+        let max_line_len = self.get_max_line_len(buffer, active_file_path, cursor.line);
         let visible_cols = (text_viewport_w / self.buffer_char_width).floor() as usize;
         
         let hs_y = editor_y + editor_height;
