@@ -490,7 +490,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         let minimap_x = sb_x - minimap_width;
                         let text_viewport_w = (minimap_x - text_area_x).max(10.0);
 
-                        let max_line_len = tabs[active_tab_idx].buffer.lines().iter().map(|l| l.chars().count()).max().unwrap_or(0);
+                        let max_line_len = ui.get_max_line_len(&tabs[active_tab_idx].buffer, tabs[active_tab_idx].path.as_deref(), tabs[active_tab_idx].cursor.line);
                         let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
                         let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
                         let thumb_w = (text_viewport_w * ratio_x).clamp(20.0, text_viewport_w);
@@ -653,7 +653,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             // 3. Check if click is on horizontal scrollbar
                                             else if mouse_x >= text_area_x && mouse_x < minimap_x && mouse_y >= size.height as f32 - ui.status_height - 14.0 && mouse_y < size.height as f32 - ui.status_height {
                                                 is_dragging_horizontal_scroll = true;
-                                                let max_line_len = active_tab.buffer.lines().iter().map(|l| l.chars().count()).max().unwrap_or(0);
+                                                let max_line_len = ui.get_max_line_len(&active_tab.buffer, active_tab.path.as_deref(), active_tab.cursor.line);
                                                 let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
                                                 let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
                                                 let thumb_w = (text_viewport_w * ratio_x).clamp(20.0, text_viewport_w);
