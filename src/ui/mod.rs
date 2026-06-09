@@ -2440,135 +2440,20 @@ impl UiState {
             }
         }
 
-        // TODO: refactor, rework this shit
         // --- 5. Draw Statusbar ---
-        let status_y = height - self.status_height;
-        self.push_quad(
-            vertices,
-            indices,
-            0.0,
-            status_y,
-            width,
-            self.status_height,
-            white_uv,
-            self.config.theme.statusbar_bg,
-        );
-        self.push_quad(
-            vertices,
-            indices,
-            0.0,
-            status_y,
-            width,
-            1.0,
-            white_uv,
-            self.config.theme.statusbar_border,
-        );
-
-        let status_left = format!(" GARAGE | Line {}, Col {}", cursor.line + 1, cursor.col + 1);
-        let status_right = format!("Lines: {} | UTF-8 | LF ", buffer.len());
-        let baseline_y = (status_y + self.status_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
-        let text_color = self.config.theme.statusbar_text;
-        
-        let mut pen_x = 10.0;
-        pen_x += self.push_str(
+        self::components::statusbar::draw_statusbar(
+            self,
             vertices,
             indices,
             atlas,
             queue,
-            &status_left,
-            pen_x,
-            baseline_y,
-            text_color,
-            self.ui_font_size,
-            self.ui_char_width,
+            width,
+            height,
+            buffer,
+            cursor,
+            mouse_x,
+            mouse_y,
         );
-
-        if self.config.show_git_branch {
-            if let Some(ref branch) = self.git_branch {
-                pen_x += self.push_str(
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    " | ",
-                    pen_x,
-                    baseline_y,
-                    text_color,
-                    self.ui_font_size,
-                    self.ui_char_width,
-                );
-                
-                // Draw branch icon
-                let icon_sz = (self.ui_font_size * 0.9).round().max(12.0);
-                let icon_y_center = baseline_y - (self.ui_font_ascent * 0.33).round();
-                let icon_y = icon_y_center - (icon_sz / 2.0).round();
-                self.push_icon(
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    "branch",
-                    pen_x,
-                    icon_y,
-                    text_color,
-                    icon_sz,
-                );
-                pen_x += icon_sz + 4.0; // Space after icon
-                
-                self.push_str(
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    branch,
-                    pen_x,
-                    baseline_y,
-                    text_color,
-                    self.ui_font_size,
-                    self.ui_char_width,
-                );
-            }
-        }
-
-        let right_text_width = status_right.chars().count() as f32 * self.ui_char_width;
-        let right_x = width - right_text_width - 15.0 - 36.0;
-        if right_x > width / 2.0 {
-            self.push_str(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                &status_right,
-                right_x,
-                (status_y + self.status_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-                self.config.theme.statusbar_text,
-                self.ui_font_size,
-                self.ui_char_width,
-            );
-        }
-
-        // Draw statusbar action buttons in the bottom right corner
-        let sb_btn_w = 26.0f32;
-        let sb_btn_h = self.status_height - 1.0;
-        let icon_sz = 14.0f32;
-        let icon_y = status_y + (sb_btn_h - icon_sz) / 2.0;
-
-        let term_btn_x = width - 10.0 - sb_btn_w;
-
-        // Check hovers
-        let is_term_hover = self.active_modal.is_none() && mouse_y >= status_y && mouse_x >= term_btn_x && mouse_x < term_btn_x + sb_btn_w;
-
-        // 1. Terminal Button
-        let term_bg = if self.show_dock {
-            [0.2, 0.5, 0.8, 0.35] // blue tint when open
-        } else if is_term_hover {
-            self.config.theme.titlebar_hover_bg
-        } else {
-            self.config.theme.statusbar_bg
-        };
-        self.push_quad(vertices, indices, term_btn_x, status_y + 1.0, sb_btn_w, sb_btn_h, white_uv, term_bg);
-        let term_color = if self.show_dock { [0.3, 0.6, 0.95, 1.0] } else { self.config.theme.statusbar_text };
-        self.push_icon(vertices, indices, atlas, queue, "terminal", term_btn_x + (sb_btn_w - icon_sz) / 2.0, icon_y, term_color, icon_sz);
 
         // --- 6. Draw Context Dropdown Menus (On top of everything) ---
         if let Some(menu) = self.active_menu {
