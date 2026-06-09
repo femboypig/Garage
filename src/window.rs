@@ -247,6 +247,18 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         ui.config.ui_font_size = new_size;
                                         let _ = ui.config.save();
                                     }
+                                    UiAction::ChangeSidebarWidth(delta) => {
+                                        let new_width = (ui.config.sidebar_width + delta).clamp(100.0, 400.0);
+                                        ui.config.sidebar_width = new_width;
+                                        ui.target_sidebar_width = new_width;
+                                        ui.sidebar_width = new_width;
+                                        let _ = ui.config.save();
+                                    }
+                                    UiAction::ChangeTheme(theme_name) => {
+                                        let selected_theme = crate::config::Theme::get_by_name(&theme_name);
+                                        ui.config.theme = selected_theme;
+                                        let _ = ui.config.save();
+                                    }
                                     UiAction::ChangeBackend(backend) => {
                                         let mut new_config = ui.config.clone();
                                         let requested_str = match backend {
@@ -268,13 +280,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             atlas = new_atlas;
                                             new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
 
-                                            let actual_str = match new_gpu.backend {
-                                                wgpu::Backend::Vulkan => "Vulkan",
-                                                wgpu::Backend::Gl => "OpenGL",
-                                                _ => requested_str,
-                                            };
-                                            new_config.backend = actual_str.to_string();
-                                            let _ = new_config.save();
+                                            // Note: we do NOT overwrite the configuration's backend setting (new_config.backend) with actual fallback backend (new_gpu.backend)
+                                            // so that the configured choice persists as OpenGL even if the graphics context falls back to Vulkan.
 
                                             let mut new_ui = UiState::new(&mut atlas, &new_gpu.queue, new_config);
                                             new_ui.active_device_name = new_gpu.device_name.clone();
@@ -351,10 +358,13 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             cursor.col = cursor.col.min(max_col);
                                         }
                                         UiAction::ToggleSidebar => {
-                                            ui.target_sidebar_width = if ui.target_sidebar_width > 0.0 { 0.0 } else { 200.0 };
+                                            let preferred = if ui.config.sidebar_width > 0.0 { ui.config.sidebar_width } else { 200.0 };
+                                            ui.target_sidebar_width = if ui.target_sidebar_width > 0.0 { 0.0 } else { preferred };
                                             ui.sidebar_width = ui.target_sidebar_width;
-                                            ui.config.sidebar_width = ui.target_sidebar_width;
-                                            let _ = ui.config.save();
+                                            if ui.target_sidebar_width > 0.0 {
+                                                ui.config.sidebar_width = ui.target_sidebar_width;
+                                                let _ = ui.config.save();
+                                            }
                                         }
                                         UiAction::ShowSettings => {
                                             ui.active_modal = Some(crate::ui::ModalType::Settings);
@@ -375,6 +385,18 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             let new_size = (ui.ui_font_size + delta).clamp(8.0, 24.0);
                                             ui.update_ui_font_size(&atlas.font, new_size);
                                             ui.config.ui_font_size = new_size;
+                                            let _ = ui.config.save();
+                                        }
+                                        UiAction::ChangeSidebarWidth(delta) => {
+                                            let new_width = (ui.config.sidebar_width + delta).clamp(100.0, 400.0);
+                                            ui.config.sidebar_width = new_width;
+                                            ui.target_sidebar_width = new_width;
+                                            ui.sidebar_width = new_width;
+                                            let _ = ui.config.save();
+                                        }
+                                        UiAction::ChangeTheme(theme_name) => {
+                                            let selected_theme = crate::config::Theme::get_by_name(&theme_name);
+                                            ui.config.theme = selected_theme;
                                             let _ = ui.config.save();
                                         }
                                         UiAction::ChangeBackend(backend) => {
@@ -398,13 +420,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 atlas = new_atlas;
                                                 new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
 
-                                                let actual_str = match new_gpu.backend {
-                                                    wgpu::Backend::Vulkan => "Vulkan",
-                                                    wgpu::Backend::Gl => "OpenGL",
-                                                    _ => requested_str,
-                                                };
-                                                new_config.backend = actual_str.to_string();
-                                                let _ = new_config.save();
+                                                // Note: we do NOT overwrite the configuration's backend setting (new_config.backend) with actual fallback backend (new_gpu.backend)
+                                                // so that the configured choice persists as OpenGL even if the graphics context falls back to Vulkan.
 
                                                 let mut new_ui = UiState::new(&mut atlas, &new_gpu.queue, new_config);
                                                 new_ui.active_device_name = new_gpu.device_name.clone();
@@ -423,6 +440,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             }
                                             gpu = Some(new_gpu);
                                         }
+
                                         UiAction::Exit => {
                                             elwt.exit();
                                         }
