@@ -193,8 +193,17 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
                         let relative_y = mouse_y - editor_top;
-                        let scroll_ratio = if editor_height > 0.0 { (relative_y / editor_height).clamp(0.0, 1.0) } else { 0.0 };
-                        ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                        
+                        let minimap_line_height = (ui.buffer_font_size * 0.22).round().max(2.0);
+                        let minimap_total_h = buffer.len() as f32 * minimap_line_height;
+                        
+                        if minimap_total_h > editor_height {
+                            let scroll_ratio = (relative_y / editor_height).clamp(0.0, 1.0);
+                            ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                        } else {
+                            let line_idx = (relative_y / minimap_line_height).floor() as usize;
+                            ui.scroll_y = line_idx.saturating_sub(visible_lines / 2).min(max_scroll as usize);
+                        }
                     } else if is_dragging {
                         let max_line_digits = buffer.len().to_string().len().max(3);
                         let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
@@ -375,10 +384,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 save_path = Some(default_path.clone());
                                                 default_path
                                             });
-                                            println!("Saving file to: {}", path_to_save);
                                             if let Err(e) = buffer.save_file(&path_to_save) {
                                                 log::error!("Failed to save file: {:?}", e);
                                             } else {
+                                                buffer.is_modified = false;
                                                 ui.rebuild_tree();
                                             }
                                         }
@@ -516,8 +525,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
                                             let editor_height = size.height as f32 - editor_top - ui.status_height;
                                             
-                                            let scrollbar_width = 12.0;
-                                            let minimap_width = 100.0f32;
+                                            let scrollbar_width = ui.scrollbar_width();
+                                            let minimap_width = ui.minimap_width();
                                             let sb_x = size.width as f32 - scrollbar_width;
                                             let minimap_x = sb_x - minimap_width;
                                             
@@ -527,8 +536,17 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                                 let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
                                                 let relative_y = mouse_y - editor_top;
-                                                let scroll_ratio = if editor_height > 0.0 { (relative_y / editor_height).clamp(0.0, 1.0) } else { 0.0 };
-                                                ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                                                
+                                                let minimap_line_height = (ui.buffer_font_size * 0.22).round().max(2.0);
+                                                let minimap_total_h = buffer.len() as f32 * minimap_line_height;
+                                                
+                                                if minimap_total_h > editor_height {
+                                                    let scroll_ratio = (relative_y / editor_height).clamp(0.0, 1.0);
+                                                    ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                                                } else {
+                                                    let line_idx = (relative_y / minimap_line_height).floor() as usize;
+                                                    ui.scroll_y = line_idx.saturating_sub(visible_lines / 2).min(max_scroll as usize);
+                                                }
                                             }
                                             // 2. Check if click is on scrollbar
                                             else if mouse_x >= sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
@@ -660,9 +678,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             save_path = Some(default_path.clone());
                                             default_path
                                         });
-                                        println!("Saving file to: {}", path_to_save);
                                         if let Err(e) = buffer.save_file(&path_to_save) {
                                             log::error!("Failed to save file: {:?}", e);
+                                        } else {
+                                            buffer.is_modified = false;
                                         }
                                         window.request_redraw();
                                         return;
