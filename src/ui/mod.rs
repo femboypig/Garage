@@ -147,7 +147,7 @@ impl UiState {
         &mut self,
         mx: f32,
         my: f32,
-        width: f32,
+        _width: f32,
         height: f32,
         buffer: &mut Buffer,
         cursor: &mut Cursor,
