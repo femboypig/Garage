@@ -25,6 +25,10 @@ pub enum UiAction {
     ChangeTheme(String),
     ChangeGitBlame(bool),
     ChangeGitBranch(bool),
+    SelectTab(usize),
+    CloseTab(usize),
+    ForceCloseTab(usize),
+    SaveAndCloseTab(usize),
     None,
 }
 
@@ -42,6 +46,7 @@ pub enum ModalType {
     Settings,
     About,
     CommandPalette,
+    UnsavedChanges,
 }
 
 pub struct FileNode {
@@ -82,6 +87,7 @@ pub struct UiState {
     // Menu & Modal State
     pub active_menu: Option<MenuType>,
     pub active_modal: Option<ModalType>,
+    pub tab_to_close: Option<usize>,
     pub theme_dropdown_open: bool,
 
     pub config: crate::config::AppConfig,
@@ -95,6 +101,7 @@ pub struct UiState {
 
     pub command_palette_query: String,
     pub command_palette_selected: usize,
+    pub command_palette_scroll: usize,
 }
 
 impl UiState {
@@ -159,6 +166,7 @@ impl UiState {
             selected_file: None,
             active_menu: None,
             active_modal: None,
+            tab_to_close: None,
             theme_dropdown_open: false,
             config,
             active_device_name: String::new(),
@@ -169,6 +177,7 @@ impl UiState {
             last_branch_check: None,
             command_palette_query: String::new(),
             command_palette_selected: 0,
+            command_palette_scroll: 0,
         };
 
         state.rebuild_tree();
@@ -209,19 +218,37 @@ impl UiState {
         self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
     }
 
-    pub fn scroll_to_cursor(&mut self, cursor: &Cursor, buffer_len: usize, height: f32) {
-        let editor_height = height - self.titlebar_height - self.status_height - self.tabbar_height - self.breadcrumb_height;
+    pub fn scroll_to_cursor(&mut self, cursor: &Cursor, buffer_len: usize, width: f32, height: f32) {
+        let editor_height = height - self.titlebar_height - self.status_height - self.tabbar_height - self.breadcrumb_height - 14.0;
         let visible_lines = (editor_height / self.buffer_line_height).floor() as usize;
-        if visible_lines == 0 {
-            return;
+        if visible_lines > 0 {
+            if cursor.line < self.scroll_y {
+                self.scroll_y = cursor.line;
+            } else if cursor.line >= self.scroll_y + visible_lines {
+                self.scroll_y = cursor.line - visible_lines + 1;
+            }
+            let max_scroll = (buffer_len as isize - visible_lines as isize).max(0) as usize;
+            self.scroll_y = self.scroll_y.min(max_scroll);
         }
-        if cursor.line < self.scroll_y {
-            self.scroll_y = cursor.line;
-        } else if cursor.line >= self.scroll_y + visible_lines {
-            self.scroll_y = cursor.line - visible_lines + 1;
+
+        // Horizontal scrolling layout math
+        let max_line_digits = buffer_len.to_string().len().max(3);
+        let gutter_width = (max_line_digits as f32 + 2.0) * self.buffer_char_width;
+        let text_area_x = self.sidebar_width + gutter_width;
+        let scrollbar_width = self.scrollbar_width();
+        let minimap_width = self.minimap_width();
+        let sb_x = width - scrollbar_width;
+        let minimap_x = sb_x - minimap_width;
+        let text_viewport_w = (minimap_x - text_area_x).max(10.0);
+
+        let visible_cols = (text_viewport_w / self.buffer_char_width).floor() as usize;
+        if visible_cols > 0 {
+            if cursor.col < self.scroll_x {
+                self.scroll_x = cursor.col;
+            } else if cursor.col >= self.scroll_x + visible_cols {
+                self.scroll_x = cursor.col - visible_cols + 1;
+            }
         }
-        let max_scroll = (buffer_len as isize - visible_lines as isize).max(0) as usize;
-        self.scroll_y = self.scroll_y.min(max_scroll);
     }
 
     /// Re-scan the directory to populate the project tree
@@ -231,7 +258,7 @@ impl UiState {
     }
 
     pub fn scrollbar_width(&self) -> f32 {
-        (self.ui_font_size * 1.35).round().max(12.0)
+        14.0
     }
 
     pub fn minimap_width(&self) -> f32 {
@@ -289,13 +316,15 @@ impl UiState {
         height: f32,
         buffer: &mut Buffer,
         cursor: &mut Cursor,
+        tab_paths: &[Option<String>],
     ) -> UiAction {
         // If a modal is open, check click boundaries and buttons
         if let Some(modal) = self.active_modal {
             let modal_w = match modal {
                 ModalType::Settings => (45.0 * self.ui_char_width).max(500.0).round(),
                 ModalType::About => 400.0,
-                ModalType::CommandPalette => 550.0,
+                ModalType::CommandPalette => (50.0 * self.ui_char_width).max(500.0).round(),
+                ModalType::UnsavedChanges => 520.0,
             };
             let modal_h = match modal {
                 ModalType::Settings => {
@@ -303,13 +332,17 @@ impl UiState {
                     (row_height * 8.2).max(430.0).round()
                 }
                 ModalType::About => 240.0,
-                ModalType::CommandPalette => 320.0,
+                ModalType::CommandPalette => {
+                    let item_height = (self.ui_line_height * 1.6).round().max(26.0);
+                    let filtered_len = self.get_filtered_commands().len();
+                    let visible_items = filtered_len.min(10);
+                    let header_h = 15.0 + self.ui_line_height + 15.0 + 1.0;
+                    (header_h + visible_items as f32 * item_height + 15.0).round()
+                }
+                ModalType::UnsavedChanges => 200.0,
             };
             let modal_x = ((width - modal_w) / 2.0).round();
-            let modal_y = match modal {
-                ModalType::CommandPalette => 100.0f32,
-                _ => ((height - modal_h) / 2.0).round(),
-            };
+            let modal_y = ((height - modal_h) / 2.0).round();
 
             let clicked_outside = mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h;
 
@@ -420,10 +453,25 @@ impl UiState {
                 let sep_y = input_y + self.ui_line_height + 15.0;
                 let list_y = sep_y + 1.0;
                 let item_height = (self.ui_line_height * 1.6).round().max(26.0);
+                let filtered = self.get_filtered_commands();
+                let max_visible_items = ((modal_y + modal_h - 15.0 - list_y) / item_height).floor() as usize;
                 
-                if mx >= modal_x && mx <= modal_x + modal_w && my >= list_y && my <= modal_y + modal_h {
-                    let idx = ((my - list_y) / item_height).floor() as usize;
-                    let filtered = self.get_filtered_commands();
+                // Scrollbar click detection
+                if filtered.len() > max_visible_items {
+                    let track_x = modal_x + modal_w - 12.0;
+                    if mx >= track_x && mx <= modal_x + modal_w && my >= list_y && my <= modal_y + modal_h - 15.0 {
+                        let track_h = max_visible_items as f32 * item_height;
+                        let relative_y = (my - list_y).clamp(0.0, track_h);
+                        let scroll_ratio = relative_y / track_h;
+                        let max_scroll = filtered.len().saturating_sub(max_visible_items);
+                        self.command_palette_scroll = (scroll_ratio * max_scroll as f32).round() as usize;
+                        return UiAction::None;
+                    }
+                }
+
+                let list_w = if filtered.len() > max_visible_items { modal_w - 12.0 } else { modal_w };
+                if mx >= modal_x && mx <= modal_x + list_w && my >= list_y && my <= modal_y + modal_h - 15.0 {
+                    let idx = ((my - list_y) / item_height).floor() as usize + self.command_palette_scroll;
                     if idx < filtered.len() {
                         let cmd = filtered[idx];
                         self.active_modal = None;
@@ -432,15 +480,57 @@ impl UiState {
                 }
             }
 
+            if modal == ModalType::UnsavedChanges {
+                let btn_w = 130.0f32;
+                let btn_h = 34.0f32;
+                let spacing = 15.0f32;
+                let total_btn_block_w = 3.0 * btn_w + 2.0 * spacing;
+                let start_btn_x = modal_x + ((modal_w - total_btn_block_w) / 2.0).round();
+                let btn_y = modal_y + modal_h - btn_h - 20.0;
+
+                if let Some(tab_idx) = self.tab_to_close {
+                    // Check Save button
+                    let save_x = start_btn_x;
+                    if mx >= save_x && mx <= save_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
+                        self.active_modal = None;
+                        self.tab_to_close = None;
+                        return UiAction::SaveAndCloseTab(tab_idx);
+                    }
+
+                    // Check Don't Save button
+                    let dont_save_x = start_btn_x + btn_w + spacing;
+                    if mx >= dont_save_x && mx <= dont_save_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
+                        self.active_modal = None;
+                        self.tab_to_close = None;
+                        return UiAction::ForceCloseTab(tab_idx);
+                    }
+
+                    // Check Cancel button
+                    let cancel_x = start_btn_x + 2.0 * (btn_w + spacing);
+                    if mx >= cancel_x && mx <= cancel_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
+                        self.active_modal = None;
+                        self.tab_to_close = None;
+                        return UiAction::CloseModal;
+                    }
+                }
+
+                if clicked_outside {
+                    self.active_modal = None;
+                    self.tab_to_close = None;
+                    return UiAction::CloseModal;
+                }
+                return UiAction::None;
+            }
+
             // Check if clicked close button (centered horizontally)
             let btn_w = (12.0 * self.ui_char_width).max(100.0).round();
             let btn_h = (self.ui_line_height * 1.6).max(30.0).round();
             let btn_x = modal_x + ((modal_w - btn_w) / 2.0).round();
             let btn_y = modal_y + modal_h - btn_h - (self.ui_line_height * 1.0).round();
 
-            let inside_close_btn = modal != ModalType::CommandPalette && mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+            let inside_close_btn = modal != ModalType::CommandPalette && modal != ModalType::UnsavedChanges && mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
 
-            if inside_close_btn || clicked_outside {
+            if (inside_close_btn || clicked_outside) && modal != ModalType::UnsavedChanges {
                 self.active_modal = None;
                 return UiAction::CloseModal;
             }
@@ -589,6 +679,41 @@ impl UiState {
                     return action.clone();
                 }
             }
+
+            // Check actual file tabs
+            let tab_close_icon_sz = (self.ui_font_size * 0.8).round().max(10.0);
+            let activity_bar_width = 0.0;
+            let mut current_tab_x = activity_bar_width + self.sidebar_width;
+            let dot_reserved = 22.0f32;
+            let close_reserved = 8.0f32 + tab_close_icon_sz;
+
+            for idx in 0..tab_paths.len() {
+                let path_opt = &tab_paths[idx];
+                let file_name = path_opt.as_ref()
+                    .and_then(|p| Path::new(p).file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "untitled.txt".to_string());
+
+                let name_w = file_name.chars().count() as f32 * self.ui_char_width;
+                let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+
+                if mx >= current_tab_x && mx < current_tab_x + tab_w {
+                    // Check if clicked the close button
+                    let close_x = current_tab_x + tab_w - 10.0 - tab_close_icon_sz;
+                    let close_y = (main_y + self.tabbar_height / 2.0 - tab_close_icon_sz / 2.0).round();
+                    
+                    // Allow some padding around the close icon for easier clicking
+                    if mx >= close_x - 3.0 && mx < close_x + tab_close_icon_sz + 3.0 && my >= close_y - 3.0 && my <= close_y + tab_close_icon_sz + 3.0 {
+                        self.active_menu = None;
+                        return UiAction::CloseTab(idx);
+                    } else {
+                        self.active_menu = None;
+                        return UiAction::SelectTab(idx);
+                    }
+                }
+                current_tab_x += tab_w;
+            }
+
             self.active_menu = None;
             return UiAction::None;
         }
@@ -1083,8 +1208,11 @@ impl UiState {
         mouse_x: f32,
         mouse_y: f32,
         current_backend: wgpu::Backend,
-        file_path: Option<&str>,
+        tab_paths: &[Option<String>],
+        tab_modified: &[bool],
+        active_tab_idx: usize,
     ) {
+        let active_file_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
         let white_uv = atlas.white_pixel_uv();
 
         // Throttled git branch check
@@ -1116,8 +1244,10 @@ impl UiState {
         let minimap_x = sb_x - minimap_width;
         let text_viewport_w = minimap_x - text_area_x;
 
+        let status_y = (height - self.status_height).round();
         let editor_y = main_y + self.tabbar_height + self.breadcrumb_height;
-        let editor_height = main_height - self.tabbar_height - self.breadcrumb_height;
+        let total_editor_height = status_y - editor_y;
+        let editor_height = total_editor_height - 14.0;
         let visible_lines = (editor_height / self.buffer_line_height).floor() as usize;
         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as usize;
         self.scroll_y = self.scroll_y.min(max_scroll);
@@ -1210,7 +1340,7 @@ impl UiState {
         let file_name = self.selected_file.as_ref()
             .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
             .unwrap_or_else(|| "Untitled".to_string());
-        let title_text = format!("Garage Code Editor - {}", file_name);
+        let title_text = format!("Garage - {}", file_name);
         let title_len = title_text.chars().count() as f32;
         let title_x = ((width - title_len * self.ui_char_width) / 2.0).round();
         if title_x > current_x + 20.0 {
@@ -1255,20 +1385,57 @@ impl UiState {
                 .ok()
                 .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "Project".to_string());
-            let sidebar_header_text = format!(" {}", root_name);
 
+            let icon_sz = (self.ui_font_size * 1.05).round().max(13.0);
+            let root_icon_x = activity_bar_width + 10.0;
+            let root_text_baseline = (main_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round();
+            let root_icon_y_center = root_text_baseline - (self.ui_font_ascent * 0.33).round();
+            let root_icon_y = root_icon_y_center - (icon_sz / 2.0).round();
+            let root_text_x = root_icon_x + icon_sz + (self.ui_char_width * 0.6).round().max(4.0);
+
+            // Draw root folder icon
+            self.push_icon(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                "folder_open",
+                root_icon_x,
+                root_icon_y,
+                self.config.theme.sidebar_text_dir,
+                icon_sz,
+            );
+
+            // Draw root folder name text
             self.push_str(
                 vertices,
                 indices,
                 atlas,
                 queue,
-                &sidebar_header_text,
-                activity_bar_width + 10.0,
-                (main_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round(),
+                &root_name,
+                root_text_x,
+                root_text_baseline,
                 self.config.theme.sidebar_text_dir,
                 self.ui_font_size,
                 self.ui_char_width,
             );
+
+            // Draw line from root icon down to children if there are visible nodes
+            if !self.visible_nodes.is_empty() {
+                let line_x = (root_icon_x + icon_sz / 2.0).round();
+                let start_line_y = (root_icon_y + icon_sz).round();
+                self.push_quad(
+                    vertices,
+                    indices,
+                    line_x - 0.5,
+                    start_line_y,
+                    1.0,
+                    (main_y + self.ui_line_height - start_line_y).max(1.0),
+                    white_uv,
+                    self.config.theme.tabbar_border,
+                );
+            }
+
             for (idx, node) in self.visible_nodes.iter().enumerate() {
                 // Shift down by 1 row to accommodate the sidebar header
                 let row_y = main_y + (idx + 1) as f32 * self.ui_line_height;
@@ -1292,8 +1459,9 @@ impl UiState {
                     );
                 }
 
-                let indent_step = (self.ui_char_width * 1.5).round().max(10.0);
-                let indent_x = activity_bar_width + 10.0 + node.depth as f32 * indent_step;
+                let effective_depth = node.depth + 1;
+                let indent_step = 18.0f32; // Increased to 18px to prevent guide lines from crossing icons
+                let indent_x = activity_bar_width + 10.0 + effective_depth as f32 * indent_step;
                 let text_color = if node.is_dir {
                     self.config.theme.sidebar_text_dir
                 } else {
@@ -1301,10 +1469,54 @@ impl UiState {
                 };
 
                 let text_baseline = (row_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round();
-                let icon_sz = (self.ui_font_size * 1.05).round().max(13.0);
                 let icon_y_center = text_baseline - (self.ui_font_ascent * 0.33).round();
                 let icon_x = indent_x;
                 let icon_y = icon_y_center - (icon_sz / 2.0).round();
+
+                // Draw tree guide lines
+                for i in 0..effective_depth {
+                    let mut has_later = false;
+                    for next_node in &self.visible_nodes[idx + 1..] {
+                        let next_effective_depth = next_node.depth + 1;
+                        if next_effective_depth <= i {
+                            break;
+                        }
+                        if next_effective_depth > i {
+                            has_later = true;
+                            break;
+                        }
+                    }
+
+                    let should_draw = (i < effective_depth - 1 && has_later) || (i == effective_depth - 1);
+                    if should_draw {
+                        let line_x = (activity_bar_width + 10.0 + i as f32 * indent_step + icon_sz / 2.0).round();
+                        let end_y = if has_later { row_y + self.ui_line_height } else { icon_y_center };
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            line_x - 0.5,
+                            row_y,
+                            1.0,
+                            end_y - row_y,
+                            white_uv,
+                            self.config.theme.tabbar_border,
+                        );
+
+                        // Draw horizontal branch segment if it's the node's immediate column
+                        if i == effective_depth - 1 {
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                line_x,
+                                icon_y_center - 0.5,
+                                indent_x - line_x,
+                                1.0,
+                                white_uv,
+                                self.config.theme.tabbar_border,
+                            );
+                        }
+                    }
+                }
 
                 if node.is_dir {
                     // Draw Folder Outline Icon from SVGs
@@ -1351,34 +1563,18 @@ impl UiState {
                 }
 
                 let text_x = icon_x + icon_sz + (self.ui_char_width * 0.6).round().max(4.0);
-                let max_w = self.sidebar_width - (text_x - activity_bar_width) - 10.0;
-                if max_w > 0.0 {
-                    let max_chars = (max_w / self.ui_char_width).floor() as usize;
-                    let node_text = &node.name;
-                    let truncated_text: String = if node_text.chars().count() > max_chars {
-                        if max_chars > 3 {
-                            let mut s: String = node_text.chars().take(max_chars - 3).collect();
-                            s.push_str("...");
-                            s
-                        } else {
-                            node_text.chars().take(max_chars).collect()
-                        }
-                    } else {
-                        node_text.clone()
-                    };
-                    self.push_str(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        &truncated_text,
-                        text_x,
-                        text_baseline,
-                        text_color,
-                        self.ui_font_size,
-                        self.ui_char_width,
-                    );
-                }
+                self.push_str(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    &node.name,
+                    text_x,
+                    text_baseline,
+                    text_color,
+                    self.ui_font_size,
+                    self.ui_char_width,
+                );
             }
         }
 
@@ -1406,61 +1602,135 @@ impl UiState {
             self.config.theme.tabbar_border,
         );
 
-        // Draw active file tab
-        let tab_w = (file_name.chars().count() as f32 * self.ui_char_width + 50.0).max(130.0);
-        self.push_quad(
-            vertices,
-            indices,
-            activity_bar_width + self.sidebar_width,
-            main_y,
-            tab_w,
-            self.tabbar_height - 1.0,
-            white_uv,
-            self.config.theme.tab_active_bg,
-        );
-        // Active tab right border
-        self.push_quad(
-            vertices,
-            indices,
-            activity_bar_width + self.sidebar_width + tab_w - 1.0,
-            main_y,
-            1.0,
-            self.tabbar_height,
-            white_uv,
-            self.config.theme.tabbar_border,
-        );
-        let tab_baseline = (main_y + (self.tabbar_height + self.ui_font_ascent) / 2.0).round() - 1.0;
-        
-        // Unsaved file indicator dot (bullet)
-        if buffer.is_modified {
-            let dot_size = 5.0f32;
-            let dot_x = activity_bar_width + self.sidebar_width + 12.0;
-            let dot_y = (main_y + self.tabbar_height / 2.0 - dot_size / 2.0).round();
+        // Draw active/inactive file tabs
+        let mut current_tab_x = activity_bar_width + self.sidebar_width;
+        let tab_baseline = (main_y + self.tabbar_height / 2.0 + self.ui_font_ascent / 2.0 - 3.5).round();
+        let tab_close_icon_sz = (self.ui_font_size * 0.8).round().max(10.0);
+
+        for idx in 0..tab_paths.len() {
+            let path_opt = &tab_paths[idx];
+            let is_active = idx == active_tab_idx;
+            let is_modified = tab_modified.get(idx).copied().unwrap_or(false);
+
+            let file_name = path_opt.as_ref()
+                .and_then(|p| Path::new(p).file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "untitled.txt".to_string());
+
+            // Compute tab width
+            let name_w = file_name.chars().count() as f32 * self.ui_char_width;
+            let dot_reserved = 22.0f32;
+            let close_reserved = 8.0f32 + tab_close_icon_sz;
+            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+
+            // Draw tab background
+            let bg_color = if is_active {
+                self.config.theme.tab_active_bg
+            } else {
+                self.config.theme.tabbar_bg
+            };
             self.push_quad(
                 vertices,
                 indices,
-                dot_x,
-                dot_y,
-                dot_size,
-                dot_size,
+                current_tab_x,
+                main_y,
+                tab_w,
+                self.tabbar_height - 1.0,
                 white_uv,
-                self.config.theme.tab_text,
+                bg_color,
             );
-        }
 
-        // Active tab label
-        self.push_str(
-            vertices,
-            indices,
-            atlas,
-            queue,
-            &file_name,
-            activity_bar_width + self.sidebar_width + 24.0,
-            tab_baseline,
-            self.config.theme.tab_text,
-            self.ui_font_size,
-            self.ui_char_width,
-        );
+            // Draw separators/borders
+            if idx > 0 {
+                self.push_quad(
+                    vertices,
+                    indices,
+                    current_tab_x,
+                    main_y,
+                    1.0,
+                    self.tabbar_height,
+                    white_uv,
+                    self.config.theme.tabbar_border,
+                );
+            }
+            self.push_quad(
+                vertices,
+                indices,
+                current_tab_x + tab_w - 1.0,
+                main_y,
+                1.0,
+                self.tabbar_height,
+                white_uv,
+                self.config.theme.tabbar_border,
+            );
+
+            // Draw unsaved circle icon if modified
+            if is_modified {
+                let dot_size = (self.ui_font_size * 0.55).round().max(7.0);
+                let dot_x = (current_tab_x + 12.0 + (dot_reserved - dot_size) / 2.0 - 4.0).round();
+                let dot_y = (main_y + self.tabbar_height / 2.0 - dot_size / 2.0).round();
+                self.push_icon(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    "circle",
+                    dot_x,
+                    dot_y,
+                    self.config.theme.tab_text,
+                    dot_size,
+                );
+            }
+
+            // Draw tab label
+            let label_x = current_tab_x + 12.0 + dot_reserved;
+            let label_color = if is_active {
+                self.config.theme.tab_text
+            } else {
+                let mut c = self.config.theme.tab_text;
+                c[3] *= 0.6;
+                c
+            };
+            self.push_str(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                &file_name,
+                label_x,
+                tab_baseline,
+                label_color,
+                self.ui_font_size,
+                self.ui_char_width,
+            );
+
+            // Draw close button SVG icon
+            let close_x = current_tab_x + tab_w - 10.0 - tab_close_icon_sz;
+            let close_y = (main_y + self.tabbar_height / 2.0 - tab_close_icon_sz / 2.0).round();
+
+            let is_close_hovered = self.active_modal.is_none() && mouse_x >= close_x - 3.0 && mouse_x < close_x + tab_close_icon_sz + 3.0 && mouse_y >= close_y - 3.0 && mouse_y < close_y + tab_close_icon_sz + 3.0;
+            let close_color = if is_close_hovered {
+                [1.0, 0.3, 0.3, 1.0]
+            } else {
+                let mut c = self.config.theme.tab_text;
+                c[3] *= 0.4;
+                c
+            };
+
+            self.push_icon(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                "close",
+                close_x,
+                close_y,
+                close_color,
+                tab_close_icon_sz,
+            );
+
+            current_tab_x += tab_w;
+        }
 
         // Draw control buttons on the right of the tab bar
         // Layout buttons: Search, Settings, About from right to left using SVG icons
@@ -1492,7 +1762,7 @@ impl UiState {
                 if is_hovered { self.config.theme.titlebar_hover_bg } else { [0.0, 0.0, 0.0, 0.0] },
             );
             
-            let icon_y_center = tab_baseline - (self.ui_font_ascent * 0.33).round();
+            let icon_y_center = (main_y + self.tabbar_height / 2.0).round();
             let icon_y = icon_y_center - (icon_sz / 2.0).round();
             self.push_icon(
                 vertices,
@@ -1562,7 +1832,7 @@ impl UiState {
             activity_bar_width + self.sidebar_width,
             editor_y,
             gutter_width,
-            editor_height,
+            total_editor_height,
             white_uv,
             self.config.theme.gutter_bg,
         );
@@ -1572,7 +1842,7 @@ impl UiState {
             text_area_x - 1.0,
             editor_y,
             1.0,
-            editor_height,
+            total_editor_height,
             white_uv,
             self.config.theme.gutter_border,
         );
@@ -1637,19 +1907,28 @@ impl UiState {
                     let col_start = if line_idx == s_line { s_col } else { 0 };
                     let col_end = if line_idx == e_line { e_col } else { line_chars_count };
 
-                    if col_start < col_end || (s_line != e_line && line_idx < e_line) {
-                        let sel_x = text_area_x + col_start as f32 * self.buffer_char_width;
-                        let sel_w = ((col_end - col_start) as f32).max(0.5) * self.buffer_char_width;
-                        self.push_quad(
-                            vertices,
-                            indices,
-                            sel_x,
-                            row_y,
-                            sel_w,
-                            self.buffer_line_height,
-                            white_uv,
-                            self.config.theme.selection_bg,
-                        );
+                    // Adjust for scroll_x
+                    let visible_start = col_start.saturating_sub(self.scroll_x);
+                    let visible_end = col_end.saturating_sub(self.scroll_x);
+
+                    if visible_start < visible_end {
+                        let sel_x = text_area_x + visible_start as f32 * self.buffer_char_width;
+                        let mut sel_w = ((visible_end - visible_start) as f32).max(0.5) * self.buffer_char_width;
+                        if sel_x < minimap_x {
+                            if sel_x + sel_w > minimap_x {
+                                sel_w = minimap_x - sel_x;
+                            }
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                sel_x,
+                                row_y,
+                                sel_w,
+                                self.buffer_line_height,
+                                white_uv,
+                                self.config.theme.selection_bg,
+                            );
+                        }
                     }
                 }
             }
@@ -1660,26 +1939,39 @@ impl UiState {
             let char_colors = self.get_line_char_colors(line_text);
             
             for (char_idx, c) in line_text.chars().enumerate() {
+                if char_idx < self.scroll_x {
+                    continue;
+                }
+                // Stop rendering if we go past the minimap/scrollbar area to prevent overlap/overflow
+                if pen_x + self.buffer_char_width > minimap_x {
+                    break;
+                }
                 let char_color = char_colors.get(char_idx).copied().unwrap_or(self.config.theme.syntax_default);
                 pen_x += self.push_char(vertices, indices, atlas, queue, c, pen_x, baseline_y, char_color, self.buffer_font_size, self.buffer_char_width);
             }
 
             // Draw Git Blame inline annotation at the end of the active line
             if self.config.show_git_blame && line_idx == cursor.line {
-                if let Some(blame_str) = self.get_or_update_blame(file_path, line_idx) {
-                    let blame_x = pen_x + self.buffer_char_width * 4.0;
-                    self.push_str(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        &blame_str,
-                        blame_x,
-                        baseline_y,
-                        self.config.theme.syntax_comment,
-                        self.buffer_font_size,
-                        self.buffer_char_width,
-                    );
+                if let Some(blame_str) = self.get_or_update_blame(active_file_path, line_idx) {
+                    let mut blame_pen_x = pen_x + self.buffer_char_width * 4.0;
+                    for c in blame_str.chars() {
+                        if blame_pen_x + self.buffer_char_width > minimap_x {
+                            break;
+                        }
+                        self.push_char(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            c,
+                            blame_pen_x,
+                            baseline_y,
+                            self.config.theme.syntax_comment,
+                            self.buffer_font_size,
+                            self.buffer_char_width,
+                        );
+                        blame_pen_x += self.buffer_char_width;
+                    }
                 }
             }
         }
@@ -1687,18 +1979,20 @@ impl UiState {
         // Draw active cursor
         if cursor.line >= self.scroll_y && cursor.line < self.scroll_y + visible_lines {
             let cur_row_y = editor_y + (cursor.line - self.scroll_y) as f32 * self.buffer_line_height;
-            let cur_x = text_area_x + cursor.col as f32 * self.buffer_char_width;
+            let cur_x = text_area_x + (cursor.col as isize - self.scroll_x as isize) as f32 * self.buffer_char_width;
             
-            self.push_quad(
-                vertices,
-                indices,
-                cur_x,
-                cur_row_y + 1.0,
-                2.0,
-                self.buffer_line_height - 2.0,
-                white_uv,
-                self.config.theme.cursor_color,
-            );
+            if cursor.col >= self.scroll_x && cur_x + 2.0 <= minimap_x {
+                self.push_quad(
+                    vertices,
+                    indices,
+                    cur_x,
+                    cur_row_y + 1.0,
+                    2.0,
+                    self.buffer_line_height - 2.0,
+                    white_uv,
+                    self.config.theme.cursor_color,
+                );
+            }
         }
 
         // --- 4. Draw Scrollbar ---
@@ -1711,7 +2005,7 @@ impl UiState {
             sb_x,
             editor_y,
             scrollbar_width,
-            editor_height,
+            total_editor_height,
             white_uv,
             self.config.theme.scrollbar_track,
         );
@@ -1722,7 +2016,7 @@ impl UiState {
             sb_x - 1.0,
             editor_y,
             1.0,
-            editor_height,
+            total_editor_height,
             white_uv,
             self.config.theme.scrollbar_border,
         );
@@ -1752,6 +2046,69 @@ impl UiState {
             thumb_color,
         );
 
+        // --- 4.1 Draw Horizontal Scrollbar ---
+        let max_line_len = buffer.lines().iter().map(|l| l.chars().count()).max().unwrap_or(0);
+        let visible_cols = (text_viewport_w / self.buffer_char_width).floor() as usize;
+        
+        let hs_y = editor_y + editor_height;
+        let hs_h = 14.0f32;
+        let is_hs_hovered = self.active_modal.is_none()
+            && mouse_x >= text_area_x
+            && mouse_x < minimap_x
+            && mouse_y >= hs_y
+            && mouse_y < hs_y + hs_h;
+
+        // Draw Horizontal Scrollbar Track Background
+        self.push_quad(
+            vertices,
+            indices,
+            text_area_x,
+            hs_y,
+            text_viewport_w,
+            hs_h,
+            white_uv,
+            self.config.theme.scrollbar_track,
+        );
+
+        // Draw horizontal track border separator (top of horizontal scrollbar)
+        self.push_quad(
+            vertices,
+            indices,
+            text_area_x,
+            hs_y,
+            text_viewport_w,
+            1.0,
+            white_uv,
+            self.config.theme.scrollbar_border,
+        );
+
+        if max_line_len > visible_cols {
+            // Calculate horizontal scrollbar thumb
+            let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
+            let thumb_w = (text_viewport_w * ratio_x).clamp(20.0, text_viewport_w);
+            let max_scroll_x = (max_line_len as isize - visible_cols as isize).max(0) as f32;
+            let scroll_ratio_x = if max_scroll_x > 0.0 { self.scroll_x as f32 / max_scroll_x } else { 0.0 };
+            let thumb_x = text_area_x + scroll_ratio_x * (text_viewport_w - thumb_w);
+
+            let thumb_color_x = if is_hs_hovered {
+                self.config.theme.scrollbar_thumb_hover
+            } else {
+                self.config.theme.scrollbar_thumb
+            };
+
+            // Draw Horizontal Scrollbar Thumb (height 10.0, padded by 2.0 from top and bottom)
+            self.push_quad(
+                vertices,
+                indices,
+                thumb_x,
+                hs_y + 2.0,
+                thumb_w,
+                10.0,
+                white_uv,
+                thumb_color_x,
+            );
+        }
+
         // --- 4.5. Draw Minimap ---
         // Draw Minimap Track background
         self.push_quad(
@@ -1760,7 +2117,7 @@ impl UiState {
             minimap_x,
             editor_y,
             minimap_width,
-            editor_height,
+            total_editor_height,
             white_uv,
             self.config.theme.editor_bg,
         );
@@ -1771,7 +2128,7 @@ impl UiState {
             minimap_x - 1.0,
             editor_y,
             1.0,
-            editor_height,
+            total_editor_height,
             white_uv,
             self.config.theme.scrollbar_border,
         );
@@ -2137,7 +2494,8 @@ impl UiState {
             let modal_w = match modal {
                 ModalType::Settings => (45.0 * self.ui_char_width).max(500.0).round(),
                 ModalType::About => 400.0,
-                ModalType::CommandPalette => 550.0,
+                ModalType::CommandPalette => (50.0 * self.ui_char_width).max(500.0).round(),
+                ModalType::UnsavedChanges => 520.0,
             };
             let modal_h = match modal {
                 ModalType::Settings => {
@@ -2145,7 +2503,14 @@ impl UiState {
                     (row_height * 8.2).max(430.0).round()
                 }
                 ModalType::About => 240.0,
-                ModalType::CommandPalette => 320.0,
+                ModalType::CommandPalette => {
+                    let item_height = (self.ui_line_height * 1.6).round().max(26.0);
+                    let filtered_len = self.get_filtered_commands().len();
+                    let visible_items = filtered_len.min(10);
+                    let header_h = 15.0 + self.ui_line_height + 15.0 + 1.0;
+                    (header_h + visible_items as f32 * item_height + 15.0).round()
+                }
+                ModalType::UnsavedChanges => 200.0,
             };
             let modal_x = ((width - modal_w) / 2.0).round();
             let modal_y = ((height - modal_h) / 2.0).round();
@@ -2257,9 +2622,26 @@ impl UiState {
                     let max_visible_items = ((modal_y + modal_h - 15.0 - list_y) / item_height).floor() as usize;
 
                     let filtered = self.get_filtered_commands();
-                    for idx in 0..filtered.len().min(max_visible_items) {
+                    
+                    // Automatically scroll selection into view
+                    if max_visible_items > 0 {
+                        if self.command_palette_selected < self.command_palette_scroll {
+                            self.command_palette_scroll = self.command_palette_selected;
+                        } else if self.command_palette_selected >= self.command_palette_scroll + max_visible_items {
+                            self.command_palette_scroll = self.command_palette_selected + 1 - max_visible_items;
+                        }
+                    }
+
+                    // Clamp scroll offset to valid bounds
+                    let max_scroll = filtered.len().saturating_sub(max_visible_items);
+                    self.command_palette_scroll = self.command_palette_scroll.min(max_scroll);
+
+                    let start_idx = self.command_palette_scroll;
+                    let end_idx = (self.command_palette_scroll + max_visible_items).min(filtered.len());
+
+                    for idx in start_idx..end_idx {
                         let item = filtered[idx];
-                        let item_y = list_y + idx as f32 * item_height;
+                        let item_y = list_y + (idx - self.command_palette_scroll) as f32 * item_height;
                         let is_selected = idx == self.command_palette_selected;
 
                         // Highlight selected command row
@@ -2302,7 +2684,8 @@ impl UiState {
                         let desc_color = self.config.theme.modal_text_muted;
                         let desc_len = desc.chars().count() as f32;
                         let desc_w = desc_len * self.ui_char_width;
-                        let desc_x = modal_x + modal_w - 20.0 - desc_w;
+                        let right_margin = if filtered.len() > max_visible_items { 25.0 } else { 20.0 };
+                        let desc_x = modal_x + modal_w - right_margin - desc_w;
                         
                         let name_len = display_name.chars().count() as f32;
                         let name_w = name_len * self.ui_char_width;
@@ -2321,6 +2704,143 @@ impl UiState {
                                 self.ui_char_width,
                             );
                         }
+                    }
+
+                    // Draw scrollbar for command palette if needed
+                    if filtered.len() > max_visible_items {
+                        let track_x = modal_x + modal_w - 8.0;
+                        let track_w = 4.0f32;
+                        let track_h = max_visible_items as f32 * item_height;
+                        
+                        // Scrollbar track
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            track_x,
+                            list_y,
+                            track_w,
+                            track_h,
+                            white_uv,
+                            self.config.theme.scrollbar_track,
+                        );
+                        
+                        let ratio = max_visible_items as f32 / filtered.len() as f32;
+                        let thumb_h = (track_h * ratio).clamp(15.0, track_h);
+                        let scroll_ratio = self.command_palette_scroll as f32 / max_scroll as f32;
+                        let thumb_y = list_y + scroll_ratio * (track_h - thumb_h);
+                        
+                        // Scrollbar thumb
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            track_x,
+                            thumb_y,
+                            track_w,
+                            thumb_h,
+                            white_uv,
+                            self.config.theme.scrollbar_thumb,
+                        );
+                    }
+                }
+                ModalType::UnsavedChanges => {
+                    let file_name = self.tab_to_close
+                        .and_then(|idx| tab_paths.get(idx).cloned())
+                        .flatten()
+                        .and_then(|p| Path::new(&p).file_name().map(|n| n.to_string_lossy().to_string()))
+                        .unwrap_or_else(|| "untitled.txt".to_string());
+
+                    let title_text = "Unsaved Changes";
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        title_text,
+                        modal_x + 20.0,
+                        modal_y + 35.0,
+                        self.config.theme.modal_text_title,
+                        self.ui_font_size,
+                        self.ui_char_width,
+                    );
+
+                    let mut truncated_name = file_name.clone();
+                    if truncated_name.chars().count() > 20 {
+                        let prefix: String = truncated_name.chars().take(17).collect();
+                        truncated_name = format!("{}...", prefix);
+                    }
+                    let msg_text = format!("'{}' has unsaved changes.", truncated_name);
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        &msg_text,
+                        modal_x + 20.0,
+                        modal_y + 70.0,
+                        self.config.theme.modal_text_normal,
+                        self.ui_font_size,
+                        self.ui_char_width,
+                    );
+
+                    let msg_text_2 = "Save changes before closing?";
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        msg_text_2,
+                        modal_x + 20.0,
+                        modal_y + 92.0,
+                        self.config.theme.modal_text_normal,
+                        self.ui_font_size,
+                        self.ui_char_width,
+                    );
+
+                    let btn_w = 130.0f32;
+                    let btn_h = 34.0f32;
+                    let spacing = 15.0f32;
+
+                    let total_btn_block_w = 3.0 * btn_w + 2.0 * spacing;
+                    let start_btn_x = modal_x + ((modal_w - total_btn_block_w) / 2.0).round();
+                    let btn_y = modal_y + modal_h - btn_h - 20.0;
+
+                    let btn_labels = ["Save", "Don't Save", "Cancel"];
+                    for i in 0..3 {
+                        let bx = start_btn_x + i as f32 * (btn_w + spacing);
+                        let is_btn_hovered = mouse_x >= bx && mouse_x <= bx + btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h;
+
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            bx,
+                            btn_y,
+                            btn_w,
+                            btn_h,
+                            white_uv,
+                            if is_btn_hovered { self.config.theme.button_hover_bg } else { self.config.theme.button_bg },
+                        );
+                        self.push_quad(vertices, indices, bx, btn_y, btn_w, 1.0, white_uv, self.config.theme.button_border);
+                        self.push_quad(vertices, indices, bx, btn_y + btn_h - 1.0, btn_w, 1.0, white_uv, self.config.theme.button_border);
+                        self.push_quad(vertices, indices, bx, btn_y, 1.0, btn_h, white_uv, self.config.theme.button_border);
+                        self.push_quad(vertices, indices, bx + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, self.config.theme.button_border);
+
+                        let label = btn_labels[i];
+                        let label_w = label.chars().count() as f32 * self.ui_char_width;
+                        let tx = bx + ((btn_w - label_w) / 2.0).round();
+                        let ty = (btn_y + btn_h / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
+
+                        self.push_str(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            label,
+                            tx,
+                            ty,
+                            self.config.theme.button_text,
+                            self.ui_font_size,
+                            self.ui_char_width,
+                        );
                     }
                 }
                 ModalType::About => {
@@ -2645,7 +3165,7 @@ impl UiState {
                 }
             }
 
-            if modal != ModalType::CommandPalette {
+            if modal != ModalType::CommandPalette && modal != ModalType::UnsavedChanges {
                 // Draw generic Close Button (centered horizontally)
                 let btn_w = (12.0 * self.ui_char_width).max(100.0).round();
                 let btn_h = (self.ui_line_height * 1.6).max(30.0).round();
