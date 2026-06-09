@@ -87,6 +87,7 @@ impl GpuContext {
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::default(),
                 label: None,
+                memory_hints: Default::default(),
             },
             None,
         ).await.expect("Failed to create device");
@@ -194,6 +195,7 @@ impl GpuContext {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[Vertex::desc()],
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -203,6 +205,7 @@ impl GpuContext {
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -220,6 +223,7 @@ impl GpuContext {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
+            cache: None,
         });
 
         Self {
@@ -330,7 +334,7 @@ impl GpuContext {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil: None,
+                depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
