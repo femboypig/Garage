@@ -513,15 +513,14 @@ impl UiState {
         let main_y = self.titlebar_height;
         if my >= main_y && my < main_y + self.tabbar_height {
             let control_btns_raw = [
-                ("About", UiAction::ShowAbout),
-                ("Settings", UiAction::ShowSettings),
-                ("Search", UiAction::None),
+                ("assets/icons/info.svg", UiAction::ShowAbout),
+                ("assets/icons/settings.svg", UiAction::ShowSettings),
+                ("assets/icons/magnifying_glass.svg", UiAction::None),
             ];
+            let icon_sz = (self.ui_font_size * 1.1).round().max(14.0);
+            let item_w = icon_sz + 16.0;
             let mut btn_x = width - 15.0;
-            for (label, action) in &control_btns_raw {
-                let label_len = label.chars().count() as f32;
-                let text_w = label_len * self.ui_char_width;
-                let item_w = text_w + 16.0;
+            for (_icon_path, action) in &control_btns_raw {
                 btn_x -= item_w;
                 if mx >= btn_x && mx < btn_x + item_w {
                     self.active_menu = None;
@@ -657,6 +656,53 @@ impl UiState {
         char_width
     }
 
+    pub fn push_icon(
+        &self,
+        vertices: &mut Vec<Vertex>,
+        indices: &mut Vec<u16>,
+        atlas: &mut FontAtlas,
+        queue: &wgpu::Queue,
+        icon_path: &str,
+        x: f32,
+        y: f32,
+        color: [f32; 4],
+        size: f32,
+    ) -> f32 {
+        if let Some(info) = atlas.get_or_rasterize_icon(queue, icon_path, size) {
+            let start = vertices.len() as u16;
+            let rx = x.round();
+            let ry = y.round();
+            let rw = info.width.round();
+            let rh = info.height.round();
+
+            vertices.push(Vertex {
+                position: [rx, ry],
+                tex_coords: [info.uv_min[0], info.uv_min[1]],
+                color,
+            });
+            vertices.push(Vertex {
+                position: [rx + rw, ry],
+                tex_coords: [info.uv_max[0], info.uv_min[1]],
+                color,
+            });
+            vertices.push(Vertex {
+                position: [rx + rw, ry + rh],
+                tex_coords: [info.uv_max[0], info.uv_max[1]],
+                color,
+            });
+            vertices.push(Vertex {
+                position: [rx, ry + rh],
+                tex_coords: [info.uv_min[0], info.uv_max[1]],
+                color,
+            });
+
+            indices.extend_from_slice(&[start, start + 1, start + 2, start + 2, start + 3, start]);
+            rw
+        } else {
+            0.0
+        }
+    }
+
     pub fn push_str(
         &self,
         vertices: &mut Vec<Vertex>,
@@ -669,10 +715,12 @@ impl UiState {
         color: [f32; 4],
         font_size: f32,
         char_width: f32,
-    ) {
+    ) -> f32 {
+        let start_x = x;
         for c in text.chars() {
             x += self.push_char(vertices, indices, atlas, queue, c, x, y, color, font_size, char_width);
         }
+        x - start_x
     }
 
     /// Parse enclosing function/struct backwards from cursor line
@@ -1175,152 +1223,55 @@ impl UiState {
                         }
                     }
 
-                    // Draw Folder Outline Icon (Inspired by Zed Editor)
-                    let folder_w = (self.ui_char_width * 1.5).round().max(12.0);
-                    let folder_h = (self.ui_char_width * 1.25).round().max(10.0);
+                    // Draw Folder Outline Icon from SVGs
+                    let folder_sz = (self.ui_char_width * 1.5).round().max(12.0);
                     let icon_x = indent_x + self.ui_char_width * 1.2;
-                    let icon_y = row_y + ((self.ui_line_height - folder_h) / 2.0).round();
+                    let icon_y = row_y + ((self.ui_line_height - folder_sz) / 2.0).round();
 
                     let is_expanded = self.expanded_dirs.contains(&node.path);
-                    if is_expanded {
-                        // Open Folder Outline (Back flap + Front flap overlay)
-                        let tab_h = (folder_h * 0.25).round().max(2.0);
-                        let tab_w = (folder_w * 0.45).round().max(5.0);
-
-                        let bx = icon_x + 1.0;
-                        let by = icon_y + tab_h;
-                        let bw = folder_w - 2.0;
-                        let bh = folder_h - tab_h;
-
-                        // Back body outline
-                        self.push_quad(vertices, indices, bx, by, 1.0, bh, white_uv, text_color); // Left
-                        self.push_quad(vertices, indices, bx + tab_w, by, bw - tab_w, 1.0, white_uv, text_color); // Top right
-
-                        // Tab outline
-                        self.push_quad(vertices, indices, bx, icon_y, 1.0, tab_h, white_uv, text_color); // Left
-                        self.push_quad(vertices, indices, bx, icon_y, tab_w, 1.0, white_uv, text_color); // Top
-                        self.push_quad(vertices, indices, bx + tab_w, icon_y, 1.0, tab_h, white_uv, text_color); // Right
-
-                        // Front flap outline (placed on top, slightly open at 45% height)
-                        let flap_top_y = icon_y + (folder_h * 0.45).round();
-                        let flap_h = (folder_h * 0.55).round();
-                        self.push_quad(vertices, indices, icon_x, flap_top_y, folder_w, 1.0, white_uv, text_color); // Front Top
-                        self.push_quad(vertices, indices, icon_x + 1.0, icon_y + folder_h - 1.0, folder_w - 2.0, 1.0, white_uv, text_color); // Front Bottom
-                        self.push_quad(vertices, indices, icon_x, flap_top_y, 1.0, flap_h, white_uv, text_color); // Front Left
-                        self.push_quad(vertices, indices, icon_x + folder_w - 1.0, flap_top_y, 1.0, flap_h, white_uv, text_color); // Front Right
-
-                        // Semi-transparent fill inside the open flap to create visual depth
-                        let mut flap_fill = text_color;
-                        flap_fill[3] = 0.15;
-                        self.push_quad(vertices, indices, icon_x + 1.0, flap_top_y + 1.0, folder_w - 2.0, flap_h - 2.0, white_uv, flap_fill);
+                    let icon_path = if is_expanded {
+                        "assets/icons/folder_open.svg"
                     } else {
-                        // Closed Folder Outline
-                        let tab_h = (folder_h * 0.25).round().max(2.0);
-                        let tab_w = (folder_w * 0.45).round().max(5.0);
+                        "assets/icons/folder.svg"
+                    };
 
-                        let bx = icon_x;
-                        let by = icon_y + tab_h;
-                        let bw = folder_w;
-                        let bh = folder_h - tab_h;
-
-                        // Main body outline
-                        self.push_quad(vertices, indices, bx, by + bh - 1.0, bw, 1.0, white_uv, text_color); // Bottom
-                        self.push_quad(vertices, indices, bx, by, 1.0, bh, white_uv, text_color); // Left
-                        self.push_quad(vertices, indices, bx + bw - 1.0, by, 1.0, bh, white_uv, text_color); // Right
-                        self.push_quad(vertices, indices, bx + tab_w, by, bw - tab_w, 1.0, white_uv, text_color); // Top right
-
-                        // Tab outline
-                        self.push_quad(vertices, indices, bx, icon_y, 1.0, tab_h, white_uv, text_color); // Left
-                        self.push_quad(vertices, indices, bx, icon_y, tab_w, 1.0, white_uv, text_color); // Top
-                        self.push_quad(vertices, indices, bx + tab_w, icon_y, 1.0, tab_h, white_uv, text_color); // Right
-                    }
+                    self.push_icon(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        icon_path,
+                        icon_x,
+                        icon_y,
+                        text_color,
+                        folder_sz,
+                    );
                 } else {
                     // Check file extension for specific icon types and colors
                     let ext = node.path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                    let (icon_color, is_rust, is_toml, is_json, is_md) = match ext {
-                        "rs" => ([0.87, 0.29, 0.15, 1.0], true, false, false, false), // Rust red-orange
-                        "toml" => ([0.65, 0.53, 0.43, 1.0], false, true, false, false), // TOML beige
-                        "json" => ([0.8, 0.68, 0.0, 1.0], false, false, true, false), // JSON yellow
-                        "md" => ([0.26, 0.53, 0.79, 1.0], false, false, false, true), // Markdown blue
-                        _ => (text_color, false, false, false, false),
+                    let (icon_path, icon_color) = match ext {
+                        "rs" => ("assets/icons/file_icons/rust.svg", [0.87, 0.29, 0.15, 1.0]), // Rust red-orange
+                        "toml" => ("assets/icons/file_icons/toml.svg", [0.65, 0.53, 0.43, 1.0]), // TOML beige
+                        "json" => ("assets/icons/json.svg", [0.8, 0.68, 0.0, 1.0]), // JSON yellow
+                        "md" => ("assets/icons/file_markdown.svg", [0.26, 0.53, 0.79, 1.0]), // Markdown blue
+                        _ => ("assets/icons/file.svg", text_color),
                     };
 
-                    // Draw Document Outline Icon (Inspired by Zed Editor)
-                    let file_w = (self.ui_char_width * 1.25).round().max(10.0);
-                    let file_h = (self.ui_char_width * 1.55).round().max(12.0);
-                    let icon_x = indent_x + self.ui_char_width * 1.2;
-                    let icon_y = row_y + ((self.ui_line_height - file_h) / 2.0).round();
+                    let file_sz = (self.ui_char_width * 1.4).round().max(12.0);
+                    let icon_x = indent_x + self.ui_char_width * 1.25;
+                    let icon_y = row_y + ((self.ui_line_height - file_sz) / 2.0).round();
 
-                    let fold_size = (file_w * 0.35).round().max(3.0);
-                    let bx = icon_x;
-                    let by = icon_y;
-                    let bw = file_w;
-                    let bh = file_h;
-
-                    // Bottom and Left borders
-                    self.push_quad(vertices, indices, bx, by + bh - 1.0, bw, 1.0, white_uv, icon_color); // Bottom
-                    self.push_quad(vertices, indices, bx, by, 1.0, bh, white_uv, icon_color); // Left
-
-                    // Right border (stops below fold)
-                    self.push_quad(vertices, indices, bx + bw - 1.0, by + fold_size, 1.0, bh - fold_size, white_uv, icon_color);
-
-                    // Top border (stops before fold)
-                    self.push_quad(vertices, indices, bx, by, bw - fold_size, 1.0, white_uv, icon_color);
-
-                    // Fold vertical and horizontal line
-                    self.push_quad(vertices, indices, bx + bw - fold_size, by, 1.0, fold_size, white_uv, icon_color);
-                    self.push_quad(vertices, indices, bx + bw - fold_size, by + fold_size, fold_size, 1.0, white_uv, icon_color);
-
-                    if is_rust {
-                        // Draw a tiny gear center point and teeth
-                        let cx = bx + (bw / 2.0).round();
-                        let cy = by + (bh / 2.0).round() + 1.0;
-                        // Center hub
-                        self.push_quad(vertices, indices, cx - 1.0, cy - 1.0, 3.0, 3.0, white_uv, icon_color);
-                        // Teeth
-                        self.push_quad(vertices, indices, cx - 2.0, cy, 1.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx + 2.0, cy, 1.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx, cy - 2.0, 1.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx, cy + 2.0, 1.0, 1.0, white_uv, icon_color);
-                    } else if is_toml {
-                        // Draw brackets [ ] inside
-                        self.push_quad(vertices, indices, bx + 3.0, by + 4.0, 1.0, bh - 7.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, bx + 3.0, by + 4.0, 2.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, bx + 3.0, by + bh - 4.0, 2.0, 1.0, white_uv, icon_color);
-
-                        self.push_quad(vertices, indices, bx + bw - 4.0, by + 4.0, 1.0, bh - 7.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, bx + bw - 5.0, by + 4.0, 2.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, bx + bw - 5.0, by + bh - 4.0, 2.0, 1.0, white_uv, icon_color);
-                    } else if is_json {
-                        // Draw curly braces { } outline inside
-                        let cx = bx + (bw / 2.0).round();
-                        let cy = by + (bh / 2.0).round() + 1.0;
-                        self.push_quad(vertices, indices, cx - 2.0, cy - 2.0, 2.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx - 2.0, cy - 2.0, 1.0, 5.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx - 3.0, cy, 2.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx - 2.0, cy + 2.0, 2.0, 1.0, white_uv, icon_color);
-
-                        self.push_quad(vertices, indices, cx + 1.0, cy - 2.0, 2.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx + 2.0, cy - 2.0, 1.0, 5.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx + 2.0, cy, 2.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx + 1.0, cy + 2.0, 2.0, 1.0, white_uv, icon_color);
-                    } else if is_md {
-                        // Draw an 'M' shape inside
-                        let cx = bx + 3.0;
-                        let cy = by + 5.0;
-                        self.push_quad(vertices, indices, cx, cy, 1.0, bh - 8.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx + bw - 7.0, cy, 1.0, bh - 8.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx + 1.0, cy + 1.0, 1.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx + 2.0, cy + 2.0, 1.0, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, cx + 3.0, cy + 1.0, 1.0, 1.0, white_uv, icon_color);
-                    } else {
-                        // Default content lines inside document
-                        let line_w = (bw - 5.0).max(4.0);
-                        let line_y1 = by + (bh * 0.45).round();
-                        let line_y2 = by + (bh * 0.7).round();
-                        self.push_quad(vertices, indices, bx + 3.0, line_y1, line_w, 1.0, white_uv, icon_color);
-                        self.push_quad(vertices, indices, bx + 3.0, line_y2, line_w, 1.0, white_uv, icon_color);
-                    }
+                    self.push_icon(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        icon_path,
+                        icon_x,
+                        icon_y,
+                        icon_color,
+                        file_sz,
+                    );
                 }
 
                 let text_x = indent_x + self.ui_char_width * 3.2;
@@ -1417,46 +1368,46 @@ impl UiState {
         );
 
         // Draw control buttons on the right of the tab bar
-        // Layout buttons: Search, Settings, About from right to left
+        // Layout buttons: Search, Settings, About from right to left using SVG icons
         let control_btns_raw = [
-            ("About", UiAction::ShowAbout),
-            ("Settings", UiAction::ShowSettings),
-            ("Search", UiAction::None),
+            ("assets/icons/info.svg", UiAction::ShowAbout),
+            ("assets/icons/settings.svg", UiAction::ShowSettings),
+            ("assets/icons/magnifying_glass.svg", UiAction::None),
         ];
 
+        let icon_sz = (self.ui_font_size * 1.1).round().max(14.0);
+        let item_w = icon_sz + 16.0; // 8px left and right padding
         let mut btn_x = width - 15.0;
         let mut control_btns = Vec::new();
-        for (label, action) in &control_btns_raw {
-            let label_len = label.chars().count() as f32;
-            let text_w = label_len * self.ui_char_width;
-            let item_w = text_w + 16.0; // 8px left and right padding
+        for (icon_path, action) in &control_btns_raw {
             btn_x -= item_w;
-            control_btns.push((*label, btn_x, item_w, action.clone()));
+            control_btns.push((*icon_path, btn_x, action.clone()));
         }
 
-        for (btn_label, x_pos, item_w, _btn_action) in &control_btns {
-            let is_hovered = self.active_modal.is_none() && mouse_x >= *x_pos && mouse_x < *x_pos + *item_w && mouse_y >= main_y && mouse_y < main_y + self.tabbar_height - 1.0;
+        for (icon_path, x_pos, _btn_action) in &control_btns {
+            let is_hovered = self.active_modal.is_none() && mouse_x >= *x_pos && mouse_x < *x_pos + item_w && mouse_y >= main_y && mouse_y < main_y + self.tabbar_height - 1.0;
             self.push_quad(
                 vertices,
                 indices,
                 *x_pos,
                 main_y,
-                *item_w,
+                item_w,
                 self.tabbar_height - 1.0,
                 white_uv,
                 if is_hovered { self.config.theme.titlebar_hover_bg } else { [0.0, 0.0, 0.0, 0.0] },
             );
-            self.push_str(
+            
+            let icon_y = main_y + ((self.tabbar_height - 1.0 - icon_sz) / 2.0).round();
+            self.push_icon(
                 vertices,
                 indices,
                 atlas,
                 queue,
-                btn_label,
+                icon_path,
                 *x_pos + 8.0,
-                (main_y + self.tabbar_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
+                icon_y,
                 self.config.theme.tab_text,
-                self.ui_font_size,
-                self.ui_char_width,
+                icon_sz,
             );
         }
 
@@ -1728,23 +1679,68 @@ impl UiState {
             self.config.theme.statusbar_border,
         );
 
-        let mut status_left = format!(" GARAGE | Line {}, Col {}", cursor.line + 1, cursor.col + 1);
-        if let Some(ref branch) = self.git_branch {
-            status_left.push_str(&format!(" | git: {}", branch));
-        }
+        let status_left = format!(" GARAGE | Line {}, Col {}", cursor.line + 1, cursor.col + 1);
         let status_right = format!("Lines: {} | UTF-8 | LF ", buffer.len());
-        self.push_str(
+        let baseline_y = (status_y + self.status_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
+        let text_color = self.config.theme.statusbar_text;
+        
+        let mut pen_x = 10.0;
+        pen_x += self.push_str(
             vertices,
             indices,
             atlas,
             queue,
             &status_left,
-            10.0,
-            (status_y + self.status_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-            self.config.theme.statusbar_text,
+            pen_x,
+            baseline_y,
+            text_color,
             self.ui_font_size,
             self.ui_char_width,
         );
+
+        if let Some(ref branch) = self.git_branch {
+            pen_x += self.push_str(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                " | ",
+                pen_x,
+                baseline_y,
+                text_color,
+                self.ui_font_size,
+                self.ui_char_width,
+            );
+            
+            // Draw branch icon
+            let icon_sz = (self.ui_font_size * 0.9).round().max(12.0);
+            let icon_y = status_y + ((self.status_height - icon_sz) / 2.0).round();
+            self.push_icon(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                "assets/icons/git_branch.svg",
+                pen_x,
+                icon_y,
+                text_color,
+                icon_sz,
+            );
+            pen_x += icon_sz + 4.0; // Space after icon
+            
+            self.push_str(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                branch,
+                pen_x,
+                baseline_y,
+                text_color,
+                self.ui_font_size,
+                self.ui_char_width,
+            );
+        }
 
         let right_text_width = status_right.chars().count() as f32 * self.ui_char_width;
         let right_x = width - right_text_width - 15.0;
