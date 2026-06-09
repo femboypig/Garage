@@ -295,47 +295,34 @@ impl UiState {
                 }
 
                 // Row 2: UI Font Size [-] and [+]
-                // Decrease [-] at 240..270, 115..140
-                if mx >= modal_x + 240.0 && mx <= modal_x + 270.0 && my >= modal_y + 115.0 && my <= modal_y + 140.0 {
+                // Decrease [-] at 240..270, 125..150
+                if mx >= modal_x + 240.0 && mx <= modal_x + 270.0 && my >= modal_y + 125.0 && my <= modal_y + 150.0 {
                     return UiAction::ChangeUiFontSize(-1.0);
                 }
-                // Increase [+] at 280..310, 115..140
-                if mx >= modal_x + 280.0 && mx <= modal_x + 310.0 && my >= modal_y + 115.0 && my <= modal_y + 140.0 {
+                // Increase [+] at 280..310, 125..150
+                if mx >= modal_x + 280.0 && mx <= modal_x + 310.0 && my >= modal_y + 125.0 && my <= modal_y + 150.0 {
                     return UiAction::ChangeUiFontSize(1.0);
                 }
 
-                // Row 3: Sidebar Width [-] and [+]
-                // Decrease [-] at 240..270, 165..190
-                if mx >= modal_x + 240.0 && mx <= modal_x + 270.0 && my >= modal_y + 165.0 && my <= modal_y + 190.0 {
-                    return UiAction::ChangeSidebarWidth(-20.0);
-                }
-                // Increase [+] at 280..310, 165..190
-                if mx >= modal_x + 280.0 && mx <= modal_x + 310.0 && my >= modal_y + 165.0 && my <= modal_y + 190.0 {
-                    return UiAction::ChangeSidebarWidth(20.0);
-                }
-
-                // Row 4: Backend Selection
-                // Vulkan Button at 240..330, 215..245
-                if mx >= modal_x + 240.0 && mx <= modal_x + 330.0 && my >= modal_y + 215.0 && my <= modal_y + 245.0 {
+                // Row 3: Backend Selection
+                // Vulkan Button at 240..330, 185..215
+                if mx >= modal_x + 240.0 && mx <= modal_x + 330.0 && my >= modal_y + 185.0 && my <= modal_y + 215.0 {
                     return UiAction::ChangeBackend(wgpu::Backend::Vulkan);
                 }
-                // OpenGL Button at 340..430, 215..245
-                if mx >= modal_x + 340.0 && mx <= modal_x + 430.0 && my >= modal_y + 215.0 && my <= modal_y + 245.0 {
+                // OpenGL Button at 340..430, 185..215
+                if mx >= modal_x + 340.0 && mx <= modal_x + 430.0 && my >= modal_y + 185.0 && my <= modal_y + 215.0 {
                     return UiAction::ChangeBackend(wgpu::Backend::Gl);
                 }
 
-                // Row 5: Theme Selection
-                // Light at 240..320, 275..305
-                if mx >= modal_x + 240.0 && mx <= modal_x + 320.0 && my >= modal_y + 275.0 && my <= modal_y + 305.0 {
-                    return UiAction::ChangeTheme("Light Theme".to_string());
-                }
-                // Dark at 330..410, 275..305
-                if mx >= modal_x + 330.0 && mx <= modal_x + 410.0 && my >= modal_y + 275.0 && my <= modal_y + 305.0 {
-                    return UiAction::ChangeTheme("Dark Theme".to_string());
-                }
-                // Dracula at 420..520, 275..305
-                if mx >= modal_x + 420.0 && mx <= modal_x + 520.0 && my >= modal_y + 275.0 && my <= modal_y + 305.0 {
-                    return UiAction::ChangeTheme("Dracula".to_string());
+                // Row 4: Theme Selection (Cycle Toggle Selector)
+                // Click at 240..420, 245..275
+                if mx >= modal_x + 240.0 && mx <= modal_x + 420.0 && my >= modal_y + 245.0 && my <= modal_y + 275.0 {
+                    let next_theme = match self.config.theme.name.as_str() {
+                        "Light Theme" => "Dark Theme".to_string(),
+                        "Dark Theme" => "Dracula".to_string(),
+                        _ => "Light Theme".to_string(),
+                    };
+                    return UiAction::ChangeTheme(next_theme);
                 }
             }
 
@@ -487,22 +474,8 @@ impl UiState {
             return UiAction::None;
         }
 
-        // 3.5. Check Activity Bar Clicks (far left edge)
-        let activity_bar_width = 48.0;
-        if mx < activity_bar_width && my > main_y && my < height - self.status_height {
-            // Explorer Icon: y ranges from main_y to main_y + 60.0
-            if my >= main_y && my <= main_y + 60.0 {
-                self.active_menu = None;
-                return UiAction::ToggleSidebar;
-            }
-            // Settings Icon: y ranges from height - self.status_height - 60.0 to height - self.status_height
-            let set_y_start = height - self.status_height - 60.0;
-            if my >= set_y_start && my <= height - self.status_height {
-                self.active_menu = None;
-                return UiAction::ShowSettings;
-            }
-            return UiAction::None;
-        }
+        // 3.5. Check Activity Bar Clicks (reverted)
+        let activity_bar_width = 0.0;
 
         // 4. Check Sidebar Clicks
         if self.sidebar_width > 0.0 && mx >= activity_bar_width && mx < activity_bar_width + self.sidebar_width && my > main_y && my < height - self.status_height {
@@ -796,7 +769,7 @@ impl UiState {
         self.sidebar_width = self.target_sidebar_width;
 
         // Sidebar Navigator (Activity Bar) Width
-        let activity_bar_width = 48.0;
+        let activity_bar_width = 0.0;
 
         // Calculate dynamic layouts
         let max_line_digits = buffer.len().to_string().len().max(3);
@@ -919,113 +892,6 @@ impl UiState {
                 self.ui_char_width,
             );
         }
-
-        // --- 1.5 Draw Sidebar Navigator (Activity Bar) ---
-        let activity_bar_width = 48.0;
-        // Draw background for Activity Bar
-        self.push_quad(
-            vertices,
-            indices,
-            0.0,
-            main_y,
-            activity_bar_width,
-            main_height,
-            white_uv,
-            self.config.theme.titlebar_bg,
-        );
-        // Draw right border for Activity Bar
-        self.push_quad(
-            vertices,
-            indices,
-            activity_bar_width - 1.0,
-            main_y,
-            1.0,
-            main_height,
-            white_uv,
-            self.config.theme.sidebar_border,
-        );
-
-        // Render Explorer / Files Icon (Top of Activity Bar)
-        let exp_active = self.sidebar_width > 0.0;
-        let exp_hovered = self.active_modal.is_none() && mouse_x >= 0.0 && mouse_x < activity_bar_width && mouse_y >= main_y && mouse_y <= main_y + 60.0;
-        
-        if exp_active {
-            self.push_quad(
-                vertices,
-                indices,
-                0.0,
-                main_y + 15.0,
-                3.0,
-                24.0,
-                white_uv,
-                self.config.theme.cursor_color,
-            );
-        }
-        
-        let icon_color = if exp_active {
-            self.config.theme.cursor_color
-        } else if exp_hovered {
-            self.config.theme.modal_text_normal
-        } else {
-            self.config.theme.modal_text_muted
-        };
-
-        // Draw double file overlapping outlines
-        let doc1_x = 18.0;
-        let doc1_y = main_y + 17.0;
-        self.push_quad(vertices, indices, doc1_x, doc1_y, 12.0, 1.0, white_uv, icon_color); // top
-        self.push_quad(vertices, indices, doc1_x, doc1_y + 15.0, 12.0, 1.0, white_uv, icon_color); // bottom
-        self.push_quad(vertices, indices, doc1_x, doc1_y, 1.0, 16.0, white_uv, icon_color); // left
-        self.push_quad(vertices, indices, doc1_x + 11.0, doc1_y, 1.0, 16.0, white_uv, icon_color); // right
-
-        let doc2_x = 14.0;
-        let doc2_y = main_y + 21.0;
-        self.push_quad(vertices, indices, doc2_x + 1.0, doc2_y + 1.0, 10.0, 14.0, white_uv, self.config.theme.titlebar_bg);
-        self.push_quad(vertices, indices, doc2_x, doc2_y, 12.0, 1.0, white_uv, icon_color); // top
-        self.push_quad(vertices, indices, doc2_x, doc2_y + 15.0, 12.0, 1.0, white_uv, icon_color); // bottom
-        self.push_quad(vertices, indices, doc2_x, doc2_y, 1.0, 16.0, white_uv, icon_color); // left
-        self.push_quad(vertices, indices, doc2_x + 11.0, doc2_y, 1.0, 16.0, white_uv, icon_color); // right
-
-        // Render Settings Gear Icon (Bottom of Activity Bar)
-        let set_active = self.active_modal == Some(ModalType::Settings);
-        let set_y_start = height - self.status_height - 60.0;
-        let set_hovered = self.active_modal.is_none() && mouse_x >= 0.0 && mouse_x < activity_bar_width && mouse_y >= set_y_start && mouse_y <= height - self.status_height;
-        
-        let cog_y = height - self.status_height - 39.0;
-        let cog_x = 16.0;
-        
-        if set_active {
-            self.push_quad(
-                vertices,
-                indices,
-                0.0,
-                cog_y,
-                3.0,
-                24.0,
-                white_uv,
-                self.config.theme.cursor_color,
-            );
-        }
-        
-        let cog_color = if set_active {
-            self.config.theme.cursor_color
-        } else if set_hovered {
-            self.config.theme.modal_text_normal
-        } else {
-            self.config.theme.modal_text_muted
-        };
-
-        // Draw gear cogwheel vector shape
-        self.push_quad(vertices, indices, cog_x, cog_y, 16.0, 1.0, white_uv, cog_color); // top
-        self.push_quad(vertices, indices, cog_x, cog_y + 15.0, 16.0, 1.0, white_uv, cog_color); // bottom
-        self.push_quad(vertices, indices, cog_x, cog_y, 1.0, 16.0, white_uv, cog_color); // left
-        self.push_quad(vertices, indices, cog_x + 15.0, cog_y, 1.0, 16.0, white_uv, cog_color); // right
-        self.push_quad(vertices, indices, cog_x + 4.0, cog_y + 4.0, 8.0, 8.0, white_uv, self.config.theme.titlebar_bg);
-        self.push_quad(vertices, indices, cog_x + 6.0, cog_y + 6.0, 4.0, 4.0, white_uv, cog_color);
-        self.push_quad(vertices, indices, cog_x + 6.0, cog_y - 3.0, 4.0, 3.0, white_uv, cog_color); // top tooth
-        self.push_quad(vertices, indices, cog_x + 6.0, cog_y + 16.0, 4.0, 3.0, white_uv, cog_color); // bottom tooth
-        self.push_quad(vertices, indices, cog_x - 3.0, cog_y + 6.0, 3.0, 4.0, white_uv, cog_color); // left tooth
-        self.push_quad(vertices, indices, cog_x + 16.0, cog_y + 6.0, 3.0, 4.0, white_uv, cog_color); // right tooth
 
         // --- 2. Draw Sidebar Panel (Light Theme) ---
         if self.sidebar_width > 0.0 {
@@ -1861,36 +1727,17 @@ impl UiState {
                         queue,
                         &ui_size_str,
                         modal_x + 20.0,
-                        modal_y + 130.0,
+                        modal_y + 140.0,
                         self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
-                    let ui_dec_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 270.0 && mouse_y >= modal_y + 115.0 && mouse_y <= modal_y + 140.0;
-                    draw_button(vertices, indices, atlas, queue, "-", modal_x + 240.0, modal_y + 115.0, 30.0, 25.0, false, ui_dec_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
-                    let ui_inc_hover = mouse_x >= modal_x + 280.0 && mouse_x <= modal_x + 310.0 && mouse_y >= modal_y + 115.0 && mouse_y <= modal_y + 140.0;
-                    draw_button(vertices, indices, atlas, queue, "+", modal_x + 280.0, modal_y + 115.0, 30.0, 25.0, false, ui_inc_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let ui_dec_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 270.0 && mouse_y >= modal_y + 125.0 && mouse_y <= modal_y + 150.0;
+                    draw_button(vertices, indices, atlas, queue, "-", modal_x + 240.0, modal_y + 125.0, 30.0, 25.0, false, ui_dec_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let ui_inc_hover = mouse_x >= modal_x + 280.0 && mouse_x <= modal_x + 310.0 && mouse_y >= modal_y + 125.0 && mouse_y <= modal_y + 150.0;
+                    draw_button(vertices, indices, atlas, queue, "+", modal_x + 280.0, modal_y + 125.0, 30.0, 25.0, false, ui_inc_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
-                    // 3. Sidebar Width Settings
-                    let sidebar_size_str = format!("Sidebar:     {:.0} px", self.sidebar_width);
-                    self.push_str(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        &sidebar_size_str,
-                        modal_x + 20.0,
-                        modal_y + 180.0,
-                        self.config.theme.modal_text_normal,
-                        self.ui_font_size,
-                        self.ui_char_width,
-                    );
-                    let sb_dec_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 270.0 && mouse_y >= modal_y + 165.0 && mouse_y <= modal_y + 190.0;
-                    draw_button(vertices, indices, atlas, queue, "-", modal_x + 240.0, modal_y + 165.0, 30.0, 25.0, false, sb_dec_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
-                    let sb_inc_hover = mouse_x >= modal_x + 280.0 && mouse_x <= modal_x + 310.0 && mouse_y >= modal_y + 165.0 && mouse_y <= modal_y + 190.0;
-                    draw_button(vertices, indices, atlas, queue, "+", modal_x + 280.0, modal_y + 165.0, 30.0, 25.0, false, sb_inc_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
-
-                    // 4. Backend Selection
+                    // 3. Backend Selection
                     self.push_str(
                         vertices,
                         indices,
@@ -1898,20 +1745,20 @@ impl UiState {
                         queue,
                         "Backend:",
                         modal_x + 20.0,
-                        modal_y + 230.0,
+                        modal_y + 200.0,
                         self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
                     let is_vulkan = self.config.backend == "Vulkan";
-                    let vulkan_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 330.0 && mouse_y >= modal_y + 215.0 && mouse_y <= modal_y + 245.0;
-                    draw_button(vertices, indices, atlas, queue, "Vulkan", modal_x + 240.0, modal_y + 215.0, 90.0, 30.0, is_vulkan, vulkan_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let vulkan_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 330.0 && mouse_y >= modal_y + 185.0 && mouse_y <= modal_y + 215.0;
+                    draw_button(vertices, indices, atlas, queue, "Vulkan", modal_x + 240.0, modal_y + 185.0, 90.0, 30.0, is_vulkan, vulkan_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
                     let is_opengl = self.config.backend == "OpenGL";
-                    let opengl_hover = mouse_x >= modal_x + 340.0 && mouse_x <= modal_x + 430.0 && mouse_y >= modal_y + 215.0 && mouse_y <= modal_y + 245.0;
-                    draw_button(vertices, indices, atlas, queue, "OpenGL", modal_x + 340.0, modal_y + 215.0, 90.0, 30.0, is_opengl, opengl_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let opengl_hover = mouse_x >= modal_x + 340.0 && mouse_x <= modal_x + 430.0 && mouse_y >= modal_y + 185.0 && mouse_y <= modal_y + 215.0;
+                    draw_button(vertices, indices, atlas, queue, "OpenGL", modal_x + 340.0, modal_y + 185.0, 90.0, 30.0, is_opengl, opengl_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
-                    // 5. Theme Selection
+                    // 4. Theme Selection (Cycle Toggle Selector)
                     self.push_str(
                         vertices,
                         indices,
@@ -1919,24 +1766,16 @@ impl UiState {
                         queue,
                         "Theme:",
                         modal_x + 20.0,
-                        modal_y + 290.0,
+                        modal_y + 260.0,
                         self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
-                    let is_light_t = self.config.theme.name == "Light Theme";
-                    let light_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 320.0 && mouse_y >= modal_y + 275.0 && mouse_y <= modal_y + 305.0;
-                    draw_button(vertices, indices, atlas, queue, "Light", modal_x + 240.0, modal_y + 275.0, 80.0, 30.0, is_light_t, light_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let display_theme = &self.config.theme.name;
+                    let theme_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 420.0 && mouse_y >= modal_y + 245.0 && mouse_y <= modal_y + 275.0;
+                    draw_button(vertices, indices, atlas, queue, display_theme, modal_x + 240.0, modal_y + 245.0, 180.0, 30.0, false, theme_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
-                    let is_dark_t = self.config.theme.name == "Dark Theme";
-                    let dark_hover = mouse_x >= modal_x + 330.0 && mouse_x <= modal_x + 410.0 && mouse_y >= modal_y + 275.0 && mouse_y <= modal_y + 305.0;
-                    draw_button(vertices, indices, atlas, queue, "Dark", modal_x + 330.0, modal_y + 275.0, 80.0, 30.0, is_dark_t, dark_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
-
-                    let is_drac_t = self.config.theme.name == "Dracula";
-                    let drac_hover = mouse_x >= modal_x + 420.0 && mouse_x <= modal_x + 520.0 && mouse_y >= modal_y + 275.0 && mouse_y <= modal_y + 305.0;
-                    draw_button(vertices, indices, atlas, queue, "Dracula", modal_x + 420.0, modal_y + 275.0, 100.0, 30.0, is_drac_t, drac_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
-
-                    // 6. Draw Active backend and GPU info
+                    // 5. Draw Active backend and GPU info
                     let backend_str = match current_backend {
                         wgpu::Backend::Vulkan => "Vulkan",
                         wgpu::Backend::Gl => "OpenGL",
@@ -1956,7 +1795,7 @@ impl UiState {
                         queue,
                         &active_info_str,
                         modal_x + 20.0,
-                        modal_y + 350.0,
+                        modal_y + 320.0,
                         self.config.theme.modal_text_muted,
                         self.ui_font_size,
                         self.ui_char_width,
