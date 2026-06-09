@@ -283,6 +283,10 @@ impl Theme {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppConfig {
     pub ui_font_size: f32,
@@ -290,6 +294,10 @@ pub struct AppConfig {
     pub sidebar_width: f32,
     pub backend: String, // "Vulkan" or "OpenGL"
     pub theme: Theme,
+    #[serde(default = "default_true")]
+    pub show_git_blame: bool,
+    #[serde(default = "default_true")]
+    pub show_git_branch: bool,
 }
 
 impl Default for AppConfig {
@@ -300,6 +308,8 @@ impl Default for AppConfig {
             sidebar_width: 200.0,
             backend: "Vulkan".to_string(),
             theme: Theme::default(),
+            show_git_blame: true,
+            show_git_branch: true,
         }
     }
 }
