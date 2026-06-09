@@ -22,6 +22,8 @@ pub enum UiAction {
     ChangeBackend(wgpu::Backend),
     ChangeSidebarWidth(f32),
     ChangeTheme(String),
+    ChangeGitBlame(bool),
+    ChangeGitBranch(bool),
     None,
 }
 
@@ -282,7 +284,7 @@ impl UiState {
             let modal_h = match modal {
                 ModalType::Settings => {
                     let row_height = (self.ui_line_height * 2.2).round();
-                    (row_height * 6.2).max(350.0).round()
+                    (row_height * 8.2).max(430.0).round()
                 }
                 ModalType::About => 240.0,
             };
@@ -307,6 +309,10 @@ impl UiState {
                 let btn3_y = row3_y + ((self.ui_line_height - btn_h) / 2.0).round();
                 let row4_y = modal_y + row_height * 4.0;
                 let btn4_y = row4_y + ((self.ui_line_height - btn_h) / 2.0).round();
+                let row5_y = modal_y + row_height * 5.0;
+                let btn5_y = row5_y + ((self.ui_line_height - btn_h) / 2.0).round();
+                let row6_y = modal_y + row_height * 6.0;
+                let btn6_y = row6_y + ((self.ui_line_height - btn_h) / 2.0).round();
 
                 // Handle dropdown clicks if open
                 if self.theme_dropdown_open {
@@ -368,6 +374,24 @@ impl UiState {
                 if mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h {
                     self.theme_dropdown_open = true;
                     return UiAction::None;
+                }
+
+                // Row 5: Git Blame Selection
+                if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h {
+                    return UiAction::ChangeGitBlame(true);
+                }
+                let disabled5_btn_x = control_x + backend_btn_w + self.ui_char_width;
+                if mx >= disabled5_btn_x && mx <= disabled5_btn_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h {
+                    return UiAction::ChangeGitBlame(false);
+                }
+
+                // Row 6: Git Branch Selection
+                if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h {
+                    return UiAction::ChangeGitBranch(true);
+                }
+                let disabled6_btn_x = control_x + backend_btn_w + self.ui_char_width;
+                if mx >= disabled6_btn_x && mx <= disabled6_btn_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h {
+                    return UiAction::ChangeGitBranch(false);
                 }
             }
 
@@ -963,9 +987,13 @@ impl UiState {
         let white_uv = atlas.white_pixel_uv();
 
         // Throttled git branch check
-        if self.last_branch_check.is_none() || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(5) {
-            self.update_git_branch();
-            self.last_branch_check = Some(std::time::Instant::now());
+        if self.config.show_git_branch {
+            if self.last_branch_check.is_none() || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(5) {
+                self.update_git_branch();
+                self.last_branch_check = Some(std::time::Instant::now());
+            }
+        } else {
+            self.git_branch = None;
         }
         let main_y = self.titlebar_height;
         let main_height = height - self.titlebar_height - self.status_height;
@@ -1224,9 +1252,9 @@ impl UiState {
                     }
 
                     // Draw Folder Outline Icon from SVGs
-                    let folder_sz = (self.ui_char_width * 1.5).round().max(12.0);
+                    let icon_sz = (self.ui_char_width * 1.35).round().max(12.0);
                     let icon_x = indent_x + self.ui_char_width * 1.2;
-                    let icon_y = row_y + ((self.ui_line_height - folder_sz) / 2.0).round();
+                    let icon_y = row_y + ((self.ui_line_height - icon_sz) / 2.0).round() - 1.0;
 
                     let is_expanded = self.expanded_dirs.contains(&node.path);
                     let icon_path = if is_expanded {
@@ -1244,7 +1272,7 @@ impl UiState {
                         icon_x,
                         icon_y,
                         text_color,
-                        folder_sz,
+                        icon_sz,
                     );
                 } else {
                     // Check file extension for specific icon types and colors
@@ -1257,9 +1285,9 @@ impl UiState {
                         _ => ("file", text_color),
                     };
 
-                    let file_sz = (self.ui_char_width * 1.4).round().max(12.0);
-                    let icon_x = indent_x + self.ui_char_width * 1.25;
-                    let icon_y = row_y + ((self.ui_line_height - file_sz) / 2.0).round();
+                    let icon_sz = (self.ui_char_width * 1.35).round().max(12.0);
+                    let icon_x = indent_x + self.ui_char_width * 1.2;
+                    let icon_y = row_y + ((self.ui_line_height - icon_sz) / 2.0).round() - 1.0;
 
                     self.push_icon(
                         vertices,
@@ -1270,7 +1298,7 @@ impl UiState {
                         icon_x,
                         icon_y,
                         icon_color,
-                        file_sz,
+                        icon_sz,
                     );
                 }
 
@@ -1397,7 +1425,7 @@ impl UiState {
                 if is_hovered { self.config.theme.titlebar_hover_bg } else { [0.0, 0.0, 0.0, 0.0] },
             );
             
-            let icon_y = main_y + ((self.tabbar_height - 1.0 - icon_sz) / 2.0).round();
+            let icon_y = main_y + ((self.tabbar_height - icon_sz) / 2.0).round() - 2.0;
             self.push_icon(
                 vertices,
                 indices,
@@ -1569,7 +1597,7 @@ impl UiState {
             }
 
             // Draw Git Blame inline annotation at the end of the active line
-            if line_idx == cursor.line {
+            if self.config.show_git_blame && line_idx == cursor.line {
                 if let Some(blame_str) = self.get_or_update_blame(file_path, line_idx) {
                     let blame_x = pen_x + self.buffer_char_width * 4.0;
                     self.push_str(
@@ -1698,48 +1726,50 @@ impl UiState {
             self.ui_char_width,
         );
 
-        if let Some(ref branch) = self.git_branch {
-            pen_x += self.push_str(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                " | ",
-                pen_x,
-                baseline_y,
-                text_color,
-                self.ui_font_size,
-                self.ui_char_width,
-            );
-            
-            // Draw branch icon
-            let icon_sz = (self.ui_font_size * 0.9).round().max(12.0);
-            let icon_y = status_y + ((self.status_height - icon_sz) / 2.0).round();
-            self.push_icon(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                "branch",
-                pen_x,
-                icon_y,
-                text_color,
-                icon_sz,
-            );
-            pen_x += icon_sz + 4.0; // Space after icon
-            
-            self.push_str(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                branch,
-                pen_x,
-                baseline_y,
-                text_color,
-                self.ui_font_size,
-                self.ui_char_width,
-            );
+        if self.config.show_git_branch {
+            if let Some(ref branch) = self.git_branch {
+                pen_x += self.push_str(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    " | ",
+                    pen_x,
+                    baseline_y,
+                    text_color,
+                    self.ui_font_size,
+                    self.ui_char_width,
+                );
+                
+                // Draw branch icon
+                let icon_sz = (self.ui_font_size * 0.9).round().max(12.0);
+                let icon_y = status_y + ((self.status_height - icon_sz) / 2.0).round() - 2.0;
+                self.push_icon(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    "branch",
+                    pen_x,
+                    icon_y,
+                    text_color,
+                    icon_sz,
+                );
+                pen_x += icon_sz + 4.0; // Space after icon
+                
+                self.push_str(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    branch,
+                    pen_x,
+                    baseline_y,
+                    text_color,
+                    self.ui_font_size,
+                    self.ui_char_width,
+                );
+            }
         }
 
         let right_text_width = status_right.chars().count() as f32 * self.ui_char_width;
@@ -1897,7 +1927,7 @@ impl UiState {
             let modal_h = match modal {
                 ModalType::Settings => {
                     let row_height = (self.ui_line_height * 2.2).round();
-                    (row_height * 6.2).max(350.0).round()
+                    (row_height * 8.2).max(430.0).round()
                 }
                 ModalType::About => 240.0,
             };
@@ -2168,8 +2198,52 @@ impl UiState {
                     let theme_hover = mouse_x >= control_x && mouse_x <= control_x + theme_btn_w && mouse_y >= btn4_y && mouse_y <= btn4_y + btn_h;
                     draw_button(vertices, indices, atlas, queue, &display_theme, control_x, btn4_y, theme_btn_w, btn_h, false, theme_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
-                    // 5. Draw Active backend and GPU info
+                    // 5. Git Blame Selection
                     let row5_y = modal_y + row_height * 5.0;
+                    let btn5_y = row5_y + ((self.ui_line_height - btn_h) / 2.0).round();
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "Git Blame:",
+                        modal_x + padding_x,
+                        row5_y + self.ui_font_ascent,
+                        self.config.theme.modal_text_normal,
+                        self.ui_font_size,
+                        self.ui_char_width,
+                    );
+                    let blame_enabled_hover = mouse_x >= control_x && mouse_x <= control_x + backend_btn_w && mouse_y >= btn5_y && mouse_y <= btn5_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, "Enabled", control_x, btn5_y, backend_btn_w, btn_h, self.config.show_git_blame, blame_enabled_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+
+                    let blame_disabled_x = control_x + backend_btn_w + self.ui_char_width;
+                    let blame_disabled_hover = mouse_x >= blame_disabled_x && mouse_x <= blame_disabled_x + backend_btn_w && mouse_y >= btn5_y && mouse_y <= btn5_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, "Disabled", blame_disabled_x, btn5_y, backend_btn_w, btn_h, !self.config.show_git_blame, blame_disabled_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+
+                    // 6. Git Branch Selection
+                    let row6_y = modal_y + row_height * 6.0;
+                    let btn6_y = row6_y + ((self.ui_line_height - btn_h) / 2.0).round();
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "Git Branch:",
+                        modal_x + padding_x,
+                        row6_y + self.ui_font_ascent,
+                        self.config.theme.modal_text_normal,
+                        self.ui_font_size,
+                        self.ui_char_width,
+                    );
+                    let branch_enabled_hover = mouse_x >= control_x && mouse_x <= control_x + backend_btn_w && mouse_y >= btn6_y && mouse_y <= btn6_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, "Enabled", control_x, btn6_y, backend_btn_w, btn_h, self.config.show_git_branch, branch_enabled_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+
+                    let branch_disabled_x = control_x + backend_btn_w + self.ui_char_width;
+                    let branch_disabled_hover = mouse_x >= branch_disabled_x && mouse_x <= branch_disabled_x + backend_btn_w && mouse_y >= btn6_y && mouse_y <= btn6_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, "Disabled", branch_disabled_x, btn6_y, backend_btn_w, btn_h, !self.config.show_git_branch, branch_disabled_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+
+                    // 7. Draw Active backend and GPU info
+                    let row7_y = modal_y + row_height * 7.0;
                     let backend_str = match current_backend {
                         wgpu::Backend::Vulkan => "Vulkan",
                         wgpu::Backend::Gl => "OpenGL",
@@ -2189,7 +2263,7 @@ impl UiState {
                         queue,
                         &active_info_str,
                         modal_x + padding_x,
-                        row5_y + self.ui_font_ascent,
+                        row7_y + self.ui_font_ascent,
                         self.config.theme.modal_text_muted,
                         self.ui_font_size,
                         self.ui_char_width,
