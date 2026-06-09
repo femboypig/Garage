@@ -217,9 +217,10 @@ impl Buffer {
     }
 
     /// Undo the last transaction. Returns true if successful.
-    pub fn undo(&mut self) -> bool {
+    pub fn undo(&mut self) -> Option<(usize, usize)> {
         if let Some(tx) = self.undo_stack.pop() {
             let mut redo_tx = Vec::new();
+            let mut edit_pos = None;
             // Apply in reverse order
             for action in tx.iter().rev() {
                 match action {
@@ -237,6 +238,7 @@ impl Buffer {
                             col: *col,
                             text: text.clone(),
                         });
+                        edit_pos = Some((*line, *col));
                     }
                     Action::Delete { line, col, text } => {
                         self.insert_raw(*line, *col, text);
@@ -245,20 +247,22 @@ impl Buffer {
                             col: *col,
                             text: text.clone(),
                         });
+                        edit_pos = Some((*line, *col));
                     }
                 }
             }
             self.redo_stack.push(redo_tx);
-            true
+            edit_pos
         } else {
-            false
+            None
         }
     }
 
-    /// Redo the last undone transaction. Returns true if successful.
-    pub fn redo(&mut self) -> bool {
+    /// Redo the last undone transaction. Returns the edit position if successful.
+    pub fn redo(&mut self) -> Option<(usize, usize)> {
         if let Some(tx) = self.redo_stack.pop() {
             let mut undo_tx = Vec::new();
+            let mut edit_pos = None;
             // Apply in reverse order
             for action in tx.iter().rev() {
                 match action {
@@ -276,6 +280,7 @@ impl Buffer {
                             col: *col,
                             text: text.clone(),
                         });
+                        edit_pos = Some((*line, *col));
                     }
                     Action::Delete { line, col, text } => {
                         self.insert_raw(*line, *col, text);
@@ -284,13 +289,14 @@ impl Buffer {
                             col: *col,
                             text: text.clone(),
                         });
+                        edit_pos = Some((*line, *col));
                     }
                 }
             }
             self.undo_stack.push(undo_tx);
-            true
+            edit_pos
         } else {
-            false
+            None
         }
     }
 
