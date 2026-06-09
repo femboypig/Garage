@@ -72,6 +72,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let mut modifiers = winit::keyboard::ModifiersState::default();
     let mut is_dragging = false;
     let mut is_dragging_scroll = false;
+    let mut is_dragging_minimap = false;
     let mut scroll_drag_offset_y = 0.0f32;
     let mut is_dragging_sidebar = false;
     let mut internal_clipboard = String::new();
@@ -91,7 +92,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
             let is_in_editor = ui.active_modal.is_none()
                 && ui.active_menu.is_none()
                 && mouse_x >= text_area_x
-                && mouse_x < size.width as f32 - 12.0
+                && mouse_x < size.width as f32 - 92.0
                 && mouse_y >= ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height
                 && mouse_y < size.height as f32 - ui.status_height;
                 
@@ -185,6 +186,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         let relative_y = mouse_y - editor_top - scroll_drag_offset_y;
                         let scroll_range = editor_height - thumb_h;
                         let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
+                        ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                    } else if is_dragging_minimap {
+                        let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
+                        let editor_height = size.height as f32 - editor_top - ui.status_height;
+                        let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
+                        let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
+                        let relative_y = mouse_y - editor_top;
+                        let scroll_ratio = if editor_height > 0.0 { (relative_y / editor_height).clamp(0.0, 1.0) } else { 0.0 };
                         ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
                     } else if is_dragging {
                         let max_line_digits = buffer.len().to_string().len().max(3);
@@ -496,9 +505,23 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         UiAction::None => {
                                             let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
                                             let editor_height = size.height as f32 - editor_top - ui.status_height;
-                                            // Check if click is on scrollbar
-                                            let sb_x = size.width as f32 - 12.0;
-                                            if mouse_x >= sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
+                                            
+                                            let minimap_width = 80.0f32;
+                                            let scrollbar_width = 12.0;
+                                            let minimap_x = size.width as f32 - minimap_width;
+                                            let sb_x = minimap_x - scrollbar_width;
+                                            
+                                            // 1. Check if click is on minimap
+                                            if mouse_x >= minimap_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
+                                                is_dragging_minimap = true;
+                                                let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
+                                                let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
+                                                let relative_y = mouse_y - editor_top;
+                                                let scroll_ratio = if editor_height > 0.0 { (relative_y / editor_height).clamp(0.0, 1.0) } else { 0.0 };
+                                                ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                                            }
+                                            // 2. Check if click is on scrollbar
+                                            else if mouse_x >= sb_x && mouse_x < minimap_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
                                                 is_dragging_scroll = true;
                                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                                 let ratio = visible_lines as f32 / buffer.len() as f32;
@@ -523,7 +546,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                  let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
                                                  let text_area_x = ui.sidebar_width + gutter_width;
 
-                                                 if mouse_x >= text_area_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
+                                                 if mouse_x >= text_area_x && mouse_x < sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
                                                      buffer.commit_transaction();
                                                      is_dragging = true;
 
@@ -558,6 +581,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             let was_dragging_sidebar = is_dragging_sidebar;
                             is_dragging = false;
                             is_dragging_scroll = false;
+                            is_dragging_minimap = false;
                             is_dragging_sidebar = false;
                             if was_dragging_sidebar {
                                 ui.config.sidebar_width = ui.sidebar_width;
