@@ -366,7 +366,7 @@ impl UiState {
                     let row_height = (self.ui_line_height * 2.2).round();
                     (row_height * 8.2).max(430.0).round()
                 }
-                ModalType::About => 270.0,
+                ModalType::About => 160.0,
                 ModalType::CommandPalette => {
                     let item_height = (self.ui_line_height * 1.6).round().max(26.0);
                     let filtered_len = self.get_filtered_commands().len();
@@ -716,8 +716,8 @@ impl UiState {
 
             for idx in 0..tab_paths.len() {
                 let path_opt = &tab_paths[idx];
-                let is_modified = tab_modified.get(idx).copied().unwrap_or(false);
-                let dot_reserved = if is_modified { 18.0f32 } else { 0.0f32 };
+                let _is_modified = tab_modified.get(idx).copied().unwrap_or(false);
+                let dot_reserved = 18.0f32;
                 let file_name = path_opt.as_ref()
                     .and_then(|p| Path::new(p).file_name())
                     .map(|n| n.to_string_lossy().to_string())
@@ -773,6 +773,71 @@ impl UiState {
                 }
             }
             return UiAction::None;
+        }
+
+        // 5. Check Dock Tab Clicks
+        let mut dock_start_y = height - self.status_height;
+        if self.show_dock {
+            dock_start_y = (height - self.status_height - self.dock_height).max(main_y + self.tabbar_height + self.breadcrumb_height + 50.0);
+        }
+        let dock_tabbar_h = 28.0f32;
+        if self.show_dock && my >= dock_start_y && my < dock_start_y + dock_tabbar_h {
+            let mut cur_x = 10.0f32;
+            let tab_y = dock_start_y + 1.0;
+            let tab_h = dock_tabbar_h - 1.0;
+            
+            for idx in 0.._dock_terminals_len {
+                let term_name = format!("terminal-{}", idx + 1);
+                let term_name_w = term_name.chars().count() as f32 * self.ui_char_width * 0.9;
+                let icon_sz = 12.0f32;
+                let close_sz = 10.0f32;
+                let tab_w = 12.0 + icon_sz + 6.0 + term_name_w + 8.0 + close_sz + 10.0;
+                
+                if mx >= cur_x && mx < cur_x + tab_w {
+                    // Check if clicked close button of the dock tab
+                    let close_x = cur_x + tab_w - 8.0 - close_sz;
+                    let close_y = (tab_y + (tab_h - close_sz) / 2.0).round();
+                    if mx >= close_x - 3.0 && mx < close_x + close_sz + 3.0 && my >= close_y - 3.0 && my <= close_y + close_sz + 3.0 {
+                        return UiAction::CloseTerminal(idx);
+                    } else {
+                        return UiAction::SelectTerminal(idx);
+                    }
+                }
+                cur_x += tab_w + 2.0;
+            }
+            
+            // Check '+' button to add new terminal
+            let add_btn_w = 28.0f32;
+            if mx >= cur_x && mx < cur_x + add_btn_w {
+                return UiAction::NewTerminal;
+            }
+            
+            // Check close dock button
+            let close_dock_w = 28.0f32;
+            let close_dock_x = width - 10.0 - close_dock_w;
+            if mx >= close_dock_x && mx < close_dock_x + close_dock_w {
+                return UiAction::ToggleDock;
+            }
+        }
+
+        // 6. Check Statusbar Button Clicks
+        let status_y = height - self.status_height;
+        if my >= status_y {
+            let sb_btn_w = 26.0f32;
+            let info_btn_x = width - 10.0 - sb_btn_w;
+            let settings_btn_x = info_btn_x - sb_btn_w;
+            let bug_btn_x = settings_btn_x - sb_btn_w;
+            let term_btn_x = bug_btn_x - sb_btn_w;
+
+            if mx >= info_btn_x && mx < info_btn_x + sb_btn_w {
+                return UiAction::ShowAbout;
+            } else if mx >= settings_btn_x && mx < settings_btn_x + sb_btn_w {
+                return UiAction::ShowSettings;
+            } else if mx >= bug_btn_x && mx < bug_btn_x + sb_btn_w {
+                return UiAction::None;
+            } else if mx >= term_btn_x && mx < term_btn_x + sb_btn_w {
+                return UiAction::ToggleDock;
+            }
         }
 
         self.active_menu = None;
@@ -1241,10 +1306,11 @@ impl UiState {
         tab_modified: &[bool],
         active_tab_idx: usize,
         terminals: &[TerminalInstance],
-        _active_terminal_idx: usize,
+        active_terminal_idx: usize,
         terminal_focus: bool,
         _is_window_maximized: bool,
     ) {
+        self.active_dock_tab = active_terminal_idx;
         let active_file_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
         let white_uv = atlas.white_pixel_uv();
 
@@ -1290,6 +1356,7 @@ impl UiState {
         let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as usize;
         self.scroll_y = self.scroll_y.min(max_scroll);
 
+        // TODO: refactor, rework this shit
         // --- 1. Draw Titlebar Menu Headers (Light Theme) ---
         self.push_quad(
             vertices,
@@ -1411,29 +1478,29 @@ impl UiState {
         let is_max_hover = self.active_modal.is_none() && mouse_y >= control_y && mouse_y < control_y + btn_h && mouse_x >= max_x && mouse_x < close_x;
         let is_min_hover = self.active_modal.is_none() && mouse_y >= control_y && mouse_y < control_y + btn_h && mouse_x >= min_x && mouse_x < max_x;
 
-        // Draw Close button
-        let close_bg = if is_close_hover {
-            [0.85, 0.25, 0.25, 1.0] // beautiful red hover
-        } else {
-            self.config.theme.titlebar_bg
-        };
-        self.push_quad(vertices, indices, close_x, control_y, btn_w, btn_h, white_uv, close_bg);
-        
-        // Draw Maximize button
-        let max_bg = if is_max_hover {
-            self.config.theme.titlebar_hover_bg
-        } else {
-            self.config.theme.titlebar_bg
-        };
-        self.push_quad(vertices, indices, max_x, control_y, btn_w, btn_h, white_uv, max_bg);
+        let hover_sz = 24.0f32;
+        let hover_y = control_y + ((btn_h - hover_sz) / 2.0).round();
 
-        // Draw Minimize button
-        let min_bg = if is_min_hover {
-            self.config.theme.titlebar_hover_bg
-        } else {
-            self.config.theme.titlebar_bg
-        };
-        self.push_quad(vertices, indices, min_x, control_y, btn_w, btn_h, white_uv, min_bg);
+        // Draw Close button hover
+        if is_close_hover {
+            let close_bg = [0.85, 0.25, 0.25, 1.0]; // beautiful red hover
+            let hover_x = close_x + ((btn_w - hover_sz) / 2.0).round();
+            self.push_quad(vertices, indices, hover_x, hover_y, hover_sz, hover_sz, white_uv, close_bg);
+        }
+        
+        // Draw Maximize button hover
+        if is_max_hover {
+            let max_bg = self.config.theme.titlebar_hover_bg;
+            let hover_x = max_x + ((btn_w - hover_sz) / 2.0).round();
+            self.push_quad(vertices, indices, hover_x, hover_y, hover_sz, hover_sz, white_uv, max_bg);
+        }
+
+        // Draw Minimize button hover
+        if is_min_hover {
+            let min_bg = self.config.theme.titlebar_hover_bg;
+            let hover_x = min_x + ((btn_w - hover_sz) / 2.0).round();
+            self.push_quad(vertices, indices, hover_x, hover_y, hover_sz, hover_sz, white_uv, min_bg);
+        }
 
         // Draw Icons
         let icon_sz = 14.0f32;
@@ -1773,7 +1840,7 @@ impl UiState {
 
             // Compute tab width
             let name_w = file_name.chars().count() as f32 * self.ui_char_width;
-            let dot_reserved = if is_modified { 18.0f32 } else { 0.0f32 };
+            let dot_reserved = 18.0f32;
             let close_reserved = 8.0f32 + tab_close_icon_sz;
             let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
 
@@ -2656,6 +2723,7 @@ impl UiState {
             }
         }
 
+        // TODO: refactor, rework this shit
         // --- 5. Draw Statusbar ---
         let status_y = height - self.status_height;
         self.push_quad(
@@ -2960,7 +3028,7 @@ impl UiState {
                     let row_height = (self.ui_line_height * 2.2).round();
                     (row_height * 8.2).max(430.0).round()
                 }
-                ModalType::About => 270.0,
+                ModalType::About => 160.0,
                 ModalType::CommandPalette => {
                     let item_height = (self.ui_line_height * 1.6).round().max(26.0);
                     let filtered_len = self.get_filtered_commands().len();
@@ -3302,13 +3370,13 @@ impl UiState {
                     }
                 }
                 ModalType::About => {
-                    let title = "GARAGE";
+                    let title = "Garage";
                     let title_font_sz = self.ui_font_size * 1.5;
                     let title_char_w = self.ui_char_width * 1.5;
                     let title_w = title.chars().count() as f32 * title_char_w;
                     let title_x = modal_x + ((modal_w - title_w) / 2.0).round();
                     
-                    // 1. Draw Title "GARAGE"
+                    // 1. Draw Title "Garage"
                     self.push_str(
                         vertices,
                         indices,
@@ -3351,82 +3419,20 @@ impl UiState {
                         self.ui_char_width,
                     );
 
-                    // 4. Two-column details
-                    let col_y_label = modal_y + 115.0;
-                    let col_y_val = modal_y + 138.0;
-
+                    // 4. Version
+                    let version = "Version 0.1.0 (main)";
+                    let version_w = version.chars().count() as f32 * self.ui_char_width * 0.9;
+                    let version_x = modal_x + ((modal_w - version_w) / 2.0).round();
                     let mut muted_text_color = self.config.theme.modal_text_normal;
-                    muted_text_color[3] *= 0.5; // Mute color alpha
-
-                    // Column 1: Version
+                    muted_text_color[3] *= 0.6; // Mute color alpha
                     self.push_str(
                         vertices,
                         indices,
                         atlas,
                         queue,
-                        "Version",
-                        modal_x + 40.0,
-                        col_y_label,
-                        muted_text_color,
-                        self.ui_font_size * 0.9,
-                        self.ui_char_width * 0.9,
-                    );
-                    self.push_str(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        "0.1.0 (main)",
-                        modal_x + 40.0,
-                        col_y_val,
-                        self.config.theme.modal_text_normal,
-                        self.ui_font_size,
-                        self.ui_char_width,
-                    );
-
-                    // Column 2: Engine & Backend
-                    self.push_str(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        "Engine & Platform",
-                        modal_x + 220.0,
-                        col_y_label,
-                        muted_text_color,
-                        self.ui_font_size * 0.9,
-                        self.ui_char_width * 0.9,
-                    );
-                    
-                    let backend_str = match current_backend {
-                        wgpu::Backend::Vulkan => "wgpu (Vulkan)",
-                        wgpu::Backend::Gl => "wgpu (OpenGL)",
-                        wgpu::Backend::Dx12 => "wgpu (DX12)",
-                        wgpu::Backend::Metal => "wgpu (Metal)",
-                        _ => "wgpu (Unknown)",
-                    };
-                    self.push_str(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        backend_str,
-                        modal_x + 220.0,
-                        col_y_val,
-                        self.config.theme.modal_text_normal,
-                        self.ui_font_size,
-                        self.ui_char_width,
-                    );
-
-                    // License / Credits at bottom
-                    self.push_str(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        "Inspired by Zed | Font: IBM Plex Mono",
-                        modal_x + 40.0,
-                        modal_y + 185.0,
+                        version,
+                        version_x,
+                        modal_y + 115.0,
                         muted_text_color,
                         self.ui_font_size * 0.9,
                         self.ui_char_width * 0.9,
