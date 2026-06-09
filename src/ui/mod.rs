@@ -76,10 +76,16 @@ pub struct UiState {
     // Menu & Modal State
     pub active_menu: Option<MenuType>,
     pub active_modal: Option<ModalType>,
+
+    pub config: crate::config::AppConfig,
+    pub active_device_name: String,
 }
 
 impl UiState {
-    pub fn new(atlas: &mut FontAtlas, _queue: &wgpu::Queue, ui_font_size: f32, buffer_font_size: f32) -> Self {
+    pub fn new(atlas: &mut FontAtlas, _queue: &wgpu::Queue, config: crate::config::AppConfig) -> Self {
+        let ui_font_size = config.ui_font_size;
+        let buffer_font_size = config.buffer_font_size;
+
         // UI Metrics
         let ui_metrics = atlas.font.metrics('m', ui_font_size);
         let ui_char_width = ui_metrics.advance_width.round().max(8.0);
@@ -128,8 +134,8 @@ impl UiState {
             scroll_x: 0,
             titlebar_height,
             status_height,
-            sidebar_width: 200.0,
-            target_sidebar_width: 200.0,
+            sidebar_width: config.sidebar_width,
+            target_sidebar_width: config.sidebar_width,
             tabbar_height,
             breadcrumb_height,
             expanded_dirs,
@@ -137,6 +143,8 @@ impl UiState {
             selected_file: None,
             active_menu: None,
             active_modal: None,
+            config,
+            active_device_name: String::new(),
         };
 
         state.rebuild_tree();
@@ -304,7 +312,7 @@ impl UiState {
             return UiAction::None;
         }
 
-        // 1. Check Titlebar Menu Clicks
+        // 1. Check Titlebar Menu Clicks (Contiguous adjacent layout)
         if my < self.titlebar_height {
             let menu_items_raw = [
                 ("Garage", MenuType::Garage),
@@ -313,16 +321,23 @@ impl UiState {
                 ("Selection", MenuType::Selection),
                 ("View", MenuType::View),
             ];
-            let mut current_x = 10.0;
-            for (label, menu_type) in &menu_items_raw {
-                let item_w = label.chars().count() as f32 * self.ui_char_width;
-                let x_min = current_x - 6.0;
-                let x_max = current_x + item_w + 6.0;
-                if mx >= x_min && mx <= x_max {
+            let mut current_x = 0.0;
+            for (i, (label, menu_type)) in menu_items_raw.iter().enumerate() {
+                let label_len = label.chars().count() as f32;
+                let text_w = label_len * self.ui_char_width;
+                let (left_pad, right_pad) = if i == 0 {
+                    (14.0, 10.0)
+                } else {
+                    (10.0, 10.0)
+                };
+                let item_w = text_w + left_pad + right_pad;
+                let x_min = current_x;
+                let x_max = current_x + item_w;
+                if mx >= x_min && mx < x_max {
                     self.active_menu = if self.active_menu == Some(*menu_type) { None } else { Some(*menu_type) };
                     return UiAction::None;
                 }
-                current_x = current_x + item_w + 24.0;
+                current_x = x_max;
             }
             self.active_menu = None;
             return UiAction::None;
@@ -338,7 +353,7 @@ impl UiState {
                 MenuType::View => vec!["Toggle Sidebar"],
             };
             
-            // Calculate dynamic menu_x matching the drawn position
+            // Calculate dynamic menu_x matching the contiguous header position
             let menu_items_raw = [
                 ("Garage", MenuType::Garage),
                 ("File", MenuType::File),
@@ -346,15 +361,22 @@ impl UiState {
                 ("Selection", MenuType::Selection),
                 ("View", MenuType::View),
             ];
-            let mut menu_x = 10.0;
-            let mut current_x = 10.0;
-            for (label, m_type) in &menu_items_raw {
-                let item_w = label.chars().count() as f32 * self.ui_char_width;
-                if *m_type == menu {
+            let mut menu_x = 0.0;
+            let mut current_x = 0.0;
+            for (i, (label, m_type)) in menu_items_raw.iter().enumerate() {
+                let label_len = label.chars().count() as f32;
+                let text_w = label_len * self.ui_char_width;
+                let (left_pad, right_pad) = if i == 0 {
+                    (14.0, 10.0)
+                } else {
+                    (10.0, 10.0)
+                };
+                let item_w = text_w + left_pad + right_pad;
+                if m_type == &menu {
                     menu_x = current_x;
                     break;
                 }
-                current_x = current_x + item_w + 24.0;
+                current_x = current_x + item_w;
             }
 
             let item_height = (self.ui_line_height * 1.6).round().max(26.0);
@@ -362,7 +384,7 @@ impl UiState {
             let max_chars = items.iter().map(|s| s.chars().count()).max().unwrap_or(10) as f32;
             let dropdown_w = (max_chars * self.ui_char_width + 30.0).round();
 
-            let menu_action = if mx >= menu_x - 4.0 && mx <= menu_x - 4.0 + dropdown_w && my >= self.titlebar_height && my <= self.titlebar_height + dropdown_h {
+            let menu_action = if mx >= menu_x && mx < menu_x + dropdown_w && my >= self.titlebar_height && my < self.titlebar_height + dropdown_h {
                 let idx = ((my - self.titlebar_height) / item_height).floor() as usize;
                 match menu {
                     MenuType::Garage => match idx {
@@ -412,23 +434,49 @@ impl UiState {
             return UiAction::None;
         }
 
-        // 3. Check Sidebar Clicks
-        if self.sidebar_width > 0.0 && mx < self.sidebar_width && my > self.titlebar_height && my < height - self.status_height {
-            let tree_y = my - self.titlebar_height;
-            let node_idx = (tree_y / self.ui_line_height).floor() as usize;
-            if node_idx < self.visible_nodes.len() {
-                let path = self.visible_nodes[node_idx].path.clone();
-                let is_dir = self.visible_nodes[node_idx].is_dir;
-                if is_dir {
-                    if self.expanded_dirs.contains(&path) {
-                        self.expanded_dirs.remove(&path);
+        // 3. Check Tabbar Clicks (including control buttons on the right)
+        let main_y = self.titlebar_height;
+        if my >= main_y && my < main_y + self.tabbar_height {
+            let control_btns_raw = [
+                ("About", UiAction::ShowAbout),
+                ("Settings", UiAction::ShowSettings),
+                ("Search", UiAction::None),
+            ];
+            let mut btn_x = width - 15.0;
+            for (label, action) in &control_btns_raw {
+                let label_len = label.chars().count() as f32;
+                let text_w = label_len * self.ui_char_width;
+                let item_w = text_w + 16.0;
+                btn_x -= item_w;
+                if mx >= btn_x && mx < btn_x + item_w {
+                    self.active_menu = None;
+                    return action.clone();
+                }
+            }
+            self.active_menu = None;
+            return UiAction::None;
+        }
+
+        // 4. Check Sidebar Clicks
+        if self.sidebar_width > 0.0 && mx < self.sidebar_width && my > main_y && my < height - self.status_height {
+            let tree_y = my - main_y;
+            let row_idx = (tree_y / self.ui_line_height).floor() as usize;
+            if row_idx >= 1 {
+                let node_idx = row_idx - 1;
+                if node_idx < self.visible_nodes.len() {
+                    let path = self.visible_nodes[node_idx].path.clone();
+                    let is_dir = self.visible_nodes[node_idx].is_dir;
+                    if is_dir {
+                        if self.expanded_dirs.contains(&path) {
+                            self.expanded_dirs.remove(&path);
+                        } else {
+                            self.expanded_dirs.insert(path);
+                        }
+                        self.rebuild_tree();
                     } else {
-                        self.expanded_dirs.insert(path);
+                        self.selected_file = Some(path.clone());
+                        return UiAction::OpenFile(path);
                     }
-                    self.rebuild_tree();
-                } else {
-                    self.selected_file = Some(path.clone());
-                    return UiAction::OpenFile(path);
                 }
             }
             return UiAction::None;
@@ -583,7 +631,8 @@ impl UiState {
     /// Fast token coloring logic for Rust code lines
     pub fn get_line_char_colors(&self, line_text: &str) -> Vec<[f32; 4]> {
         let chars: Vec<char> = line_text.chars().collect();
-        let mut colors = vec![[0.12, 0.12, 0.12, 1.0]; chars.len()]; // default dark grey
+        let default_color = self.config.theme.syntax_default;
+        let mut colors = vec![default_color; chars.len()];
 
         let keywords = [
             "use", "fn", "pub", "struct", "bool", "true", "false", "let", "mut",
@@ -597,17 +646,17 @@ impl UiState {
             // 1. Comment check
             if i + 1 < chars.len() && chars[i] == '/' && chars[i+1] == '/' {
                 for j in i..chars.len() {
-                    colors[j] = [0.45, 0.45, 0.45, 1.0]; // comment color: grey
+                    colors[j] = self.config.theme.syntax_comment;
                 }
                 break;
             }
 
             // 2. String literal check
             if chars[i] == '"' {
-                colors[i] = [0.64, 0.08, 0.08, 1.0]; // string quote color (red/brown)
+                colors[i] = self.config.theme.syntax_string;
                 i += 1;
                 while i < chars.len() {
-                    colors[i] = [0.64, 0.08, 0.08, 1.0];
+                    colors[i] = self.config.theme.syntax_string;
                     if chars[i] == '"' && (i == 0 || chars[i-1] != '\\') {
                         i += 1;
                         break;
@@ -619,10 +668,10 @@ impl UiState {
 
             // 3. Char literal check
             if chars[i] == '\'' {
-                colors[i] = [0.64, 0.08, 0.08, 1.0];
+                colors[i] = self.config.theme.syntax_string;
                 i += 1;
                 while i < chars.len() {
-                    colors[i] = [0.64, 0.08, 0.08, 1.0];
+                    colors[i] = self.config.theme.syntax_string;
                     if chars[i] == '\'' && (i == 0 || chars[i-1] != '\\') {
                         i += 1;
                         break;
@@ -634,7 +683,7 @@ impl UiState {
 
             // 4. Attribute check
             if chars[i] == '#' {
-                colors[i] = [0.4, 0.4, 0.2, 1.0]; // attribute brown/gold
+                colors[i] = self.config.theme.syntax_attribute;
                 i += 1;
                 continue;
             }
@@ -647,11 +696,11 @@ impl UiState {
                 }
                 let word: String = chars[start..i].iter().collect();
                 let color = if keywords.contains(&word.as_str()) {
-                    [0.68, 0.0, 0.85, 1.0] // keyword purple
+                    self.config.theme.syntax_keyword
                 } else if word.chars().next().map_or(false, |c| c.is_uppercase()) {
-                    [0.15, 0.5, 0.6, 1.0] // type/capitalized identifier teal
+                    self.config.theme.syntax_type
                 } else {
-                    [0.12, 0.12, 0.12, 1.0] // default text
+                    default_color
                 };
                 for j in start..i {
                     colors[j] = color;
@@ -666,7 +715,7 @@ impl UiState {
                     i += 1;
                 }
                 for j in start..i {
-                    colors[j] = [0.09, 0.45, 0.27, 1.0]; // number color: green/teal
+                    colors[j] = self.config.theme.syntax_number;
                 }
                 continue;
             }
@@ -722,7 +771,7 @@ impl UiState {
             width,
             self.titlebar_height,
             white_uv,
-            [0.95, 0.95, 0.95, 1.0], // light grey #F3F3F3
+            self.config.theme.titlebar_bg,
         );
         self.push_quad(
             vertices,
@@ -732,7 +781,7 @@ impl UiState {
             width,
             1.0,
             white_uv,
-            [0.82, 0.82, 0.82, 1.0], // bottom border line #D1D1D1
+            self.config.theme.titlebar_border,
         );
 
         let menu_items_raw = [
@@ -744,42 +793,45 @@ impl UiState {
         ];
 
         let mut menu_positions = Vec::new();
-        let mut current_x = 10.0;
-        for (label, menu_type) in &menu_items_raw {
+        let mut current_x = 0.0;
+        for (i, (label, menu_type)) in menu_items_raw.iter().enumerate() {
             let label_len = label.chars().count() as f32;
-            let item_w = label_len * self.ui_char_width;
+            let text_w = label_len * self.ui_char_width;
+            let (left_pad, right_pad) = if i == 0 {
+                (14.0, 10.0)
+            } else {
+                (10.0, 10.0)
+            };
+            let item_w = text_w + left_pad + right_pad;
             let x_min = current_x;
             let x_max = current_x + item_w;
-            menu_positions.push((*label, x_min, x_max, *menu_type));
-            current_x = x_max + 24.0; // Spacing between menus
+            menu_positions.push((*label, x_min, x_max, left_pad, *menu_type));
+            current_x = x_max;
         }
 
-        for (label, x_min, x_max, menu_type) in &menu_positions {
-            let is_hovered = self.active_modal.is_none() && mouse_y < self.titlebar_height && mouse_x >= *x_min - 6.0 && mouse_x <= *x_max + 6.0;
+        for (label, x_min, x_max, left_pad, menu_type) in &menu_positions {
+            let is_hovered = self.active_modal.is_none() && mouse_y < self.titlebar_height && mouse_x >= *x_min && mouse_x < *x_max;
             let is_active = self.active_menu == Some(*menu_type);
-            
-            let ui_hover_height = (self.ui_line_height * 1.4).round();
-            let hover_y = ((self.titlebar_height - ui_hover_height) / 2.0).round();
 
             if is_hovered || is_active {
                 self.push_quad(
                     vertices,
                     indices,
-                    *x_min - 6.0,
-                    hover_y,
-                    *x_max - *x_min + 12.0,
-                    ui_hover_height,
+                    *x_min,
+                    0.0,
+                    *x_max - *x_min,
+                    self.titlebar_height - 1.0,
                     white_uv,
-                    [0.88, 0.88, 0.9, 1.0], // hover highlight #E4E4E6
+                    self.config.theme.titlebar_hover_bg,
                 );
             }
             
             let label_color = if *menu_type == MenuType::Garage {
-                [0.12, 0.12, 0.12, 1.0] // bold brand title dark
+                self.config.theme.titlebar_brand_text
             } else if is_active || is_hovered {
                 [0.0, 0.0, 0.0, 1.0]
             } else {
-                [0.2, 0.2, 0.2, 1.0]
+                self.config.theme.titlebar_text
             };
 
             self.push_str(
@@ -788,7 +840,7 @@ impl UiState {
                 atlas,
                 queue,
                 label,
-                *x_min,
+                *x_min + *left_pad,
                 (self.titlebar_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
                 label_color,
                 self.ui_font_size,
@@ -800,25 +852,25 @@ impl UiState {
         let file_name = self.selected_file.as_ref()
             .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
             .unwrap_or_else(|| "Untitled".to_string());
-        let title_str = format!("Garage - {}", file_name);
-        let title_width = title_str.chars().count() as f32 * self.ui_char_width;
-        let title_x = (width - title_width) / 2.0;
-        if title_x > 360.0 {
+        let title_text = format!("Garage Code Editor - {}", file_name);
+        let title_len = title_text.chars().count() as f32;
+        let title_x = ((width - title_len * self.ui_char_width) / 2.0).round();
+        if title_x > current_x + 20.0 {
             self.push_str(
                 vertices,
                 indices,
                 atlas,
                 queue,
-                &title_str,
+                &title_text,
                 title_x,
                 (self.titlebar_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-                [0.35, 0.35, 0.35, 1.0], // dark grey text
+                self.config.theme.titlebar_text,
                 self.ui_font_size,
                 self.ui_char_width,
             );
         }
 
-        // --- 2. Draw Sidebar Project Tree (Light Theme) ---
+        // --- 2. Draw Sidebar Panel (Light Theme) ---
         if self.sidebar_width > 0.0 {
             self.push_quad(
                 vertices,
@@ -828,7 +880,7 @@ impl UiState {
                 self.sidebar_width,
                 main_height,
                 white_uv,
-                [0.95, 0.95, 0.95, 1.0], // sidebar light background
+                self.config.theme.sidebar_bg,
             );
             self.push_quad(
                 vertices,
@@ -838,7 +890,7 @@ impl UiState {
                 1.0,
                 main_height,
                 white_uv,
-                [0.88, 0.88, 0.88, 1.0], // right vertical divider line #E0E0E0
+                self.config.theme.sidebar_border,
             );
 
             // Draw sidebar title header
@@ -847,10 +899,10 @@ impl UiState {
                 indices,
                 atlas,
                 queue,
-                " someshit",
+                " EXPLORER",
                 10.0,
                 (main_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round(),
-                [0.15, 0.15, 0.15, 1.0],
+                self.config.theme.sidebar_text_dir,
                 self.ui_font_size,
                 self.ui_char_width,
             );
@@ -874,7 +926,7 @@ impl UiState {
                         self.sidebar_width - 1.0,
                         self.ui_line_height,
                         white_uv,
-                        if is_selected { [0.82, 0.82, 0.82, 1.0] } else { [0.9, 0.9, 0.9, 1.0] },
+                        if is_selected { self.config.theme.sidebar_selected_bg } else { self.config.theme.sidebar_hover_bg },
                     );
                 }
 
@@ -886,9 +938,9 @@ impl UiState {
                 };
 
                 let text_color = if node.is_dir {
-                    [0.2, 0.2, 0.2, 1.0] // Darker directory names
+                    self.config.theme.sidebar_text_dir
                 } else {
-                    [0.12, 0.12, 0.12, 1.0] // Very dark file names
+                    self.config.theme.sidebar_text_file
                 };
 
                 let node_text = format!("{}{}", icon, node.name);
@@ -932,7 +984,7 @@ impl UiState {
             width - self.sidebar_width,
             self.tabbar_height,
             white_uv,
-            [0.93, 0.93, 0.93, 1.0], // Tab bar background #ECECEC
+            self.config.theme.tabbar_bg,
         );
         // Tab bar bottom border
         self.push_quad(
@@ -943,7 +995,7 @@ impl UiState {
             width - self.sidebar_width,
             1.0,
             white_uv,
-            [0.82, 0.82, 0.82, 1.0], // bottom border line #D1D1D1
+            self.config.theme.tabbar_border,
         );
 
         // Draw active file tab
@@ -956,7 +1008,7 @@ impl UiState {
             tab_w,
             self.tabbar_height - 1.0,
             white_uv,
-            [1.0, 1.0, 1.0, 1.0], // active white tab
+            self.config.theme.tab_active_bg,
         );
         // Active tab right border
         self.push_quad(
@@ -967,7 +1019,7 @@ impl UiState {
             1.0,
             self.tabbar_height,
             white_uv,
-            [0.82, 0.82, 0.82, 1.0], // Tab divider line
+            self.config.theme.tabbar_border,
         );
         // Active tab label
         self.push_str(
@@ -978,30 +1030,40 @@ impl UiState {
             &file_name,
             self.sidebar_width + 15.0,
             (main_y + self.tabbar_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-            [0.12, 0.12, 0.12, 1.0], // dark text
+            self.config.theme.tab_text,
             self.ui_font_size,
             self.ui_char_width,
         );
 
         // Draw control buttons on the right of the tab bar
-        // Buttons: search [S] at width-90, Settings [O] at width-60, About [I] at width-30
-        let btn_y = main_y + (self.tabbar_height - 20.0) / 2.0;
-        let control_btns = [
-            ("S", width - 90.0, UiAction::None), // Search / Split simulation
-            ("O", width - 60.0, UiAction::ShowSettings),
-            ("I", width - 30.0, UiAction::ShowAbout),
+        // Layout buttons: Search, Settings, About from right to left
+        let control_btns_raw = [
+            ("About", UiAction::ShowAbout),
+            ("Settings", UiAction::ShowSettings),
+            ("Search", UiAction::None),
         ];
-        for (btn_label, btn_x, _btn_action) in &control_btns {
-            let is_hovered = self.active_modal.is_none() && mouse_x >= *btn_x && mouse_x < *btn_x + 22.0 && mouse_y >= btn_y && mouse_y < btn_y + 20.0;
+
+        let mut btn_x = width - 15.0;
+        let mut control_btns = Vec::new();
+        for (label, action) in &control_btns_raw {
+            let label_len = label.chars().count() as f32;
+            let text_w = label_len * self.ui_char_width;
+            let item_w = text_w + 16.0; // 8px left and right padding
+            btn_x -= item_w;
+            control_btns.push((*label, btn_x, item_w, action.clone()));
+        }
+
+        for (btn_label, x_pos, item_w, _btn_action) in &control_btns {
+            let is_hovered = self.active_modal.is_none() && mouse_x >= *x_pos && mouse_x < *x_pos + *item_w && mouse_y >= main_y && mouse_y < main_y + self.tabbar_height - 1.0;
             self.push_quad(
                 vertices,
                 indices,
-                *btn_x,
-                btn_y,
-                22.0,
-                20.0,
+                *x_pos,
+                main_y,
+                *item_w,
+                self.tabbar_height - 1.0,
                 white_uv,
-                if is_hovered { [0.8, 0.8, 0.82, 1.0] } else { [0.93, 0.93, 0.93, 0.0] },
+                if is_hovered { self.config.theme.titlebar_hover_bg } else { [0.0, 0.0, 0.0, 0.0] },
             );
             self.push_str(
                 vertices,
@@ -1009,9 +1071,9 @@ impl UiState {
                 atlas,
                 queue,
                 btn_label,
-                *btn_x + 6.0,
-                (btn_y + 10.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-                [0.2, 0.2, 0.2, 1.0],
+                *x_pos + 8.0,
+                (main_y + self.tabbar_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
+                self.config.theme.tab_text,
                 self.ui_font_size,
                 self.ui_char_width,
             );
@@ -1027,7 +1089,7 @@ impl UiState {
             width - self.sidebar_width,
             self.breadcrumb_height,
             white_uv,
-            [0.98, 0.98, 0.98, 1.0], // breadcrumb background #FAFAFA
+            self.config.theme.breadcrumb_bg,
         );
         // Breadcrumb bottom border
         self.push_quad(
@@ -1038,7 +1100,7 @@ impl UiState {
             width - self.sidebar_width,
             1.0,
             white_uv,
-            [0.88, 0.88, 0.9, 1.0], // bottom border line #E1E4E8
+            self.config.theme.breadcrumb_border,
         );
         
         // Construct breadcrumb text: relative_path > current_function
@@ -1060,7 +1122,7 @@ impl UiState {
             &breadcrumb_text,
             self.sidebar_width + 15.0,
             (main_y + self.tabbar_height + self.breadcrumb_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-            [0.4, 0.4, 0.45, 1.0], // grey text
+            self.config.theme.breadcrumb_text,
             self.ui_font_size,
             self.ui_char_width,
         );
@@ -1074,7 +1136,7 @@ impl UiState {
             gutter_width,
             editor_height,
             white_uv,
-            [0.97, 0.97, 0.97, 1.0], // Gutter background #FAFAFA
+            self.config.theme.gutter_bg,
         );
         self.push_quad(
             vertices,
@@ -1084,7 +1146,7 @@ impl UiState {
             1.0,
             editor_height,
             white_uv,
-            [0.88, 0.88, 0.88, 1.0], // Gutter right vertical line #E0E0E0
+            self.config.theme.gutter_border,
         );
 
         // Draw main editor background area
@@ -1096,7 +1158,7 @@ impl UiState {
             width - text_area_x - scrollbar_width,
             editor_height,
             white_uv,
-            [1.0, 1.0, 1.0, 1.0], // White editor background
+            self.config.theme.editor_bg,
         );
 
         let start_idx = self.scroll_y;
@@ -1116,16 +1178,16 @@ impl UiState {
                     width - text_area_x - scrollbar_width,
                     self.buffer_line_height,
                     white_uv,
-                    [0.95, 0.95, 0.95, 1.0], // Light grey active line highlight #F2F2F2
+                    self.config.theme.active_line_bg,
                 );
             }
 
             // Draw line numbers
             let line_num_str = format!("{:>width$}", line_idx + 1, width = max_line_digits);
             let num_color = if line_idx == cursor.line {
-                [0.15, 0.15, 0.15, 1.0] // dark active line number
+                self.config.theme.line_number_active
             } else {
-                [0.6, 0.6, 0.6, 1.0] // inactive line number
+                self.config.theme.line_number_inactive
             };
             self.push_str(
                 vertices,
@@ -1158,7 +1220,7 @@ impl UiState {
                             sel_w,
                             self.buffer_line_height,
                             white_uv,
-                            [0.68, 0.84, 1.0, 0.4], // Light blue selection highlight
+                            self.config.theme.selection_bg,
                         );
                     }
                 }
@@ -1170,7 +1232,7 @@ impl UiState {
             let char_colors = self.get_line_char_colors(line_text);
             
             for (char_idx, c) in line_text.chars().enumerate() {
-                let char_color = char_colors.get(char_idx).copied().unwrap_or([0.12, 0.12, 0.12, 1.0]);
+                let char_color = char_colors.get(char_idx).copied().unwrap_or(self.config.theme.syntax_default);
                 pen_x += self.push_char(vertices, indices, atlas, queue, c, pen_x, baseline_y, char_color, self.buffer_font_size, self.buffer_char_width);
             }
         }
@@ -1188,7 +1250,7 @@ impl UiState {
                 2.0,
                 self.buffer_line_height - 2.0,
                 white_uv,
-                [0.0, 0.48, 0.8, 1.0], // Blue cursor #007ACC
+                self.config.theme.cursor_color,
             );
         }
 
@@ -1205,7 +1267,7 @@ impl UiState {
             scrollbar_width,
             editor_height,
             white_uv,
-            [0.98, 0.98, 0.98, 1.0], // light grey track
+            self.config.theme.scrollbar_track,
         );
         // Vertical track separator
         self.push_quad(
@@ -1216,7 +1278,7 @@ impl UiState {
             1.0,
             editor_height,
             white_uv,
-            [0.9, 0.9, 0.9, 1.0], // border line #E8E8E8
+            self.config.theme.scrollbar_border,
         );
 
         let ratio = visible_lines as f32 / buffer.len() as f32;
@@ -1226,9 +1288,9 @@ impl UiState {
         let thumb_y = editor_y + scroll_ratio * (editor_height - thumb_h);
 
         let thumb_color = if is_sb_hovered {
-            [0.65, 0.65, 0.65, 1.0] // darker grey on hover
+            self.config.theme.scrollbar_thumb_hover
         } else {
-            [0.75, 0.75, 0.75, 1.0] // default grey thumb
+            self.config.theme.scrollbar_thumb
         };
 
         // Draw Scrollbar Thumb
@@ -1253,7 +1315,7 @@ impl UiState {
             width,
             self.status_height,
             white_uv,
-            [0.95, 0.95, 0.95, 1.0], // light statusbar
+            self.config.theme.statusbar_bg,
         );
         self.push_quad(
             vertices,
@@ -1263,7 +1325,7 @@ impl UiState {
             width,
             1.0,
             white_uv,
-            [0.82, 0.82, 0.82, 1.0], // top border line
+            self.config.theme.statusbar_border,
         );
 
         let status_left = format!(" GARAGE | Line {}, Col {}", cursor.line + 1, cursor.col + 1);
@@ -1277,7 +1339,7 @@ impl UiState {
             &status_left,
             10.0,
             (status_y + self.status_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-            [0.3, 0.3, 0.35, 1.0],
+            self.config.theme.statusbar_text,
             self.ui_font_size,
             self.ui_char_width,
         );
@@ -1293,7 +1355,7 @@ impl UiState {
                 &status_right,
                 right_x,
                 (status_y + self.status_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-                [0.3, 0.3, 0.35, 1.0],
+                self.config.theme.statusbar_text,
                 self.ui_font_size,
                 self.ui_char_width,
             );
@@ -1317,15 +1379,22 @@ impl UiState {
                 ("Selection", MenuType::Selection),
                 ("View", MenuType::View),
             ];
-            let mut menu_x = 10.0;
-            let mut current_x = 10.0;
-            for (label, m_type) in &menu_items_raw {
-                let item_w = label.chars().count() as f32 * self.ui_char_width;
-                if *m_type == menu {
+            let mut menu_x = 0.0;
+            let mut current_x = 0.0;
+            for (i, (label, m_type)) in menu_items_raw.iter().enumerate() {
+                let label_len = label.chars().count() as f32;
+                let text_w = label_len * self.ui_char_width;
+                let (left_pad, right_pad) = if i == 0 {
+                    (14.0, 10.0)
+                } else {
+                    (10.0, 10.0)
+                };
+                let item_w = text_w + left_pad + right_pad;
+                if m_type == &menu {
                     menu_x = current_x;
                     break;
                 }
-                current_x = current_x + item_w + 24.0;
+                current_x = current_x + item_w;
             }
 
             let item_height = (self.ui_line_height * 1.6).round().max(26.0);
@@ -1333,73 +1402,33 @@ impl UiState {
             let max_chars = items.iter().map(|s| s.chars().count()).max().unwrap_or(10) as f32;
             let dropdown_w = (max_chars * self.ui_char_width + 30.0).round();
 
-            // Draw Dropdown Card Background (white)
+            // Draw Dropdown Card Background
             self.push_quad(
                 vertices,
                 indices,
-                menu_x - 4.0,
+                menu_x,
                 self.titlebar_height,
                 dropdown_w,
                 dropdown_h,
                 white_uv,
-                [1.0, 1.0, 1.0, 0.98], // white card background
-            );
-            // Draw card borders (gray)
-            self.push_quad(
-                vertices,
-                indices,
-                menu_x - 4.0,
-                self.titlebar_height,
-                dropdown_w,
-                1.0,
-                white_uv,
-                [0.82, 0.82, 0.82, 1.0],
-            );
-            self.push_quad(
-                vertices,
-                indices,
-                menu_x - 4.0,
-                self.titlebar_height + dropdown_h - 1.0,
-                dropdown_w,
-                1.0,
-                white_uv,
-                [0.82, 0.82, 0.82, 1.0],
-            );
-            self.push_quad(
-                vertices,
-                indices,
-                menu_x - 4.0,
-                self.titlebar_height,
-                1.0,
-                dropdown_h,
-                white_uv,
-                [0.82, 0.82, 0.82, 1.0],
-            );
-            self.push_quad(
-                vertices,
-                indices,
-                menu_x - 4.0 + dropdown_w - 1.0,
-                self.titlebar_height,
-                1.0,
-                dropdown_h,
-                white_uv,
-                [0.82, 0.82, 0.82, 1.0],
+                self.config.theme.modal_bg,
             );
 
+            // Draw Item Hovers and text
             for (idx, label) in items.iter().enumerate() {
                 let row_y = self.titlebar_height + idx as f32 * item_height;
-                let is_hovered = mouse_x >= menu_x - 4.0 && mouse_x <= menu_x - 4.0 + dropdown_w && mouse_y >= row_y && mouse_y < row_y + item_height;
+                let is_hovered = mouse_x >= menu_x && mouse_x < menu_x + dropdown_w && mouse_y >= row_y && mouse_y < row_y + item_height;
 
                 if is_hovered {
                     self.push_quad(
                         vertices,
                         indices,
-                        menu_x - 3.0,
-                        row_y + 1.0,
-                        dropdown_w - 2.0,
-                        item_height - 2.0,
+                        menu_x,
+                        row_y,
+                        dropdown_w,
+                        item_height,
                         white_uv,
-                        [0.9, 0.9, 0.92, 1.0], // hover gray #E6E6EB
+                        self.config.theme.dropdown_hover_bg,
                     );
                 }
 
@@ -1409,13 +1438,45 @@ impl UiState {
                     atlas,
                     queue,
                     label,
-                    menu_x + 8.0,
+                    menu_x + 12.0,
                     (row_y + item_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
-                    if is_hovered { [0.0, 0.0, 0.0, 1.0] } else { [0.2, 0.2, 0.2, 1.0] },
+                    if is_hovered { [0.0, 0.0, 0.0, 1.0] } else { self.config.theme.modal_text_normal },
                     self.ui_font_size,
                     self.ui_char_width,
                 );
             }
+
+            // Draw Card Borders on top of everything (left, right, bottom)
+            self.push_quad(
+                vertices,
+                indices,
+                menu_x,
+                self.titlebar_height,
+                1.0,
+                dropdown_h,
+                white_uv,
+                self.config.theme.modal_border,
+            );
+            self.push_quad(
+                vertices,
+                indices,
+                menu_x + dropdown_w - 1.0,
+                self.titlebar_height,
+                1.0,
+                dropdown_h,
+                white_uv,
+                self.config.theme.modal_border,
+            );
+            self.push_quad(
+                vertices,
+                indices,
+                menu_x,
+                self.titlebar_height + dropdown_h - 1.0,
+                dropdown_w,
+                1.0,
+                white_uv,
+                self.config.theme.modal_border,
+            );
         }
 
         // --- 7. Draw Modal Dialogs (On top of dropdowns/everything) ---
@@ -1440,7 +1501,7 @@ impl UiState {
             let modal_x = ((width - modal_w) / 2.0).round();
             let modal_y = ((height - modal_h) / 2.0).round();
 
-            // Draw Modal Box Background (white)
+            // Draw Modal Box Background
             self.push_quad(
                 vertices,
                 indices,
@@ -1449,7 +1510,7 @@ impl UiState {
                 modal_w,
                 modal_h,
                 white_uv,
-                [1.0, 1.0, 1.0, 1.0],
+                self.config.theme.modal_bg,
             );
             // Draw modal borders
             self.push_quad(
@@ -1460,7 +1521,7 @@ impl UiState {
                 modal_w,
                 1.0,
                 white_uv,
-                [0.78, 0.78, 0.78, 1.0],
+                self.config.theme.modal_border,
             );
             self.push_quad(
                 vertices,
@@ -1470,7 +1531,7 @@ impl UiState {
                 modal_w,
                 1.0,
                 white_uv,
-                [0.78, 0.78, 0.78, 1.0],
+                self.config.theme.modal_border,
             );
             self.push_quad(
                 vertices,
@@ -1480,7 +1541,7 @@ impl UiState {
                 1.0,
                 modal_h,
                 white_uv,
-                [0.78, 0.78, 0.78, 1.0],
+                self.config.theme.modal_border,
             );
             self.push_quad(
                 vertices,
@@ -1490,7 +1551,7 @@ impl UiState {
                 1.0,
                 modal_h,
                 white_uv,
-                [0.78, 0.78, 0.78, 1.0],
+                self.config.theme.modal_border,
             );
 
             match modal {
@@ -1503,7 +1564,7 @@ impl UiState {
                         "GARAGE CODE EDITOR",
                         modal_x + 20.0,
                         modal_y + 35.0,
-                        [0.12, 0.12, 0.12, 1.0], // Dark title
+                        self.config.theme.modal_text_title,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1515,7 +1576,7 @@ impl UiState {
                         "A supercharged GPU-accelerated",
                         modal_x + 20.0,
                         modal_y + 70.0,
-                        [0.2, 0.2, 0.2, 1.0],
+                        self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1527,7 +1588,7 @@ impl UiState {
                         "text editor written in Rust.",
                         modal_x + 20.0,
                         modal_y + 95.0,
-                        [0.2, 0.2, 0.2, 1.0],
+                        self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1539,7 +1600,7 @@ impl UiState {
                         "Version: 0.1.0 (main)",
                         modal_x + 20.0,
                         modal_y + 130.0,
-                        [0.45, 0.45, 0.45, 1.0],
+                        self.config.theme.modal_text_muted,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1553,7 +1614,7 @@ impl UiState {
                         "SETTINGS",
                         modal_x + 20.0,
                         modal_y + 35.0,
-                        [0.12, 0.12, 0.12, 1.0],
+                        self.config.theme.modal_text_title,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1568,7 +1629,7 @@ impl UiState {
                         &font_size_str,
                         modal_x + 20.0,
                         modal_y + 70.0,
-                        [0.2, 0.2, 0.2, 1.0],
+                        self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1583,7 +1644,7 @@ impl UiState {
                         30.0,
                         25.0,
                         white_uv,
-                        if dec_hover { [0.85, 0.85, 0.85, 1.0] } else { [0.92, 0.92, 0.92, 1.0] },
+                        if dec_hover { self.config.theme.button_hover_bg } else { self.config.theme.button_bg },
                     );
                     self.push_quad(
                         vertices,
@@ -1593,7 +1654,7 @@ impl UiState {
                         30.0,
                         1.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1603,7 +1664,7 @@ impl UiState {
                         30.0,
                         1.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1613,7 +1674,7 @@ impl UiState {
                         1.0,
                         25.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1623,7 +1684,7 @@ impl UiState {
                         1.0,
                         25.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_str(
                         vertices,
@@ -1633,7 +1694,7 @@ impl UiState {
                         "-",
                         modal_x + 211.0,
                         (modal_y + 72.0).round(),
-                        [0.2, 0.2, 0.2, 1.0],
+                        self.config.theme.button_text,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1648,7 +1709,7 @@ impl UiState {
                         30.0,
                         25.0,
                         white_uv,
-                        if inc_hover { [0.85, 0.85, 0.85, 1.0] } else { [0.92, 0.92, 0.92, 1.0] },
+                        if inc_hover { self.config.theme.button_hover_bg } else { self.config.theme.button_bg },
                     );
                     self.push_quad(
                         vertices,
@@ -1658,7 +1719,7 @@ impl UiState {
                         30.0,
                         1.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1668,7 +1729,7 @@ impl UiState {
                         30.0,
                         1.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1678,7 +1739,7 @@ impl UiState {
                         1.0,
                         25.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1688,7 +1749,7 @@ impl UiState {
                         1.0,
                         25.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_str(
                         vertices,
@@ -1698,7 +1759,7 @@ impl UiState {
                         "+",
                         modal_x + 251.0,
                         (modal_y + 72.0).round(),
-                        [0.2, 0.2, 0.2, 1.0],
+                        self.config.theme.button_text,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1713,7 +1774,7 @@ impl UiState {
                         &ui_size_str,
                         modal_x + 20.0,
                         modal_y + 110.0,
-                        [0.2, 0.2, 0.2, 1.0],
+                        self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1728,7 +1789,7 @@ impl UiState {
                         30.0,
                         25.0,
                         white_uv,
-                        if ui_dec_hover { [0.85, 0.85, 0.85, 1.0] } else { [0.92, 0.92, 0.92, 1.0] },
+                        if ui_dec_hover { self.config.theme.button_hover_bg } else { self.config.theme.button_bg },
                     );
                     self.push_quad(
                         vertices,
@@ -1738,7 +1799,7 @@ impl UiState {
                         30.0,
                         1.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1748,7 +1809,7 @@ impl UiState {
                         30.0,
                         1.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1758,7 +1819,7 @@ impl UiState {
                         1.0,
                         25.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1768,7 +1829,7 @@ impl UiState {
                         1.0,
                         25.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_str(
                         vertices,
@@ -1778,7 +1839,7 @@ impl UiState {
                         "-",
                         modal_x + 211.0,
                         (modal_y + 112.0).round(),
-                        [0.2, 0.2, 0.2, 1.0],
+                        self.config.theme.button_text,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1793,7 +1854,7 @@ impl UiState {
                         30.0,
                         25.0,
                         white_uv,
-                        if ui_inc_hover { [0.85, 0.85, 0.85, 1.0] } else { [0.92, 0.92, 0.92, 1.0] },
+                        if ui_inc_hover { self.config.theme.button_hover_bg } else { self.config.theme.button_bg },
                     );
                     self.push_quad(
                         vertices,
@@ -1803,7 +1864,7 @@ impl UiState {
                         30.0,
                         1.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1813,7 +1874,7 @@ impl UiState {
                         30.0,
                         1.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1823,7 +1884,7 @@ impl UiState {
                         1.0,
                         25.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_quad(
                         vertices,
@@ -1833,7 +1894,7 @@ impl UiState {
                         1.0,
                         25.0,
                         white_uv,
-                        [0.78, 0.78, 0.78, 1.0],
+                        self.config.theme.button_border,
                     );
                     self.push_str(
                         vertices,
@@ -1843,7 +1904,7 @@ impl UiState {
                         "+",
                         modal_x + 251.0,
                         (modal_y + 112.0).round(),
-                        [0.2, 0.2, 0.2, 1.0],
+                        self.config.theme.button_text,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -1857,20 +1918,20 @@ impl UiState {
                         "Backend:",
                         modal_x + 20.0,
                         modal_y + 150.0,
-                        [0.2, 0.2, 0.2, 1.0],
+                        self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
 
                     // Vulkan Button
-                    let is_vulkan = current_backend == wgpu::Backend::Vulkan;
+                    let is_vulkan = self.config.backend == "Vulkan";
                     let vulkan_hover = mouse_x >= modal_x + 110.0 && mouse_x <= modal_x + 200.0 && mouse_y >= modal_y + 135.0 && mouse_y <= modal_y + 165.0;
                     let vulkan_bg = if is_vulkan {
-                        [0.0, 0.48, 0.8, 1.0] // blue #007ACC
+                        self.config.theme.cursor_color // use brand/cursor blue
                     } else if vulkan_hover {
-                        [0.85, 0.85, 0.85, 1.0]
+                        self.config.theme.button_hover_bg
                     } else {
-                        [0.92, 0.92, 0.92, 1.0]
+                        self.config.theme.button_bg
                     };
                     self.push_quad(
                         vertices,
@@ -1890,7 +1951,7 @@ impl UiState {
                         90.0,
                         1.0,
                         white_uv,
-                        if is_vulkan { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                        if is_vulkan { self.config.theme.cursor_color } else { self.config.theme.button_border },
                     );
                     self.push_quad(
                         vertices,
@@ -1900,7 +1961,7 @@ impl UiState {
                         90.0,
                         1.0,
                         white_uv,
-                        if is_vulkan { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                        if is_vulkan { self.config.theme.cursor_color } else { self.config.theme.button_border },
                     );
                     self.push_quad(
                         vertices,
@@ -1910,7 +1971,7 @@ impl UiState {
                         1.0,
                         30.0,
                         white_uv,
-                        if is_vulkan { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                        if is_vulkan { self.config.theme.cursor_color } else { self.config.theme.button_border },
                     );
                     self.push_quad(
                         vertices,
@@ -1920,7 +1981,7 @@ impl UiState {
                         1.0,
                         30.0,
                         white_uv,
-                        if is_vulkan { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                        if is_vulkan { self.config.theme.cursor_color } else { self.config.theme.button_border },
                     );
                     self.push_str(
                         vertices,
@@ -1930,20 +1991,20 @@ impl UiState {
                         "Vulkan",
                         modal_x + 125.0,
                         (modal_y + 155.0).round(),
-                        if is_vulkan { [1.0, 1.0, 1.0, 1.0] } else { [0.2, 0.2, 0.2, 1.0] },
+                        if is_vulkan { [1.0, 1.0, 1.0, 1.0] } else { self.config.theme.button_text },
                         self.ui_font_size,
                         self.ui_char_width,
                     );
 
                     // OpenGL Button
-                    let is_opengl = current_backend == wgpu::Backend::Gl;
+                    let is_opengl = self.config.backend == "OpenGL";
                     let opengl_hover = mouse_x >= modal_x + 210.0 && mouse_x <= modal_x + 300.0 && mouse_y >= modal_y + 135.0 && mouse_y <= modal_y + 165.0;
                     let opengl_bg = if is_opengl {
-                        [0.0, 0.48, 0.8, 1.0]
+                        self.config.theme.cursor_color // use brand/cursor blue
                     } else if opengl_hover {
-                        [0.85, 0.85, 0.85, 1.0]
+                        self.config.theme.button_hover_bg
                     } else {
-                        [0.92, 0.92, 0.92, 1.0]
+                        self.config.theme.button_bg
                     };
                     self.push_quad(
                         vertices,
@@ -1963,7 +2024,7 @@ impl UiState {
                         90.0,
                         1.0,
                         white_uv,
-                        if is_opengl { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                        if is_opengl { self.config.theme.cursor_color } else { self.config.theme.button_border },
                     );
                     self.push_quad(
                         vertices,
@@ -1973,7 +2034,7 @@ impl UiState {
                         90.0,
                         1.0,
                         white_uv,
-                        if is_opengl { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                        if is_opengl { self.config.theme.cursor_color } else { self.config.theme.button_border },
                     );
                     self.push_quad(
                         vertices,
@@ -1983,7 +2044,7 @@ impl UiState {
                         1.0,
                         30.0,
                         white_uv,
-                        if is_opengl { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                        if is_opengl { self.config.theme.cursor_color } else { self.config.theme.button_border },
                     );
                     self.push_quad(
                         vertices,
@@ -1993,7 +2054,7 @@ impl UiState {
                         1.0,
                         30.0,
                         white_uv,
-                        if is_opengl { [0.0, 0.4, 0.7, 1.0] } else { [0.78, 0.78, 0.78, 1.0] },
+                        if is_opengl { self.config.theme.cursor_color } else { self.config.theme.button_border },
                     );
                     self.push_str(
                         vertices,
@@ -2003,7 +2064,22 @@ impl UiState {
                         "OpenGL",
                         modal_x + 225.0,
                         (modal_y + 155.0).round(),
-                        if is_opengl { [1.0, 1.0, 1.0, 1.0] } else { [0.2, 0.2, 0.2, 1.0] },
+                        if is_opengl { [1.0, 1.0, 1.0, 1.0] } else { self.config.theme.button_text },
+                        self.ui_font_size,
+                        self.ui_char_width,
+                    );
+
+                    // Draw Active backend and GPU info
+                    let active_info_str = format!("Active: {:?} ({})", current_backend, self.active_device_name);
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        &active_info_str,
+                        modal_x + 20.0,
+                        modal_y + 185.0,
+                        self.config.theme.modal_text_muted,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
@@ -2020,7 +2096,7 @@ impl UiState {
                 120.0,
                 35.0,
                 white_uv,
-                if close_btn_hover { [0.85, 0.85, 0.85, 1.0] } else { [0.92, 0.92, 0.92, 1.0] },
+                if close_btn_hover { self.config.theme.button_hover_bg } else { self.config.theme.button_bg },
             );
             self.push_quad(
                 vertices,
@@ -2030,7 +2106,7 @@ impl UiState {
                 120.0,
                 1.0,
                 white_uv,
-                [0.78, 0.78, 0.78, 1.0],
+                self.config.theme.button_border,
             );
             self.push_quad(
                 vertices,
@@ -2040,7 +2116,7 @@ impl UiState {
                 120.0,
                 1.0,
                 white_uv,
-                [0.78, 0.78, 0.78, 1.0],
+                self.config.theme.button_border,
             );
             self.push_quad(
                 vertices,
@@ -2050,7 +2126,7 @@ impl UiState {
                 1.0,
                 35.0,
                 white_uv,
-                [0.78, 0.78, 0.78, 1.0],
+                self.config.theme.button_border,
             );
             self.push_quad(
                 vertices,
@@ -2060,7 +2136,7 @@ impl UiState {
                 1.0,
                 35.0,
                 white_uv,
-                [0.78, 0.78, 0.78, 1.0],
+                self.config.theme.button_border,
             );
 
             self.push_str(
@@ -2071,7 +2147,7 @@ impl UiState {
                 "Close",
                 modal_x + 180.0,
                 modal_y + modal_h - 37.0,
-                [0.2, 0.2, 0.2, 1.0],
+                self.config.theme.button_text,
                 self.ui_font_size,
                 self.ui_char_width,
             );
