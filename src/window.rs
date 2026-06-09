@@ -502,7 +502,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     } else if is_dragging_minimap {
                         let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
                         let status_y = (size.height as f32 - ui.status_height).round();
-                        let editor_height = status_y - editor_top - 14.0;
+                        let total_editor_height = status_y - editor_top;
+                        let editor_height = total_editor_height - 14.0;
                         let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                         let max_scroll = (tabs[active_tab_idx].buffer.len() as isize - visible_lines as isize).max(0) as f32;
                         let relative_y = mouse_y - editor_top;
@@ -510,8 +511,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         let minimap_line_height = (ui.buffer_font_size * 0.22).round().max(2.0);
                         let minimap_total_h = tabs[active_tab_idx].buffer.len() as f32 * minimap_line_height;
                         
-                        if minimap_total_h > editor_height {
-                            let scroll_ratio = (relative_y / editor_height).clamp(0.0, 1.0);
+                        if minimap_total_h > total_editor_height {
+                            let scroll_ratio = (relative_y / total_editor_height).clamp(0.0, 1.0);
                             ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
                         } else {
                             let line_idx = (relative_y / minimap_line_height).floor() as usize;
@@ -610,8 +611,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             let text_viewport_w = (minimap_x - text_area_x).max(10.0);
 
                                             // 1. Check if click is on minimap
-                                            if mouse_x >= minimap_x && mouse_x < sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height - 14.0 {
+                                            if mouse_x >= minimap_x && mouse_x < sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
                                                 is_dragging_minimap = true;
+                                                let total_editor_height = status_y - editor_top;
                                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                                 let max_scroll = (active_tab.buffer.len() as isize - visible_lines as isize).max(0) as f32;
                                                 let relative_y = mouse_y - editor_top;
@@ -619,8 +621,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 let minimap_line_height = (ui.buffer_font_size * 0.22).round().max(2.0);
                                                 let minimap_total_h = active_tab.buffer.len() as f32 * minimap_line_height;
                                                 
-                                                if minimap_total_h > editor_height {
-                                                    let scroll_ratio = (relative_y / editor_height).clamp(0.0, 1.0);
+                                                if minimap_total_h > total_editor_height {
+                                                    let scroll_ratio = (relative_y / total_editor_height).clamp(0.0, 1.0);
                                                     ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
                                                 } else {
                                                     let line_idx = (relative_y / minimap_line_height).floor() as usize;
@@ -628,7 +630,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 }
                                             }
                                             // 2. Check if click is on scrollbar
-                                            else if mouse_x >= sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height - 14.0 {
+                                            else if mouse_x >= sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
                                                 is_dragging_scroll = true;
                                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                                 let ratio = visible_lines as f32 / active_tab.buffer.len() as f32;
