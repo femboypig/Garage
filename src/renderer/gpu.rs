@@ -78,7 +78,13 @@ impl GpuContext {
                 ..Default::default()
             });
 
-            let surface = instance.create_surface(window.clone()).ok()?;
+            let surface = match instance.create_surface(window.clone()) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!("try_create (backend={:?}): create_surface failed: {:?}", backends, e);
+                    return None;
+                }
+            };
 
             let mut adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -87,6 +93,7 @@ impl GpuContext {
             }).await;
 
             if adapter.is_none() {
+                log::warn!("try_create (backend={:?}): request_adapter with compatible_surface returned None, retrying without compatible_surface...", backends);
                 adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::HighPerformance,
                     compatible_surface: None,
@@ -94,7 +101,13 @@ impl GpuContext {
                 }).await;
             }
 
-            let adapter = adapter?;
+            let adapter = match adapter {
+                Some(a) => a,
+                None => {
+                    log::warn!("try_create (backend={:?}): request_adapter returned None", backends);
+                    return None;
+                }
+            };
 
             let required_limits = if backends == wgpu::Backends::GL {
                 wgpu::Limits::downlevel_webgl2_defaults()
@@ -102,7 +115,8 @@ impl GpuContext {
                 wgpu::Limits::default()
             };
 
-            let (device, queue) = adapter.request_device(
+            log::warn!("try_create (backend={:?}): requesting device with limits...", backends);
+            let device_result = adapter.request_device(
                 &wgpu::DeviceDescriptor {
                     required_features: wgpu::Features::empty(),
                     required_limits,
@@ -110,12 +124,25 @@ impl GpuContext {
                     memory_hints: Default::default(),
                 },
                 None,
-            ).await.ok()?;
+            ).await;
+
+            let (device, queue) = match device_result {
+                Ok(res) => res,
+                Err(e) => {
+                    log::warn!("try_create (backend={:?}): request_device failed: {:?}", backends, e);
+                    return None;
+                }
+            };
 
             Some((surface, device, queue, adapter))
         }
 
-        fn restore_env(orig_wgpu: Option<String>, orig_libgl: Option<String>) {
+        fn restore_env(
+            orig_wgpu: Option<String>,
+            orig_libgl: Option<String>,
+            orig_gles_override: Option<String>,
+            orig_gl_override: Option<String>,
+        ) {
             unsafe {
                 if let Some(val) = orig_wgpu {
                     std::env::set_var("WGPU_GL_BACKEND", val);
@@ -126,6 +153,16 @@ impl GpuContext {
                     std::env::set_var("LIBGL_ALWAYS_SOFTWARE", val);
                 } else {
                     std::env::remove_var("LIBGL_ALWAYS_SOFTWARE");
+                }
+                if let Some(val) = orig_gles_override {
+                    std::env::set_var("MESA_GLES_VERSION_OVERRIDE", val);
+                } else {
+                    std::env::remove_var("MESA_GLES_VERSION_OVERRIDE");
+                }
+                if let Some(val) = orig_gl_override {
+                    std::env::set_var("MESA_GL_VERSION_OVERRIDE", val);
+                } else {
+                    std::env::remove_var("MESA_GL_VERSION_OVERRIDE");
                 }
             }
         }
@@ -138,9 +175,18 @@ impl GpuContext {
             // Save current environment variables
             let orig_wgpu_backend = std::env::var("WGPU_GL_BACKEND").ok();
             let orig_libgl_software = std::env::var("LIBGL_ALWAYS_SOFTWARE").ok();
+            let orig_gles_override = std::env::var("MESA_GLES_VERSION_OVERRIDE").ok();
+            let orig_gl_override = std::env::var("MESA_GL_VERSION_OVERRIDE").ok();
+
+            // Set Mesa version overrides to force GLES 3.0 and GL 3.3 compatibility
+            unsafe {
+                std::env::set_var("MESA_GLES_VERSION_OVERRIDE", "3.0");
+                std::env::set_var("MESA_GL_VERSION_OVERRIDE", "3.3");
+            }
 
             // 1. Try default (EGL hardware)
             if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+                restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override);
                 return Some(res);
             }
 
@@ -148,7 +194,7 @@ impl GpuContext {
             log::warn!("OpenGL with default EGL failed. Retrying OpenGL with GLX backend...");
             unsafe { std::env::set_var("WGPU_GL_BACKEND", "glx"); }
             if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
-                restore_env(orig_wgpu_backend, orig_libgl_software);
+                restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override);
                 return Some(res);
             }
 
@@ -159,7 +205,7 @@ impl GpuContext {
                 std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
             }
             if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
-                restore_env(orig_wgpu_backend, orig_libgl_software);
+                restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override);
                 return Some(res);
             }
 
@@ -170,12 +216,12 @@ impl GpuContext {
                 std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
             }
             if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
-                restore_env(orig_wgpu_backend, orig_libgl_software);
+                restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override);
                 return Some(res);
             }
 
             // Clean up and restore env on failure
-            restore_env(orig_wgpu_backend, orig_libgl_software);
+            restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override);
             None
         }
 
