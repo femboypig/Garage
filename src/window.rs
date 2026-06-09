@@ -59,6 +59,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     // Editor state
     let mut modifiers = winit::keyboard::ModifiersState::default();
     let mut is_dragging = false;
+    let mut is_dragging_scroll = false;
     let mut internal_clipboard = String::new();
     
     // Track mouse pixel coordinates
@@ -122,13 +123,23 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     mouse_x = position.x as f32;
                     mouse_y = position.y as f32;
 
-                    if is_dragging {
-                        // Calculate dynamic line number gutter width
+                    let size = window.inner_size();
+
+                    if is_dragging_scroll {
+                        let main_height = size.height as f32 - ui.titlebar_height - ui.status_height;
+                        let visible_lines = (main_height / ui.line_height).floor() as usize;
+                        let ratio = visible_lines as f32 / buffer.len() as f32;
+                        let thumb_h = (main_height * ratio).clamp(20.0, main_height);
+                        let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
+                        let relative_y = mouse_y - ui.titlebar_height - thumb_h / 2.0;
+                        let scroll_range = main_height - thumb_h;
+                        let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
+                        ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                    } else if is_dragging {
                         let max_line_digits = buffer.len().to_string().len().max(3);
                         let gutter_width = (max_line_digits as f32 + 2.0) * ui.char_width;
                         let text_area_x = ui.sidebar_width + gutter_width;
 
-                        // Calculate line under mouse pointer
                         let line_idx = if mouse_y >= ui.titlebar_height {
                             ((mouse_y - ui.titlebar_height) / ui.line_height).floor() as usize + ui.scroll_y
                         } else {
@@ -136,7 +147,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         };
                         let line_idx = line_idx.min(buffer.len() - 1);
 
-                        // Calculate column under mouse pointer
                         let col_idx = if mouse_x > text_area_x {
                             ((mouse_x - text_area_x) / ui.char_width).round() as usize + ui.scroll_x
                         } else {
@@ -145,7 +155,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         let line_chars = buffer.lines()[line_idx].chars().count();
                         let col_idx = col_idx.min(line_chars);
 
-                        // Update cursor active selection focus
                         cursor.line = line_idx;
                         cursor.col = col_idx;
                         cursor.intended_col = col_idx;
@@ -180,12 +189,16 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     }
                                 }
                                 UiAction::SaveFile => {
-                                    if let Some(ref path) = save_path {
-                                        if let Err(e) = buffer.save_file(path) {
-                                            log::error!("Failed to save file: {:?}", e);
-                                        } else {
-                                            ui.rebuild_tree();
-                                        }
+                                    let path_to_save = save_path.clone().unwrap_or_else(|| {
+                                        let default_path = "./untitled.txt".to_string();
+                                        save_path = Some(default_path.clone());
+                                        default_path
+                                    });
+                                    println!("Saving file to: {}", path_to_save);
+                                    if let Err(e) = buffer.save_file(&path_to_save) {
+                                        log::error!("Failed to save file: {:?}", e);
+                                    } else {
+                                        ui.rebuild_tree();
                                     }
                                 }
                                 UiAction::Undo => {
@@ -205,36 +218,68 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 UiAction::ToggleSidebar => {
                                     ui.target_sidebar_width = if ui.target_sidebar_width == 200.0 { 0.0 } else { 200.0 };
                                 }
+                                UiAction::ShowSettings => {
+                                    ui.active_modal = Some(crate::ui::ModalType::Settings);
+                                }
+                                UiAction::ShowAbout => {
+                                    ui.active_modal = Some(crate::ui::ModalType::About);
+                                }
+                                UiAction::CloseModal => {
+                                    ui.active_modal = None;
+                                }
                                 UiAction::Exit => {
                                     elwt.exit();
                                 }
                                 UiAction::None => {
-                                    let max_line_digits = buffer.len().to_string().len().max(3);
-                                    let gutter_width = (max_line_digits as f32 + 2.0) * ui.char_width;
-                                    let text_area_x = ui.sidebar_width + gutter_width;
+                                    // Check if click is on scrollbar
+                                    let sb_x = size.width as f32 - 12.0;
+                                    if mouse_x >= sb_x && mouse_y >= ui.titlebar_height && mouse_y < size.height as f32 - ui.status_height {
+                                        is_dragging_scroll = true;
+                                        let main_height = size.height as f32 - ui.titlebar_height - ui.status_height;
+                                        let visible_lines = (main_height / ui.line_height).floor() as usize;
+                                        let ratio = visible_lines as f32 / buffer.len() as f32;
+                                        let thumb_h = (main_height * ratio).clamp(20.0, main_height);
+                                        let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
+                                        let relative_y = mouse_y - ui.titlebar_height - thumb_h / 2.0;
+                                        let scroll_range = main_height - thumb_h;
+                                        let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
+                                        ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                                    } else {
+                                        // Click inside editor area
+                                        let max_line_digits = buffer.len().to_string().len().max(3);
+                                        let gutter_width = (max_line_digits as f32 + 2.0) * ui.char_width;
+                                        let text_area_x = ui.sidebar_width + gutter_width;
 
-                                    if mouse_x >= text_area_x && mouse_y >= ui.titlebar_height && mouse_y < size.height as f32 - ui.status_height {
-                                        buffer.commit_transaction();
-                                        is_dragging = true;
+                                        if mouse_x >= text_area_x && mouse_y >= ui.titlebar_height && mouse_y < size.height as f32 - ui.status_height {
+                                            buffer.commit_transaction();
+                                            is_dragging = true;
 
-                                        let extend_selection = modifiers.shift_key();
-                                        cursor.update_selection(extend_selection);
+                                            let line_idx = ((mouse_y - ui.titlebar_height) / ui.line_height).floor() as usize + ui.scroll_y;
+                                            let line_idx = line_idx.min(buffer.len() - 1);
 
-                                        let line_idx = ((mouse_y - ui.titlebar_height) / ui.line_height).floor() as usize + ui.scroll_y;
-                                        let line_idx = line_idx.min(buffer.len() - 1);
+                                            let col_idx = ((mouse_x - text_area_x) / ui.char_width).round() as usize + ui.scroll_x;
+                                            let line_chars = buffer.lines()[line_idx].chars().count();
+                                            let col_idx = col_idx.min(line_chars);
 
-                                        let col_idx = ((mouse_x - text_area_x) / ui.char_width).round() as usize + ui.scroll_x;
-                                        let line_chars = buffer.lines()[line_idx].chars().count();
-                                        let col_idx = col_idx.min(line_chars);
+                                            let extend_selection = modifiers.shift_key();
+                                            if extend_selection {
+                                                if cursor.selection_anchor.is_none() {
+                                                    cursor.selection_anchor = Some((cursor.line, cursor.col));
+                                                }
+                                            } else {
+                                                cursor.selection_anchor = Some((line_idx, col_idx));
+                                            }
 
-                                        cursor.line = line_idx;
-                                        cursor.col = col_idx;
-                                        cursor.intended_col = col_idx;
+                                            cursor.line = line_idx;
+                                            cursor.col = col_idx;
+                                            cursor.intended_col = col_idx;
+                                        }
                                     }
                                 }
                             }
                         } else {
                             is_dragging = false;
+                            is_dragging_scroll = false;
                             if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
                                 if s_l == e_l && s_c == e_c {
                                     cursor.clear_selection();
@@ -258,7 +303,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 }
 
                 WindowEvent::KeyboardInput { event: kb_event, .. } => {
-                    if kb_event.state == ElementState::Pressed {
+                    if kb_event.state == ElementState::Pressed && ui.active_modal.is_none() {
                         let shift = modifiers.shift_key();
                         let ctrl = modifiers.control_key();
 
@@ -307,7 +352,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 window.request_redraw();
                             }
                             Key::Named(NamedKey::Backspace) => {
-                                // Delete selection or char before cursor
                                 if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
                                     buffer.start_transaction();
                                     buffer.delete(s_l, s_c, e_l, e_c);
@@ -327,7 +371,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 window.request_redraw();
                             }
                             Key::Named(NamedKey::Delete) => {
-                                // Delete selection or char after cursor
                                 if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
                                     buffer.start_transaction();
                                     buffer.delete(s_l, s_c, e_l, e_c);
@@ -395,7 +438,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             }
                             Key::Character(text) => {
                                 if ctrl {
-                                    // Control shortcuts
                                     match text.as_str() {
                                         "z" | "Z" => {
                                             buffer.commit_transaction();
@@ -419,10 +461,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         }
                                         "s" | "S" => {
                                             buffer.commit_transaction();
-                                            if let Some(ref path) = save_path {
-                                                if let Err(e) = buffer.save_file(path) {
-                                                    log::error!("Failed to save file: {:?}", e);
-                                                }
+                                            let path_to_save = save_path.clone().unwrap_or_else(|| {
+                                                let default_path = "./untitled.txt".to_string();
+                                                save_path = Some(default_path.clone());
+                                                default_path
+                                            });
+                                            println!("Saving file to: {}", path_to_save);
+                                            if let Err(e) = buffer.save_file(&path_to_save) {
+                                                log::error!("Failed to save file: {:?}", e);
                                             }
                                         }
                                         "c" | "C" => {
@@ -474,7 +520,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         _ => {}
                                     }
                                 } else {
-                                    // Normal character input
                                     if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
                                         buffer.start_transaction();
                                         buffer.delete(s_l, s_c, e_l, e_c);
