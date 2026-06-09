@@ -363,7 +363,7 @@ impl UiState {
         if let Some(modal) = self.active_modal {
             let modal_w = match modal {
                 ModalType::Settings => (45.0 * self.ui_char_width).max(500.0).round(),
-                ModalType::About => 400.0,
+                ModalType::About => 520.0,
                 ModalType::CommandPalette => (50.0 * self.ui_char_width).max(500.0).round(),
                 ModalType::UnsavedChanges => 520.0,
             };
@@ -811,7 +811,7 @@ impl UiState {
                         return UiAction::SelectTerminal(idx);
                     }
                 }
-                cur_x += tab_w + 2.0;
+                cur_x += tab_w;
             }
             
             // Check '+' button to add new terminal
@@ -1812,22 +1812,75 @@ impl UiState {
             white_uv,
             self.config.theme.tabbar_bg,
         );
+        // Pre-calculate active tab X and width to omit the border underneath it
+        let mut active_tab_x = 0.0f32;
+        let mut active_tab_w = 0.0f32;
+        let mut has_active_tab = false;
+        let tab_close_icon_sz = (self.ui_font_size * 0.8).round().max(10.0);
+
+        let mut temp_x = activity_bar_width + self.sidebar_width;
+        for idx in 0..tab_paths.len() {
+            let path_opt = &tab_paths[idx];
+            let file_name = path_opt.as_ref()
+                .and_then(|p| Path::new(p).file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "untitled.txt".to_string());
+            let name_w = file_name.chars().count() as f32 * self.ui_char_width;
+            let dot_reserved = 18.0f32;
+            let close_reserved = 8.0f32 + tab_close_icon_sz;
+            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+            if idx == active_tab_idx {
+                active_tab_x = temp_x;
+                active_tab_w = tab_w;
+                has_active_tab = true;
+            }
+            temp_x += tab_w;
+        }
+
         // Tab bar bottom border
-        self.push_quad(
-            vertices,
-            indices,
-            activity_bar_width + self.sidebar_width,
-            main_y + self.tabbar_height - 1.0,
-            width - (activity_bar_width + self.sidebar_width),
-            1.0,
-            white_uv,
-            self.config.theme.tabbar_border,
-        );
+        let tabbar_start_x = activity_bar_width + self.sidebar_width;
+        if has_active_tab {
+            if active_tab_x > tabbar_start_x {
+                self.push_quad(
+                    vertices,
+                    indices,
+                    tabbar_start_x,
+                    main_y + self.tabbar_height - 1.0,
+                    active_tab_x - tabbar_start_x,
+                    1.0,
+                    white_uv,
+                    self.config.theme.tabbar_border,
+                );
+            }
+            let right_start_x = active_tab_x + active_tab_w;
+            if right_start_x < width {
+                self.push_quad(
+                    vertices,
+                    indices,
+                    right_start_x,
+                    main_y + self.tabbar_height - 1.0,
+                    width - right_start_x,
+                    1.0,
+                    white_uv,
+                    self.config.theme.tabbar_border,
+                );
+            }
+        } else {
+            self.push_quad(
+                vertices,
+                indices,
+                tabbar_start_x,
+                main_y + self.tabbar_height - 1.0,
+                width - tabbar_start_x,
+                1.0,
+                white_uv,
+                self.config.theme.tabbar_border,
+            );
+        }
 
         // Draw active/inactive file tabs
         let mut current_tab_x = activity_bar_width + self.sidebar_width;
         let tab_baseline = (main_y + self.tabbar_height / 2.0 + self.ui_font_ascent / 2.0 - 3.5).round();
-        let tab_close_icon_sz = (self.ui_font_size * 0.8).round().max(10.0);
 
         for idx in 0..tab_paths.len() {
             let path_opt = &tab_paths[idx];
@@ -1851,13 +1904,18 @@ impl UiState {
             } else {
                 self.config.theme.tabbar_bg
             };
+            let tab_h = if is_active {
+                self.tabbar_height
+            } else {
+                self.tabbar_height - 1.0
+            };
             self.push_quad(
                 vertices,
                 indices,
                 current_tab_x,
                 main_y,
                 tab_w,
-                self.tabbar_height - 1.0,
+                tab_h,
                 white_uv,
                 bg_color,
             );
@@ -2467,23 +2525,72 @@ impl UiState {
                 white_uv,
                 self.config.theme.tabbar_bg,
             );
-            self.push_quad(
-                vertices,
-                indices,
-                self.sidebar_width,
-                dock_start_y + dock_tabbar_h,
-                dock_w,
-                1.0,
-                white_uv,
-                self.config.theme.tabbar_border,
-            );
+            // 2.5. Calculate active terminal tab layout details beforehand
+            let mut active_dock_x = 0.0f32;
+            let mut active_dock_w = 0.0f32;
+            let mut has_active_dock = false;
+            let mut temp_x = self.sidebar_width + 10.0f32;
+            for idx in 0..terminals.len() {
+                let term_name = format!("terminal-{}", idx + 1);
+                let term_name_w = term_name.chars().count() as f32 * self.ui_char_width * 0.9;
+                let icon_sz = 12.0f32;
+                let close_sz = 10.0f32;
+                let tab_w = 12.0 + icon_sz + 6.0 + term_name_w + 8.0 + close_sz + 10.0;
+                if idx == self.active_dock_tab {
+                    active_dock_x = temp_x;
+                    active_dock_w = tab_w;
+                    has_active_dock = true;
+                }
+                temp_x += tab_w;
+            }
+
+            // Draw dock tabbar bottom border (skipping the active tab)
+            let dock_tabbar_border_y = dock_start_y + dock_tabbar_h;
+            let border_start_x = self.sidebar_width;
+            if has_active_dock {
+                if active_dock_x > border_start_x {
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        border_start_x,
+                        dock_tabbar_border_y,
+                        active_dock_x - border_start_x,
+                        1.0,
+                        white_uv,
+                        self.config.theme.tabbar_border,
+                    );
+                }
+                let border_end_x = active_dock_x + active_dock_w;
+                if border_end_x < width {
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        border_end_x,
+                        dock_tabbar_border_y,
+                        width - border_end_x,
+                        1.0,
+                        white_uv,
+                        self.config.theme.tabbar_border,
+                    );
+                }
+            } else {
+                self.push_quad(
+                    vertices,
+                    indices,
+                    border_start_x,
+                    dock_tabbar_border_y,
+                    dock_w,
+                    1.0,
+                    white_uv,
+                    self.config.theme.tabbar_border,
+                );
+            }
 
             // 3. Draw active/inactive terminal tabs
             let mut cur_x = self.sidebar_width + 10.0f32;
             let tab_y = dock_start_y + 1.0;
             let tab_h = dock_tabbar_h - 1.0;
             let tab_font_sz = self.ui_font_size * 0.9;
-            let tab_baseline = (tab_y + tab_h / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
 
             for idx in 0..terminals.len() {
                 let is_active = idx == self.active_dock_tab;
@@ -2499,14 +2606,37 @@ impl UiState {
                 } else {
                     self.config.theme.tabbar_bg
                 };
-                self.push_quad(vertices, indices, cur_x, tab_y, tab_w, tab_h, white_uv, bg_color);
+                let current_tab_h = if is_active {
+                    dock_tabbar_h
+                } else {
+                    dock_tabbar_h - 1.0
+                };
+                self.push_quad(vertices, indices, cur_x, tab_y, tab_w, current_tab_h, white_uv, bg_color);
                 
-                // Draw left active indicator
-                if is_active {
-                    let indicator_color = [0.3f32, 0.5f32, 0.9f32, 1.0f32]; // Accent blue
-                    self.push_quad(vertices, indices, cur_x, tab_y, 2.0, tab_h, white_uv, indicator_color);
+                // Draw separators/borders like in editor tabbar
+                if idx > 0 {
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        cur_x,
+                        tab_y,
+                        1.0,
+                        dock_tabbar_h,
+                        white_uv,
+                        self.config.theme.tabbar_border,
+                    );
                 }
-                
+                self.push_quad(
+                    vertices,
+                    indices,
+                    cur_x + tab_w - 1.0,
+                    tab_y,
+                    1.0,
+                    dock_tabbar_h,
+                    white_uv,
+                    self.config.theme.tabbar_border,
+                );
+
                 // Draw terminal icon
                 let icon_color = if is_active {
                     self.config.theme.tab_text
@@ -2515,6 +2645,7 @@ impl UiState {
                     c[3] *= 0.6;
                     c
                 };
+                let cur_tab_h_for_calc = dock_tabbar_h - 1.0;
                 self.push_icon(
                     vertices,
                     indices,
@@ -2522,12 +2653,13 @@ impl UiState {
                     queue,
                     "terminal",
                     cur_x + 8.0,
-                    (tab_y + (tab_h - icon_sz) / 2.0).round(),
+                    (tab_y + (cur_tab_h_for_calc - icon_sz) / 2.0).round(),
                     icon_color,
                     icon_sz,
                 );
 
                 // Draw text
+                let tab_baseline = (tab_y + cur_tab_h_for_calc / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
                 self.push_str(
                     vertices,
                     indices,
@@ -2543,7 +2675,7 @@ impl UiState {
 
                 // Draw tab close button
                 let close_x = cur_x + tab_w - 8.0 - close_sz;
-                let close_y = (tab_y + (tab_h - close_sz) / 2.0).round();
+                let close_y = (tab_y + (cur_tab_h_for_calc - close_sz) / 2.0).round();
                 
                 let is_close_hover = self.active_modal.is_none() && mouse_x >= close_x - 3.0 && mouse_x < close_x + close_sz + 3.0 && mouse_y >= close_y - 3.0 && mouse_y < close_y + close_sz + 3.0;
                 let close_color = if is_close_hover {
@@ -2566,7 +2698,7 @@ impl UiState {
                     close_sz,
                 );
 
-                cur_x += tab_w + 2.0;
+                cur_x += tab_w;
             }
 
             // Draw '+' button to add new terminal
@@ -2815,7 +2947,7 @@ impl UiState {
         }
 
         let right_text_width = status_right.chars().count() as f32 * self.ui_char_width;
-        let right_x = width - right_text_width - 15.0 - 110.0;
+        let right_x = width - right_text_width - 15.0 - 36.0;
         if right_x > width / 2.0 {
             self.push_str(
                 vertices,
@@ -2987,7 +3119,7 @@ impl UiState {
             );
             let modal_w = match modal {
                 ModalType::Settings => (45.0 * self.ui_char_width).max(500.0).round(),
-                ModalType::About => 400.0,
+                ModalType::About => 520.0,
                 ModalType::CommandPalette => (50.0 * self.ui_char_width).max(500.0).round(),
                 ModalType::UnsavedChanges => 520.0,
             };
