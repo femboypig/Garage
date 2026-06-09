@@ -281,14 +281,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     }
                     UiAction::ChangeBackend(backend) => {
                         let mut new_config = ui.config.clone();
-                        let requested_str = match backend {
-                            wgpu::Backend::Vulkan => "Vulkan",
-                            wgpu::Backend::Gl => "OpenGL",
-                            _ => "Vulkan",
-                        };
-                        new_config.backend = requested_str.to_string();
-                        new_config.save_in_background();
-
                         let forced_backends = match backend {
                             wgpu::Backend::Vulkan => wgpu::Backends::VULKAN,
                             wgpu::Backend::Gl => wgpu::Backends::GL,
@@ -309,6 +301,19 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             }
                         }
                         let mut new_gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
+
+                        let actual_backend_str = match new_gpu.backend {
+                            wgpu::Backend::Vulkan => "Vulkan",
+                            wgpu::Backend::Gl => "OpenGL",
+                            _ => "Vulkan",
+                        };
+                        new_config.backend = actual_backend_str.to_string();
+                        if let Err(e) = new_config.save() {
+                            log::warn!("Failed to save config on settings change: {:?}", e);
+                        } else {
+                            log::warn!("Successfully saved backend '{}' to config from settings.", actual_backend_str);
+                        }
+
                         if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes) {
                             atlas = new_atlas;
                             new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
