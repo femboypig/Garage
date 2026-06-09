@@ -239,25 +239,25 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         let new_size = (ui.buffer_font_size + delta).clamp(8.0, 36.0);
                                         ui.update_buffer_font_size(&atlas.font, new_size);
                                         ui.config.buffer_font_size = new_size;
-                                        let _ = ui.config.save();
+                                        ui.config.save_in_background();
                                     }
                                     UiAction::ChangeUiFontSize(delta) => {
                                         let new_size = (ui.ui_font_size + delta).clamp(8.0, 24.0);
                                         ui.update_ui_font_size(&atlas.font, new_size);
                                         ui.config.ui_font_size = new_size;
-                                        let _ = ui.config.save();
+                                        ui.config.save_in_background();
                                     }
                                     UiAction::ChangeSidebarWidth(delta) => {
                                         let new_width = (ui.config.sidebar_width + delta).clamp(100.0, 400.0);
                                         ui.config.sidebar_width = new_width;
                                         ui.target_sidebar_width = new_width;
                                         ui.sidebar_width = new_width;
-                                        let _ = ui.config.save();
+                                        ui.config.save_in_background();
                                     }
                                     UiAction::ChangeTheme(theme_name) => {
                                         let selected_theme = crate::config::Theme::get_by_name(&theme_name);
                                         ui.config.theme = selected_theme;
-                                        let _ = ui.config.save();
+                                        ui.config.save_in_background();
                                     }
                                     UiAction::ChangeBackend(backend) => {
                                         let mut new_config = ui.config.clone();
@@ -267,7 +267,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             _ => "Vulkan",
                                         };
                                         new_config.backend = requested_str.to_string();
-                                        let _ = new_config.save();
+                                        new_config.save_in_background();
 
                                         let forced_backends = match backend {
                                             wgpu::Backend::Vulkan => wgpu::Backends::VULKAN,
@@ -376,7 +376,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             ui.sidebar_width = ui.target_sidebar_width;
                                             if ui.target_sidebar_width > 0.0 {
                                                 ui.config.sidebar_width = ui.target_sidebar_width;
-                                                let _ = ui.config.save();
+                                                ui.config.save_in_background();
                                             }
                                         }
                                         UiAction::ShowSettings => {
@@ -392,25 +392,25 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             let new_size = (ui.buffer_font_size + delta).clamp(8.0, 36.0);
                                             ui.update_buffer_font_size(&atlas.font, new_size);
                                             ui.config.buffer_font_size = new_size;
-                                            let _ = ui.config.save();
+                                            ui.config.save_in_background();
                                         }
                                         UiAction::ChangeUiFontSize(delta) => {
                                             let new_size = (ui.ui_font_size + delta).clamp(8.0, 24.0);
                                             ui.update_ui_font_size(&atlas.font, new_size);
                                             ui.config.ui_font_size = new_size;
-                                            let _ = ui.config.save();
+                                            ui.config.save_in_background();
                                         }
                                         UiAction::ChangeSidebarWidth(delta) => {
                                             let new_width = (ui.config.sidebar_width + delta).clamp(100.0, 400.0);
                                             ui.config.sidebar_width = new_width;
                                             ui.target_sidebar_width = new_width;
                                             ui.sidebar_width = new_width;
-                                            let _ = ui.config.save();
+                                            ui.config.save_in_background();
                                         }
                                         UiAction::ChangeTheme(theme_name) => {
                                             let selected_theme = crate::config::Theme::get_by_name(&theme_name);
                                             ui.config.theme = selected_theme;
-                                            let _ = ui.config.save();
+                                            ui.config.save_in_background();
                                         }
                                         UiAction::ChangeBackend(backend) => {
                                             let mut new_config = ui.config.clone();
@@ -420,7 +420,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 _ => "Vulkan",
                                             };
                                             new_config.backend = requested_str.to_string();
-                                            let _ = new_config.save();
+                                            new_config.save_in_background();
 
                                             let forced_backends = match backend {
                                                 wgpu::Backend::Vulkan => wgpu::Backends::VULKAN,
@@ -538,7 +538,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             is_dragging_sidebar = false;
                             if was_dragging_sidebar {
                                 ui.config.sidebar_width = ui.sidebar_width;
-                                let _ = ui.config.save();
+                                ui.config.save_in_background();
                             }
                             if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
                                 if s_l == e_l && s_c == e_c {
