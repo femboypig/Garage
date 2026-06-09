@@ -1199,65 +1199,10 @@ impl UiState {
                 let text_baseline = (row_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round();
                 let icon_sz = (self.ui_font_size * 1.05).round().max(13.0);
                 let icon_y_center = text_baseline - (self.ui_font_ascent * 0.33).round();
-                let icon_x = indent_x + (self.ui_char_width * 1.2).round().max(8.0);
+                let icon_x = indent_x;
                 let icon_y = icon_y_center - (icon_sz / 2.0).round();
 
                 if node.is_dir {
-                    // Draw Chevron via vector lines to avoid font fallback rectangles
-                    let is_expanded = self.expanded_dirs.contains(&node.path);
-                    let chev_size = (self.ui_font_size * 0.2).round().max(2.0);
-                    let chev_cx = indent_x + (self.ui_char_width * 0.5).round().max(3.0);
-                    let chev_cy = icon_y_center;
-                    if is_expanded {
-                        // Down-pointing chevron (v)
-                        for offset in 0..=(chev_size as i32) {
-                            self.push_quad(
-                                vertices,
-                                indices,
-                                chev_cx - chev_size + offset as f32,
-                                chev_cy - (chev_size / 2.0).round() + offset as f32,
-                                1.5,
-                                1.5,
-                                white_uv,
-                                text_color,
-                            );
-                            self.push_quad(
-                                vertices,
-                                indices,
-                                chev_cx + chev_size - offset as f32,
-                                chev_cy - (chev_size / 2.0).round() + offset as f32,
-                                1.5,
-                                1.5,
-                                white_uv,
-                                text_color,
-                            );
-                        }
-                    } else {
-                        // Right-pointing chevron (>)
-                        for offset in 0..=(chev_size as i32) {
-                            self.push_quad(
-                                vertices,
-                                indices,
-                                chev_cx - (chev_size / 2.0).round() + offset as f32,
-                                chev_cy - chev_size + offset as f32,
-                                1.5,
-                                1.5,
-                                white_uv,
-                                text_color,
-                            );
-                            self.push_quad(
-                                vertices,
-                                indices,
-                                chev_cx - (chev_size / 2.0).round() + offset as f32,
-                                chev_cy + chev_size - offset as f32,
-                                1.5,
-                                1.5,
-                                white_uv,
-                                text_color,
-                            );
-                        }
-                    }
-
                     // Draw Folder Outline Icon from SVGs
                     let is_expanded = self.expanded_dirs.contains(&node.path);
                     let icon_path = if is_expanded {
