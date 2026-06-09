@@ -337,4 +337,13 @@ impl AppConfig {
         fs::write(path, content)?;
         Ok(())
     }
+
+    pub fn save_in_background(&self) {
+        let config_clone = self.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = config_clone.save() {
+                eprintln!("Failed to save config in background: {:?}", e);
+            }
+        });
+    }
 }
