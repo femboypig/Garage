@@ -230,6 +230,14 @@ impl UiState {
         self.scan_dir_recursive(Path::new("."), 0);
     }
 
+    pub fn scrollbar_width(&self) -> f32 {
+        (self.ui_font_size * 1.35).round().max(12.0)
+    }
+
+    pub fn minimap_width(&self) -> f32 {
+        (self.buffer_font_size * 7.5).round().max(60.0)
+    }
+
     fn scan_dir_recursive(&mut self, dir: &Path, depth: usize) {
         if let Ok(entries) = std::fs::read_dir(dir) {
             let mut entries_vec = Vec::new();
@@ -1102,8 +1110,8 @@ impl UiState {
         let gutter_width = (max_line_digits as f32 + 2.0) * self.buffer_char_width;
         let text_area_x = activity_bar_width + self.sidebar_width + gutter_width;
         
-        let scrollbar_width = 12.0;
-        let minimap_width = 100.0f32;
+        let scrollbar_width = self.scrollbar_width();
+        let minimap_width = self.minimap_width();
         let sb_x = width - scrollbar_width;
         let minimap_x = sb_x - minimap_width;
         let text_viewport_w = minimap_x - text_area_x;
@@ -1399,7 +1407,7 @@ impl UiState {
         );
 
         // Draw active file tab
-        let tab_w = (file_name.chars().count() as f32 * self.ui_char_width + 40.0).max(120.0);
+        let tab_w = (file_name.chars().count() as f32 * self.ui_char_width + 50.0).max(130.0);
         self.push_quad(
             vertices,
             indices,
@@ -1421,7 +1429,25 @@ impl UiState {
             white_uv,
             self.config.theme.tabbar_border,
         );
-        let tab_baseline = (main_y + self.tabbar_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
+        let tab_baseline = (main_y + (self.tabbar_height + self.ui_font_ascent) / 2.0).round() - 1.0;
+        
+        // Unsaved file indicator dot (bullet)
+        if buffer.is_modified {
+            let dot_size = 5.0f32;
+            let dot_x = activity_bar_width + self.sidebar_width + 12.0;
+            let dot_y = (main_y + self.tabbar_height / 2.0 - dot_size / 2.0).round();
+            self.push_quad(
+                vertices,
+                indices,
+                dot_x,
+                dot_y,
+                dot_size,
+                dot_size,
+                white_uv,
+                self.config.theme.tab_text,
+            );
+        }
+
         // Active tab label
         self.push_str(
             vertices,
@@ -1429,7 +1455,7 @@ impl UiState {
             atlas,
             queue,
             &file_name,
-            activity_bar_width + self.sidebar_width + 15.0,
+            activity_bar_width + self.sidebar_width + 24.0,
             tab_baseline,
             self.config.theme.tab_text,
             self.ui_font_size,
@@ -1750,7 +1776,10 @@ impl UiState {
             self.config.theme.scrollbar_border,
         );
 
-        let minimap_line_height = 3.0f32;
+        let minimap_line_height = (self.buffer_font_size * 0.22).round().max(2.0);
+        let minimap_char_w = minimap_line_height * 0.5;
+        let minimap_quad_h = (minimap_line_height - 1.0).max(1.0);
+
         let minimap_total_h = buffer.len() as f32 * minimap_line_height;
         let minimap_offset_y = if minimap_total_h > editor_height {
             scroll_ratio * (minimap_total_h - editor_height)
@@ -1775,7 +1804,7 @@ impl UiState {
             let mut block_w = 0.0f32;
             
             for (char_idx, c) in line_text.chars().enumerate() {
-                let char_w = if c == '\t' { 4.0 * 1.5 } else { 1.5 };
+                let char_w = if c == '\t' { 4.0 * minimap_char_w } else { minimap_char_w };
                 let color = char_colors.get(char_idx).copied().unwrap_or(self.config.theme.syntax_default);
                 let is_whitespace = c == ' ' || c == '\t';
                 
@@ -1789,7 +1818,7 @@ impl UiState {
                                 minimap_x + start_x,
                                 row_y,
                                 draw_w,
-                                2.0,
+                                minimap_quad_h,
                                 white_uv,
                                 col,
                             );
@@ -1810,7 +1839,7 @@ impl UiState {
                                     minimap_x + start_x,
                                     row_y,
                                     draw_w,
-                                    2.0,
+                                    minimap_quad_h,
                                     white_uv,
                                     col,
                                 );
@@ -1839,7 +1868,7 @@ impl UiState {
                         minimap_x + start_x,
                         row_y,
                         draw_w,
-                        2.0,
+                        minimap_quad_h,
                         white_uv,
                         col,
                     );
@@ -2119,10 +2148,7 @@ impl UiState {
                 ModalType::CommandPalette => 320.0,
             };
             let modal_x = ((width - modal_w) / 2.0).round();
-            let modal_y = match modal {
-                ModalType::CommandPalette => 100.0f32,
-                _ => ((height - modal_h) / 2.0).round(),
-            };
+            let modal_y = ((height - modal_h) / 2.0).round();
 
             // Draw Modal Box Background
             self.push_quad(
