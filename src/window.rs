@@ -506,13 +506,13 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                             let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
                                             let editor_height = size.height as f32 - editor_top - ui.status_height;
                                             
-                                            let minimap_width = 80.0f32;
                                             let scrollbar_width = 12.0;
-                                            let minimap_x = size.width as f32 - minimap_width;
-                                            let sb_x = minimap_x - scrollbar_width;
+                                            let minimap_width = 100.0f32;
+                                            let sb_x = size.width as f32 - scrollbar_width;
+                                            let minimap_x = sb_x - minimap_width;
                                             
                                             // 1. Check if click is on minimap
-                                            if mouse_x >= minimap_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
+                                            if mouse_x >= minimap_x && mouse_x < sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
                                                 is_dragging_minimap = true;
                                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                                 let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
@@ -521,7 +521,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                 ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
                                             }
                                             // 2. Check if click is on scrollbar
-                                            else if mouse_x >= sb_x && mouse_x < minimap_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
+                                            else if mouse_x >= sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
                                                 is_dragging_scroll = true;
                                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                                 let ratio = visible_lines as f32 / buffer.len() as f32;
@@ -546,7 +546,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                                  let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
                                                  let text_area_x = ui.sidebar_width + gutter_width;
 
-                                                 if mouse_x >= text_area_x && mouse_x < sb_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
+                                                 if mouse_x >= text_area_x && mouse_x < minimap_x && mouse_y >= editor_top && mouse_y < size.height as f32 - ui.status_height {
                                                      buffer.commit_transaction();
                                                      is_dragging = true;
 
@@ -633,6 +633,13 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     KeyCode::Minus | KeyCode::NumpadSubtract => {
                                         let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
                                         ui.update_buffer_font_size(&atlas.font, new_size);
+                                        window.request_redraw();
+                                        return;
+                                    }
+                                    KeyCode::KeyP if modifiers.shift_key() => {
+                                        ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
+                                        ui.command_palette_query.clear();
+                                        ui.command_palette_selected = 0;
                                         window.request_redraw();
                                         return;
                                     }
@@ -731,6 +738,93 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     _ => {}
                                 }
                             }
+                        }
+
+                        if let Some(crate::ui::ModalType::CommandPalette) = ui.active_modal {
+                            match &kb_event.logical_key {
+                                Key::Named(NamedKey::Escape) => {
+                                    ui.active_modal = None;
+                                    window.request_redraw();
+                                }
+                                Key::Named(NamedKey::ArrowDown) => {
+                                    let items_count = ui.get_filtered_commands().len();
+                                    if items_count > 0 {
+                                        ui.command_palette_selected = (ui.command_palette_selected + 1) % items_count;
+                                    }
+                                    window.request_redraw();
+                                }
+                                Key::Named(NamedKey::ArrowUp) => {
+                                    let items_count = ui.get_filtered_commands().len();
+                                    if items_count > 0 {
+                                        ui.command_palette_selected = (ui.command_palette_selected + items_count - 1) % items_count;
+                                    }
+                                    window.request_redraw();
+                                }
+                                Key::Named(NamedKey::Enter) => {
+                                    let filtered = ui.get_filtered_commands();
+                                    if ui.command_palette_selected < filtered.len() {
+                                        let cmd = filtered[ui.command_palette_selected];
+                                        ui.active_modal = None;
+                                        
+                                        let action = ui.execute_command(cmd, &mut buffer, &mut cursor);
+                                        match action {
+                                            UiAction::ChangeTheme(theme_name) => {
+                                                let selected_theme = crate::config::Theme::get_by_name(&theme_name);
+                                                ui.config.theme = selected_theme;
+                                                ui.config.save_in_background();
+                                            }
+                                            UiAction::ToggleSidebar => {
+                                                let preferred = if ui.config.sidebar_width > 0.0 { ui.config.sidebar_width } else { 200.0 };
+                                                ui.target_sidebar_width = if ui.target_sidebar_width > 0.0 { 0.0 } else { preferred };
+                                                ui.sidebar_width = ui.target_sidebar_width;
+                                                if ui.target_sidebar_width > 0.0 {
+                                                    ui.config.sidebar_width = ui.target_sidebar_width;
+                                                    ui.config.save_in_background();
+                                                }
+                                            }
+                                            UiAction::ChangeBufferFontSize(delta) => {
+                                                let new_size = (ui.buffer_font_size + delta).clamp(8.0, 36.0);
+                                                ui.update_buffer_font_size(&atlas.font, new_size);
+                                                ui.config.buffer_font_size = new_size;
+                                                ui.config.save_in_background();
+                                            }
+                                            UiAction::ChangeGitBlame(enabled) => {
+                                                ui.config.show_git_blame = enabled;
+                                                ui.config.save_in_background();
+                                            }
+                                            UiAction::ChangeGitBranch(enabled) => {
+                                                ui.config.show_git_branch = enabled;
+                                                if !enabled {
+                                                    ui.git_branch = None;
+                                                }
+                                                ui.config.save_in_background();
+                                            }
+                                            UiAction::Exit => {
+                                                elwt.exit();
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    window.request_redraw();
+                                }
+                                Key::Named(NamedKey::Backspace) => {
+                                    ui.command_palette_query.pop();
+                                    ui.command_palette_selected = 0;
+                                    window.request_redraw();
+                                }
+                                Key::Character(text) => {
+                                    if text.chars().count() == 1 {
+                                        let c = text.chars().next().unwrap();
+                                        if c.is_ascii_graphic() || c == ' ' {
+                                            ui.command_palette_query.push(c);
+                                            ui.command_palette_selected = 0;
+                                            window.request_redraw();
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                            return;
                         }
 
                         if ui.active_modal.is_some() {
