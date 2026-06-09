@@ -412,12 +412,12 @@ impl UiState {
                 if self.theme_dropdown_open {
                     let dropdown_y = btn4_y + btn_h;
                     let item_height = (self.ui_line_height * 1.5).round().max(24.0);
-                    let dropdown_h = 3.0 * item_height;
+                    let dropdown_h = 2.0 * item_height;
 
                     if mx >= control_x && mx <= control_x + theme_btn_w && my >= dropdown_y && my <= dropdown_y + dropdown_h {
                         let idx = ((my - dropdown_y) / item_height).floor() as usize;
-                        let themes = ["Light Theme", "Dark Theme", "Dracula"];
-                        if idx < 3 {
+                        let themes = ["Light Theme", "Dark Theme"];
+                        if idx < 2 {
                             self.theme_dropdown_open = false;
                             return UiAction::ChangeTheme(themes[idx].to_string());
                         }
@@ -1228,7 +1228,6 @@ impl UiState {
         vec![
             ("Theme: Light Theme", "Switch to the Light Theme"),
             ("Theme: Dark Theme", "Switch to the default Dark Theme"),
-            ("Theme: Dracula", "Switch to the Dracula Theme"),
             ("Sidebar: Toggle Visibility", "Show or hide the file tree sidebar"),
             ("Font Size: Increase Editor Font", "Increase the text size of the editor"),
             ("Font Size: Decrease Editor Font", "Decrease the text size of the editor"),
@@ -1262,7 +1261,6 @@ impl UiState {
         match cmd.0 {
             "Theme: Light Theme" => UiAction::ChangeTheme("Light Theme".to_string()),
             "Theme: Dark Theme" => UiAction::ChangeTheme("Dark Theme".to_string()),
-            "Theme: Dracula" => UiAction::ChangeTheme("Dracula".to_string()),
             "Sidebar: Toggle Visibility" => UiAction::ToggleSidebar,
             "Font Size: Increase Editor Font" => UiAction::ChangeBufferFontSize(1.0),
             "Font Size: Decrease Editor Font" => UiAction::ChangeBufferFontSize(-1.0),
@@ -2719,7 +2717,7 @@ impl UiState {
                 queue,
                 "+",
                 add_btn_x + 10.0,
-                tab_baseline,
+                (tab_y + tab_h / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round(),
                 self.config.theme.tab_text,
                 self.ui_font_size,
                 self.ui_char_width,
@@ -3773,7 +3771,7 @@ impl UiState {
                     if self.theme_dropdown_open {
                         let dropdown_y = btn4_y + btn_h;
                         let item_height = (self.ui_line_height * 1.5).round().max(24.0);
-                        let dropdown_h = 3.0 * item_height;
+                        let dropdown_h = 2.0 * item_height;
 
                         // Draw Dropdown background
                         self.push_quad(vertices, indices, control_x, dropdown_y, theme_btn_w, dropdown_h, white_uv, self.config.theme.modal_bg);
@@ -3783,7 +3781,7 @@ impl UiState {
                         self.push_quad(vertices, indices, control_x, dropdown_y, 1.0, dropdown_h, white_uv, self.config.theme.modal_border);
                         self.push_quad(vertices, indices, control_x + theme_btn_w - 1.0, dropdown_y, 1.0, dropdown_h, white_uv, self.config.theme.modal_border);
 
-                        let themes = ["Light Theme", "Dark Theme", "Dracula"];
+                        let themes = ["Light Theme", "Dark Theme"];
                         for (idx, t_name) in themes.iter().enumerate() {
                             let item_y = dropdown_y + idx as f32 * item_height;
                             let is_item_hovered = mouse_x >= control_x && mouse_x <= control_x + theme_btn_w && mouse_y >= item_y && mouse_y < item_y + item_height;
