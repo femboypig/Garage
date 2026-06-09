@@ -700,7 +700,7 @@ impl UiState {
             let tab_close_icon_sz = (self.ui_font_size * 0.8).round().max(10.0);
             let activity_bar_width = 0.0;
             let mut current_tab_x = activity_bar_width + self.sidebar_width;
-            let dot_reserved = 22.0f32;
+            let dot_reserved = 26.0f32;
             let close_reserved = 8.0f32 + tab_close_icon_sz;
 
             for idx in 0..tab_paths.len() {
@@ -1662,7 +1662,7 @@ impl UiState {
 
             // Compute tab width
             let name_w = file_name.chars().count() as f32 * self.ui_char_width;
-            let dot_reserved = 22.0f32;
+            let dot_reserved = 26.0f32;
             let close_reserved = 8.0f32 + tab_close_icon_sz;
             let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
 
@@ -1710,7 +1710,7 @@ impl UiState {
             // Draw unsaved circle icon if modified
             if is_modified {
                 let dot_size = (self.ui_font_size * 0.55).round().max(7.0);
-                let dot_x = (current_tab_x + 12.0 + (dot_reserved - dot_size) / 2.0 - 4.0).round();
+                let dot_x = (current_tab_x + 12.0 + (dot_reserved - dot_size) / 2.0 - 6.0).round();
                 let dot_y = (main_y + self.tabbar_height / 2.0 - dot_size / 2.0).round();
                 self.push_icon(
                     vertices,
@@ -1996,9 +1996,14 @@ impl UiState {
             // Draw Git Blame inline annotation at the end of the active line
             if self.config.show_git_blame && line_idx == cursor.line {
                 if let Some(blame_str) = self.get_or_update_blame(active_file_path, line_idx) {
-                    let mut blame_pen_x = pen_x + self.buffer_char_width * 4.0;
-                    for c in blame_str.chars() {
-                        if blame_pen_x + self.buffer_char_width > minimap_x {
+                    let line_len = line_text.chars().count();
+                    for (c_idx, c) in blame_str.chars().enumerate() {
+                        let v_idx = line_len + 4 + c_idx;
+                        if v_idx < self.scroll_x {
+                            continue;
+                        }
+                        let blame_char_x = text_area_x + (v_idx - self.scroll_x) as f32 * self.buffer_char_width;
+                        if blame_char_x + self.buffer_char_width > minimap_x {
                             break;
                         }
                         self.push_char(
@@ -2007,13 +2012,12 @@ impl UiState {
                             atlas,
                             queue,
                             c,
-                            blame_pen_x,
+                            blame_char_x,
                             baseline_y,
                             self.config.theme.syntax_comment,
                             self.buffer_font_size,
                             self.buffer_char_width,
                         );
-                        blame_pen_x += self.buffer_char_width;
                     }
                 }
             }
