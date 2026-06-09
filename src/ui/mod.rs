@@ -109,6 +109,7 @@ pub struct UiState {
     pub command_palette_query: String,
     pub command_palette_selected: usize,
     pub command_palette_scroll: usize,
+    pub sidebar_scroll: usize,
 
     // Terminal Dock State
     pub show_dock: bool,
@@ -191,6 +192,7 @@ impl UiState {
             command_palette_query: String::new(),
             command_palette_selected: 0,
             command_palette_scroll: 0,
+            sidebar_scroll: 0,
             show_dock: false,
             dock_height: 250.0,
             active_dock_tab: 0,
@@ -762,8 +764,9 @@ impl UiState {
         if self.sidebar_width > 0.0 && mx >= activity_bar_width && mx < activity_bar_width + self.sidebar_width && my > main_y && my < height - self.status_height {
             let tree_y = my - main_y;
             let row_idx = (tree_y / self.ui_line_height).floor() as usize;
-            if row_idx >= 1 {
-                let node_idx = row_idx - 1;
+            let r = row_idx + self.sidebar_scroll;
+            if r >= 1 {
+                let node_idx = r - 1;
                 if node_idx < self.visible_nodes.len() {
                     let path = self.visible_nodes[node_idx].path.clone();
                     let is_dir = self.visible_nodes[node_idx].is_dir;
@@ -1581,69 +1584,83 @@ impl UiState {
 
             let icon_sz = (self.ui_font_size * 1.05).round().max(13.0);
             let root_icon_x = activity_bar_width + 10.0;
-            let root_text_baseline = (main_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round();
-            let root_icon_y_center = root_text_baseline - (self.ui_font_ascent * 0.33).round();
-            let root_icon_y = root_icon_y_center - (icon_sz / 2.0).round();
-            let root_text_x = root_icon_x + icon_sz + (self.ui_char_width * 0.6).round().max(4.0);
 
-            // Draw root folder icon
-            self.push_icon(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                "folder_open",
-                root_icon_x,
-                root_icon_y,
-                self.config.theme.sidebar_text_dir,
-                icon_sz,
-            );
+            let total_rows = 1 + self.visible_nodes.len();
+            let visible_rows = (main_height / self.ui_line_height).floor() as usize;
+            let max_scroll = (total_rows as isize - visible_rows as isize).max(0) as usize;
+            if self.sidebar_scroll > max_scroll {
+                self.sidebar_scroll = max_scroll;
+            }
 
-            // Draw root folder name text (clipped to sidebar width)
-            {
-                let max_x = activity_bar_width + self.sidebar_width - 4.0;
-                let mut current_x = root_text_x;
-                for c in root_name.chars() {
-                    if current_x + self.ui_char_width > max_x {
-                        break;
+            let start_r = self.sidebar_scroll;
+            let end_r = (self.sidebar_scroll + visible_rows).min(total_rows);
+
+            // Draw root folder if visible (r == 0)
+            if start_r == 0 {
+                let row_y = main_y;
+                let root_text_baseline = (row_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round();
+                let root_icon_y_center = root_text_baseline - (self.ui_font_ascent * 0.33).round();
+                let root_icon_y = root_icon_y_center - (icon_sz / 2.0).round();
+                let root_text_x = root_icon_x + icon_sz + (self.ui_char_width * 0.6).round().max(4.0);
+
+                // Draw root folder icon
+                self.push_icon(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    "folder_open",
+                    root_icon_x,
+                    root_icon_y,
+                    self.config.theme.sidebar_text_dir,
+                    icon_sz,
+                );
+
+                // Draw root folder name text (clipped to sidebar width)
+                {
+                    let max_x = activity_bar_width + self.sidebar_width - 4.0;
+                    let mut current_x = root_text_x;
+                    for c in root_name.chars() {
+                        if current_x + self.ui_char_width > max_x {
+                            break;
+                        }
+                        current_x += self.push_char(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            c,
+                            current_x,
+                            root_text_baseline,
+                            self.config.theme.sidebar_text_dir,
+                            self.ui_font_size,
+                            self.ui_char_width,
+                        );
                     }
-                    current_x += self.push_char(
+                }
+
+                // Draw line from root icon down to children if there are visible nodes
+                if !self.visible_nodes.is_empty() {
+                    let line_x = (root_icon_x + icon_sz / 2.0).floor();
+                    let start_line_y = (root_icon_y + icon_sz).round();
+                    self.push_quad(
                         vertices,
                         indices,
-                        atlas,
-                        queue,
-                        c,
-                        current_x,
-                        root_text_baseline,
-                        self.config.theme.sidebar_text_dir,
-                        self.ui_font_size,
-                        self.ui_char_width,
+                        line_x - 0.5,
+                        start_line_y,
+                        1.0,
+                        (row_y + self.ui_line_height - start_line_y).max(1.0),
+                        white_uv,
+                        self.config.theme.tabbar_border,
                     );
                 }
             }
 
-            // Draw line from root icon down to children if there are visible nodes
-            if !self.visible_nodes.is_empty() {
-                let line_x = (root_icon_x + icon_sz / 2.0).round();
-                let start_line_y = (root_icon_y + icon_sz).round();
-                self.push_quad(
-                    vertices,
-                    indices,
-                    line_x - 0.5,
-                    start_line_y,
-                    1.0,
-                    (main_y + self.ui_line_height - start_line_y).max(1.0),
-                    white_uv,
-                    self.config.theme.tabbar_border,
-                );
-            }
-
             // Pass 1: Draw all item highlights (hover & active states)
-            for (idx, node) in self.visible_nodes.iter().enumerate() {
-                let row_y = main_y + (idx + 1) as f32 * self.ui_line_height;
-                if row_y + self.ui_line_height > main_y + main_height {
-                    break;
-                }
+            for r in start_r.max(1)..end_r {
+                let idx = r - 1;
+                let node = &self.visible_nodes[idx];
+                let row_y = main_y + (r - start_r) as f32 * self.ui_line_height;
 
                 let is_hovered = self.active_modal.is_none() && mouse_x >= activity_bar_width && mouse_x < activity_bar_width + self.sidebar_width && mouse_y >= row_y && mouse_y < row_y + self.ui_line_height;
                 let is_selected = self.selected_file.as_ref() == Some(&node.path);
@@ -1663,11 +1680,10 @@ impl UiState {
             }
 
             // Pass 2: Draw all guide lines, icons, and text labels
-            for (idx, node) in self.visible_nodes.iter().enumerate() {
-                let row_y = main_y + (idx + 1) as f32 * self.ui_line_height;
-                if row_y + self.ui_line_height > main_y + main_height {
-                    break;
-                }
+            for r in start_r.max(1)..end_r {
+                let idx = r - 1;
+                let node = &self.visible_nodes[idx];
+                let row_y = main_y + (r - start_r) as f32 * self.ui_line_height;
 
                 let effective_depth = node.depth + 1;
                 let indent_step = 18.0f32; // Increased to 18px to prevent guide lines from crossing icons
@@ -1699,7 +1715,7 @@ impl UiState {
 
                     let should_draw = (i < effective_depth - 1 && has_later) || (i == effective_depth - 1);
                     if should_draw {
-                        let line_x = (activity_bar_width + 10.0 + i as f32 * indent_step + icon_sz / 2.0).round();
+                        let line_x = (activity_bar_width + 10.0 + i as f32 * indent_step + icon_sz / 2.0).floor();
                         let end_y = if has_later { row_y + self.ui_line_height } else { icon_y_center };
                         self.push_quad(
                             vertices,
