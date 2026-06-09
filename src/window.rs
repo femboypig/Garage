@@ -260,6 +260,17 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         ui.config.theme = selected_theme;
                                         ui.config.save_in_background();
                                     }
+                                    UiAction::ChangeGitBlame(enabled) => {
+                                        ui.config.show_git_blame = enabled;
+                                        ui.config.save_in_background();
+                                    }
+                                    UiAction::ChangeGitBranch(enabled) => {
+                                        ui.config.show_git_branch = enabled;
+                                        if !enabled {
+                                            ui.git_branch = None;
+                                        }
+                                        ui.config.save_in_background();
+                                    }
                                     UiAction::ChangeBackend(backend) => {
                                         let mut new_config = ui.config.clone();
                                         let requested_str = match backend {
@@ -411,6 +422,17 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         UiAction::ChangeTheme(theme_name) => {
                                             let selected_theme = crate::config::Theme::get_by_name(&theme_name);
                                             ui.config.theme = selected_theme;
+                                            ui.config.save_in_background();
+                                        }
+                                        UiAction::ChangeGitBlame(enabled) => {
+                                            ui.config.show_git_blame = enabled;
+                                            ui.config.save_in_background();
+                                        }
+                                        UiAction::ChangeGitBranch(enabled) => {
+                                            ui.config.show_git_branch = enabled;
+                                            if !enabled {
+                                                ui.git_branch = None;
+                                            }
                                             ui.config.save_in_background();
                                         }
                                         UiAction::ChangeBackend(backend) => {
