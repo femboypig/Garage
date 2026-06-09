@@ -78,6 +78,7 @@ pub struct UiState {
     // Menu & Modal State
     pub active_menu: Option<MenuType>,
     pub active_modal: Option<ModalType>,
+    pub theme_dropdown_open: bool,
 
     pub config: crate::config::AppConfig,
     pub active_device_name: String,
@@ -145,6 +146,7 @@ impl UiState {
             selected_file: None,
             active_menu: None,
             active_modal: None,
+            theme_dropdown_open: false,
             config,
             active_device_name: String::new(),
         };
@@ -263,67 +265,112 @@ impl UiState {
         // If a modal is open, check click boundaries and buttons
         if let Some(modal) = self.active_modal {
             let modal_w = match modal {
-                ModalType::Settings => 600.0,
+                ModalType::Settings => (45.0 * self.ui_char_width).max(500.0).round(),
                 ModalType::About => 400.0,
             };
             let modal_h = match modal {
-                ModalType::Settings => 450.0,
+                ModalType::Settings => {
+                    let row_height = (self.ui_line_height * 2.2).round();
+                    (row_height * 6.2).max(350.0).round()
+                }
                 ModalType::About => 240.0,
             };
             let modal_x = ((width - modal_w) / 2.0).round();
             let modal_y = ((height - modal_h) / 2.0).round();
 
-            // Check if clicked close button (centered horizontally)
-            let btn_x = modal_x + (modal_w - 120.0) / 2.0;
-            let inside_close_btn = mx >= btn_x && mx <= btn_x + 120.0 && my >= modal_y + modal_h - 60.0 && my <= modal_y + modal_h - 25.0;
             let clicked_outside = mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h;
 
-            if inside_close_btn || clicked_outside {
-                self.active_modal = None;
-                return UiAction::CloseModal;
-            }
-
             if modal == ModalType::Settings {
+                let row_height = (self.ui_line_height * 2.2).round();
+                let control_x = modal_x + 24.0 * self.ui_char_width;
+                let btn_h = (self.ui_line_height * 1.3).round().max(24.0);
+                let btn_w = (self.ui_char_width * 3.0).round().max(24.0);
+                let backend_btn_w = (self.ui_char_width * 10.0).round().max(80.0);
+                let theme_btn_w = (self.ui_char_width * 16.0).round().max(140.0);
+
+                let row1_y = modal_y + row_height * 1.0;
+                let btn1_y = row1_y + ((self.ui_line_height - btn_h) / 2.0).round();
+                let row2_y = modal_y + row_height * 2.0;
+                let btn2_y = row2_y + ((self.ui_line_height - btn_h) / 2.0).round();
+                let row3_y = modal_y + row_height * 3.0;
+                let btn3_y = row3_y + ((self.ui_line_height - btn_h) / 2.0).round();
+                let row4_y = modal_y + row_height * 4.0;
+                let btn4_y = row4_y + ((self.ui_line_height - btn_h) / 2.0).round();
+
+                // Handle dropdown clicks if open
+                if self.theme_dropdown_open {
+                    let dropdown_y = btn4_y + btn_h;
+                    let item_height = (self.ui_line_height * 1.5).round().max(24.0);
+                    let dropdown_h = 3.0 * item_height;
+
+                    if mx >= control_x && mx <= control_x + theme_btn_w && my >= dropdown_y && my <= dropdown_y + dropdown_h {
+                        let idx = ((my - dropdown_y) / item_height).floor() as usize;
+                        let themes = ["Light Theme", "Dark Theme", "Dracula"];
+                        if idx < 3 {
+                            self.theme_dropdown_open = false;
+                            return UiAction::ChangeTheme(themes[idx].to_string());
+                        }
+                    }
+
+                    // Check if clicked the theme button itself to close it
+                    if mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h {
+                        self.theme_dropdown_open = false;
+                        return UiAction::None;
+                    }
+
+                    // Otherwise, close the dropdown and let the click continue to other controls
+                    self.theme_dropdown_open = false;
+                }
+
+                // Check other buttons
                 // Row 1: Editor Font Size [-] and [+]
-                // Decrease [-] at 240..270, 65..90
-                if mx >= modal_x + 240.0 && mx <= modal_x + 270.0 && my >= modal_y + 65.0 && my <= modal_y + 90.0 {
+                // Decrease [-]
+                if mx >= control_x && mx <= control_x + btn_w && my >= btn1_y && my <= btn1_y + btn_h {
                     return UiAction::ChangeBufferFontSize(-1.0);
                 }
-                // Increase [+] at 280..310, 65..90
-                if mx >= modal_x + 280.0 && mx <= modal_x + 310.0 && my >= modal_y + 65.0 && my <= modal_y + 90.0 {
+                // Increase [+]
+                let inc_btn_x = control_x + btn_w + self.ui_char_width;
+                if mx >= inc_btn_x && mx <= inc_btn_x + btn_w && my >= btn1_y && my <= btn1_y + btn_h {
                     return UiAction::ChangeBufferFontSize(1.0);
                 }
 
                 // Row 2: UI Font Size [-] and [+]
-                // Decrease [-] at 240..270, 125..150
-                if mx >= modal_x + 240.0 && mx <= modal_x + 270.0 && my >= modal_y + 125.0 && my <= modal_y + 150.0 {
+                // Decrease [-]
+                if mx >= control_x && mx <= control_x + btn_w && my >= btn2_y && my <= btn2_y + btn_h {
                     return UiAction::ChangeUiFontSize(-1.0);
                 }
-                // Increase [+] at 280..310, 125..150
-                if mx >= modal_x + 280.0 && mx <= modal_x + 310.0 && my >= modal_y + 125.0 && my <= modal_y + 150.0 {
+                // Increase [+]
+                if mx >= inc_btn_x && mx <= inc_btn_x + btn_w && my >= btn2_y && my <= btn2_y + btn_h {
                     return UiAction::ChangeUiFontSize(1.0);
                 }
 
                 // Row 3: Backend Selection
-                // Vulkan Button at 240..330, 185..215
-                if mx >= modal_x + 240.0 && mx <= modal_x + 330.0 && my >= modal_y + 185.0 && my <= modal_y + 215.0 {
+                if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h {
                     return UiAction::ChangeBackend(wgpu::Backend::Vulkan);
                 }
-                // OpenGL Button at 340..430, 185..215
-                if mx >= modal_x + 340.0 && mx <= modal_x + 430.0 && my >= modal_y + 185.0 && my <= modal_y + 215.0 {
+                let opengl_btn_x = control_x + backend_btn_w + self.ui_char_width;
+                if mx >= opengl_btn_x && mx <= opengl_btn_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h {
                     return UiAction::ChangeBackend(wgpu::Backend::Gl);
                 }
 
-                // Row 4: Theme Selection (Cycle Toggle Selector)
-                // Click at 240..420, 245..275
-                if mx >= modal_x + 240.0 && mx <= modal_x + 420.0 && my >= modal_y + 245.0 && my <= modal_y + 275.0 {
-                    let next_theme = match self.config.theme.name.as_str() {
-                        "Light Theme" => "Dark Theme".to_string(),
-                        "Dark Theme" => "Dracula".to_string(),
-                        _ => "Light Theme".to_string(),
-                    };
-                    return UiAction::ChangeTheme(next_theme);
+                // Row 4: Theme Selector Button Click
+                if mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h {
+                    self.theme_dropdown_open = true;
+                    return UiAction::None;
                 }
+            }
+
+            // Check if clicked close button (centered horizontally)
+            let btn_w = (12.0 * self.ui_char_width).max(100.0).round();
+            let btn_h = (self.ui_line_height * 1.6).max(30.0).round();
+            let btn_x = modal_x + ((modal_w - btn_w) / 2.0).round();
+            let btn_y = modal_y + modal_h - btn_h - (self.ui_line_height * 1.0).round();
+
+            let inside_close_btn = mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+
+            if inside_close_btn || clicked_outside {
+                self.active_modal = None;
+                return UiAction::CloseModal;
             }
 
             return UiAction::None;
@@ -849,9 +896,7 @@ impl UiState {
                 );
             }
             
-            let label_color = if *menu_type == MenuType::Garage {
-                self.config.theme.titlebar_brand_text
-            } else if is_active || is_hovered {
+            let label_color = if is_active || is_hovered {
                 [0.0, 0.0, 0.0, 1.0]
             } else {
                 self.config.theme.titlebar_text
@@ -958,22 +1003,92 @@ impl UiState {
                 }
 
                 let indent_x = activity_bar_width + 10.0 + node.depth as f32 * 12.0;
-                let icon = if node.is_dir {
-                    if self.expanded_dirs.contains(&node.path) { "▼ " } else { "▶ " }
-                } else {
-                    "  "
-                };
-
                 let text_color = if node.is_dir {
                     self.config.theme.sidebar_text_dir
                 } else {
                     self.config.theme.sidebar_text_file
                 };
 
-                let node_text = format!("{}{}", icon, node.name);
-                let max_w = self.sidebar_width - (indent_x - activity_bar_width) - 10.0;
+                if node.is_dir {
+                    // Draw Chevron
+                    let chevron = if self.expanded_dirs.contains(&node.path) { "▼" } else { "▶" };
+                    self.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        chevron,
+                        indent_x,
+                        (row_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round(),
+                        text_color,
+                        self.ui_font_size,
+                        self.ui_char_width,
+                    );
+
+                    // Draw Folder Outline Icon
+                    let folder_w = (self.ui_char_width * 1.5).round().max(12.0);
+                    let folder_h = (self.ui_char_width * 1.25).round().max(10.0);
+                    let icon_x = indent_x + self.ui_char_width * 1.2;
+                    let icon_y = row_y + ((self.ui_line_height - folder_h) / 2.0).round();
+
+                    let tab_h = (folder_h * 0.25).round().max(2.0);
+                    let tab_w = (folder_w * 0.45).round().max(5.0);
+                    
+                    let bx = icon_x;
+                    let by = icon_y + tab_h;
+                    let bw = folder_w;
+                    let bh = folder_h - tab_h;
+
+                    // Main body outline
+                    self.push_quad(vertices, indices, bx, by + bh - 1.0, bw, 1.0, white_uv, text_color); // Bottom
+                    self.push_quad(vertices, indices, bx, by, 1.0, bh, white_uv, text_color); // Left
+                    self.push_quad(vertices, indices, bx + bw - 1.0, by, 1.0, bh, white_uv, text_color); // Right
+                    self.push_quad(vertices, indices, bx + tab_w, by, bw - tab_w, 1.0, white_uv, text_color); // Top right
+
+                    // Tab outline
+                    self.push_quad(vertices, indices, bx, icon_y, 1.0, tab_h, white_uv, text_color); // Left
+                    self.push_quad(vertices, indices, bx, icon_y, tab_w, 1.0, white_uv, text_color); // Top
+                    self.push_quad(vertices, indices, bx + tab_w, icon_y, 1.0, tab_h, white_uv, text_color); // Right
+                } else {
+                    // Draw Document Outline Icon
+                    let file_w = (self.ui_char_width * 1.25).round().max(10.0);
+                    let file_h = (self.ui_char_width * 1.55).round().max(12.0);
+                    let icon_x = indent_x + self.ui_char_width * 1.2;
+                    let icon_y = row_y + ((self.ui_line_height - file_h) / 2.0).round();
+
+                    let fold_size = (file_w * 0.35).round().max(3.0);
+                    let bx = icon_x;
+                    let by = icon_y;
+                    let bw = file_w;
+                    let bh = file_h;
+
+                    // Bottom and Left borders
+                    self.push_quad(vertices, indices, bx, by + bh - 1.0, bw, 1.0, white_uv, text_color); // Bottom
+                    self.push_quad(vertices, indices, bx, by, 1.0, bh, white_uv, text_color); // Left
+
+                    // Right border (stops below fold)
+                    self.push_quad(vertices, indices, bx + bw - 1.0, by + fold_size, 1.0, bh - fold_size, white_uv, text_color);
+
+                    // Top border (stops before fold)
+                    self.push_quad(vertices, indices, bx, by, bw - fold_size, 1.0, white_uv, text_color);
+
+                    // Fold vertical and horizontal line
+                    self.push_quad(vertices, indices, bx + bw - fold_size, by, 1.0, fold_size, white_uv, text_color);
+                    self.push_quad(vertices, indices, bx + bw - fold_size, by + fold_size, fold_size, 1.0, white_uv, text_color);
+
+                    // Content lines inside document
+                    let line_w = (bw - 5.0).max(4.0);
+                    let line_y1 = by + (bh * 0.45).round();
+                    let line_y2 = by + (bh * 0.7).round();
+                    self.push_quad(vertices, indices, bx + 3.0, line_y1, line_w, 1.0, white_uv, text_color);
+                    self.push_quad(vertices, indices, bx + 3.0, line_y2, line_w, 1.0, white_uv, text_color);
+                }
+
+                let text_x = indent_x + self.ui_char_width * 3.2;
+                let max_w = self.sidebar_width - (text_x - activity_bar_width) - 10.0;
                 if max_w > 0.0 {
                     let max_chars = (max_w / self.ui_char_width).floor() as usize;
+                    let node_text = &node.name;
                     let truncated_text: String = if node_text.chars().count() > max_chars {
                         if max_chars > 3 {
                             let mut s: String = node_text.chars().take(max_chars - 3).collect();
@@ -983,7 +1098,7 @@ impl UiState {
                             node_text.chars().take(max_chars).collect()
                         }
                     } else {
-                        node_text
+                        node_text.clone()
                     };
                     self.push_str(
                         vertices,
@@ -991,7 +1106,7 @@ impl UiState {
                         atlas,
                         queue,
                         &truncated_text,
-                        indent_x,
+                        text_x,
                         (row_y + self.ui_line_height / 2.0 + self.ui_font_ascent / 2.0 - 1.0).round(),
                         text_color,
                         self.ui_font_size,
@@ -1519,11 +1634,14 @@ impl UiState {
                 [0.0, 0.0, 0.0, 0.4],
             );
             let modal_w = match modal {
-                ModalType::Settings => 600.0,
+                ModalType::Settings => (45.0 * self.ui_char_width).max(500.0).round(),
                 ModalType::About => 400.0,
             };
             let modal_h = match modal {
-                ModalType::Settings => 450.0,
+                ModalType::Settings => {
+                    let row_height = (self.ui_line_height * 2.2).round();
+                    (row_height * 6.2).max(350.0).round()
+                }
                 ModalType::About => 240.0,
             };
             let modal_x = ((width - modal_w) / 2.0).round();
@@ -1634,19 +1752,27 @@ impl UiState {
                     );
                   }
                 ModalType::Settings => {
+                    let row_height = (self.ui_line_height * 2.2).round();
+                    let control_x = modal_x + 24.0 * self.ui_char_width;
+                    let btn_h = (self.ui_line_height * 1.3).round().max(24.0);
+                    let btn_w = (self.ui_char_width * 3.0).round().max(24.0);
+                    let backend_btn_w = (self.ui_char_width * 10.0).round().max(80.0);
+                    let theme_btn_w = (self.ui_char_width * 16.0).round().max(140.0);
+                    let padding_x = 2.0 * self.ui_char_width;
+
                     self.push_str(
                         vertices,
                         indices,
                         atlas,
                         queue,
                         "SETTINGS",
-                        modal_x + 20.0,
-                        modal_y + 35.0,
+                        modal_x + padding_x,
+                        modal_y + (self.ui_line_height * 1.8).round(),
                         self.config.theme.modal_text_title,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
-                    
+
                     // Helper closure to draw button container with borders and label
                     let draw_button = |
                         vertices: &mut Vec<Vertex>,
@@ -1700,6 +1826,8 @@ impl UiState {
                     };
 
                     // 1. Editor Font Size Settings
+                    let row1_y = modal_y + row_height * 1.0;
+                    let btn1_y = row1_y + ((self.ui_line_height - btn_h) / 2.0).round();
                     let font_size_str = format!("Editor Font: {:.1} px", self.buffer_font_size);
                     self.push_str(
                         vertices,
@@ -1707,18 +1835,21 @@ impl UiState {
                         atlas,
                         queue,
                         &font_size_str,
-                        modal_x + 20.0,
-                        modal_y + 80.0,
+                        modal_x + padding_x,
+                        row1_y + self.ui_font_ascent,
                         self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
-                    let dec_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 270.0 && mouse_y >= modal_y + 65.0 && mouse_y <= modal_y + 90.0;
-                    draw_button(vertices, indices, atlas, queue, "-", modal_x + 240.0, modal_y + 65.0, 30.0, 25.0, false, dec_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
-                    let inc_hover = mouse_x >= modal_x + 280.0 && mouse_x <= modal_x + 310.0 && mouse_y >= modal_y + 65.0 && mouse_y <= modal_y + 90.0;
-                    draw_button(vertices, indices, atlas, queue, "+", modal_x + 280.0, modal_y + 65.0, 30.0, 25.0, false, inc_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let dec_hover = mouse_x >= control_x && mouse_x <= control_x + btn_w && mouse_y >= btn1_y && mouse_y <= btn1_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, "-", control_x, btn1_y, btn_w, btn_h, false, dec_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let inc_btn_x = control_x + btn_w + self.ui_char_width;
+                    let inc_hover = mouse_x >= inc_btn_x && mouse_x <= inc_btn_x + btn_w && mouse_y >= btn1_y && mouse_y <= btn1_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, "+", inc_btn_x, btn1_y, btn_w, btn_h, false, inc_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
                     // 2. UI Font Size Settings
+                    let row2_y = modal_y + row_height * 2.0;
+                    let btn2_y = row2_y + ((self.ui_line_height - btn_h) / 2.0).round();
                     let ui_size_str = format!("UI Font:     {:.1} px", self.ui_font_size);
                     self.push_str(
                         vertices,
@@ -1726,56 +1857,62 @@ impl UiState {
                         atlas,
                         queue,
                         &ui_size_str,
-                        modal_x + 20.0,
-                        modal_y + 140.0,
+                        modal_x + padding_x,
+                        row2_y + self.ui_font_ascent,
                         self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
-                    let ui_dec_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 270.0 && mouse_y >= modal_y + 125.0 && mouse_y <= modal_y + 150.0;
-                    draw_button(vertices, indices, atlas, queue, "-", modal_x + 240.0, modal_y + 125.0, 30.0, 25.0, false, ui_dec_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
-                    let ui_inc_hover = mouse_x >= modal_x + 280.0 && mouse_x <= modal_x + 310.0 && mouse_y >= modal_y + 125.0 && mouse_y <= modal_y + 150.0;
-                    draw_button(vertices, indices, atlas, queue, "+", modal_x + 280.0, modal_y + 125.0, 30.0, 25.0, false, ui_inc_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let ui_dec_hover = mouse_x >= control_x && mouse_x <= control_x + btn_w && mouse_y >= btn2_y && mouse_y <= btn2_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, "-", control_x, btn2_y, btn_w, btn_h, false, ui_dec_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let ui_inc_hover = mouse_x >= inc_btn_x && mouse_x <= inc_btn_x + btn_w && mouse_y >= btn2_y && mouse_y <= btn2_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, "+", inc_btn_x, btn2_y, btn_w, btn_h, false, ui_inc_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
                     // 3. Backend Selection
+                    let row3_y = modal_y + row_height * 3.0;
+                    let btn3_y = row3_y + ((self.ui_line_height - btn_h) / 2.0).round();
                     self.push_str(
                         vertices,
                         indices,
                         atlas,
                         queue,
                         "Backend:",
-                        modal_x + 20.0,
-                        modal_y + 200.0,
+                        modal_x + padding_x,
+                        row3_y + self.ui_font_ascent,
                         self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
                     let is_vulkan = self.config.backend == "Vulkan";
-                    let vulkan_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 330.0 && mouse_y >= modal_y + 185.0 && mouse_y <= modal_y + 215.0;
-                    draw_button(vertices, indices, atlas, queue, "Vulkan", modal_x + 240.0, modal_y + 185.0, 90.0, 30.0, is_vulkan, vulkan_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let vulkan_hover = mouse_x >= control_x && mouse_x <= control_x + backend_btn_w && mouse_y >= btn3_y && mouse_y <= btn3_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, "Vulkan", control_x, btn3_y, backend_btn_w, btn_h, is_vulkan, vulkan_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
                     let is_opengl = self.config.backend == "OpenGL";
-                    let opengl_hover = mouse_x >= modal_x + 340.0 && mouse_x <= modal_x + 430.0 && mouse_y >= modal_y + 185.0 && mouse_y <= modal_y + 215.0;
-                    draw_button(vertices, indices, atlas, queue, "OpenGL", modal_x + 340.0, modal_y + 185.0, 90.0, 30.0, is_opengl, opengl_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let opengl_btn_x = control_x + backend_btn_w + self.ui_char_width;
+                    let opengl_hover = mouse_x >= opengl_btn_x && mouse_x <= opengl_btn_x + backend_btn_w && mouse_y >= btn3_y && mouse_y <= btn3_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, "OpenGL", opengl_btn_x, btn3_y, backend_btn_w, btn_h, is_opengl, opengl_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
                     // 4. Theme Selection (Cycle Toggle Selector)
+                    let row4_y = modal_y + row_height * 4.0;
+                    let btn4_y = row4_y + ((self.ui_line_height - btn_h) / 2.0).round();
                     self.push_str(
                         vertices,
                         indices,
                         atlas,
                         queue,
                         "Theme:",
-                        modal_x + 20.0,
-                        modal_y + 260.0,
+                        modal_x + padding_x,
+                        row4_y + self.ui_font_ascent,
                         self.config.theme.modal_text_normal,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
-                    let display_theme = &self.config.theme.name;
-                    let theme_hover = mouse_x >= modal_x + 240.0 && mouse_x <= modal_x + 420.0 && mouse_y >= modal_y + 245.0 && mouse_y <= modal_y + 275.0;
-                    draw_button(vertices, indices, atlas, queue, display_theme, modal_x + 240.0, modal_y + 245.0, 180.0, 30.0, false, theme_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
+                    let display_theme = format!("{}  ▼", self.config.theme.name);
+                    let theme_hover = mouse_x >= control_x && mouse_x <= control_x + theme_btn_w && mouse_y >= btn4_y && mouse_y <= btn4_y + btn_h;
+                    draw_button(vertices, indices, atlas, queue, &display_theme, control_x, btn4_y, theme_btn_w, btn_h, false, theme_hover, &self.config.theme, white_uv, self.ui_char_width, self.ui_font_ascent, self.ui_font_size);
 
                     // 5. Draw Active backend and GPU info
+                    let row5_y = modal_y + row_height * 5.0;
                     let backend_str = match current_backend {
                         wgpu::Backend::Vulkan => "Vulkan",
                         wgpu::Backend::Gl => "OpenGL",
@@ -1794,20 +1931,59 @@ impl UiState {
                         atlas,
                         queue,
                         &active_info_str,
-                        modal_x + 20.0,
-                        modal_y + 320.0,
+                        modal_x + padding_x,
+                        row5_y + self.ui_font_ascent,
                         self.config.theme.modal_text_muted,
                         self.ui_font_size,
                         self.ui_char_width,
                     );
+
+                    // 6. Draw Theme Selection Dropdown (if open) - rendered on top of active info
+                    if self.theme_dropdown_open {
+                        let dropdown_y = btn4_y + btn_h;
+                        let item_height = (self.ui_line_height * 1.5).round().max(24.0);
+                        let dropdown_h = 3.0 * item_height;
+
+                        // Draw Dropdown background
+                        self.push_quad(vertices, indices, control_x, dropdown_y, theme_btn_w, dropdown_h, white_uv, self.config.theme.modal_bg);
+                        // Draw Dropdown borders
+                        self.push_quad(vertices, indices, control_x, dropdown_y, theme_btn_w, 1.0, white_uv, self.config.theme.modal_border);
+                        self.push_quad(vertices, indices, control_x, dropdown_y + dropdown_h - 1.0, theme_btn_w, 1.0, white_uv, self.config.theme.modal_border);
+                        self.push_quad(vertices, indices, control_x, dropdown_y, 1.0, dropdown_h, white_uv, self.config.theme.modal_border);
+                        self.push_quad(vertices, indices, control_x + theme_btn_w - 1.0, dropdown_y, 1.0, dropdown_h, white_uv, self.config.theme.modal_border);
+
+                        let themes = ["Light Theme", "Dark Theme", "Dracula"];
+                        for (idx, t_name) in themes.iter().enumerate() {
+                            let item_y = dropdown_y + idx as f32 * item_height;
+                            let is_item_hovered = mouse_x >= control_x && mouse_x <= control_x + theme_btn_w && mouse_y >= item_y && mouse_y < item_y + item_height;
+
+                            if is_item_hovered {
+                                self.push_quad(vertices, indices, control_x + 1.0, item_y + 1.0, theme_btn_w - 2.0, item_height - 2.0, white_uv, self.config.theme.button_hover_bg);
+                            }
+
+                            let text_y = (item_y + item_height / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
+                            self.push_str(
+                                vertices,
+                                indices,
+                                atlas,
+                                queue,
+                                t_name,
+                                control_x + 10.0,
+                                text_y,
+                                self.config.theme.modal_text_normal,
+                                self.ui_font_size,
+                                self.ui_char_width,
+                            );
+                        }
+                    }
                 }
             }
 
             // Draw generic Close Button (centered horizontally)
-            let btn_w = 120.0;
-            let btn_h = 35.0;
+            let btn_w = (12.0 * self.ui_char_width).max(100.0).round();
+            let btn_h = (self.ui_line_height * 1.6).max(30.0).round();
             let btn_x = modal_x + ((modal_w - btn_w) / 2.0).round();
-            let btn_y = modal_y + modal_h - 60.0;
+            let btn_y = modal_y + modal_h - btn_h - (self.ui_line_height * 1.0).round();
 
             let close_btn_hover = mouse_x >= btn_x && mouse_x <= btn_x + btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h;
             self.push_quad(
