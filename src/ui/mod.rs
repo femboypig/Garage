@@ -1025,32 +1025,77 @@ impl UiState {
                         self.ui_char_width,
                     );
 
-                    // Draw Folder Outline Icon
+                    // Draw Folder Outline Icon (Inspired by Zed Editor)
                     let folder_w = (self.ui_char_width * 1.5).round().max(12.0);
                     let folder_h = (self.ui_char_width * 1.25).round().max(10.0);
                     let icon_x = indent_x + self.ui_char_width * 1.2;
                     let icon_y = row_y + ((self.ui_line_height - folder_h) / 2.0).round();
 
-                    let tab_h = (folder_h * 0.25).round().max(2.0);
-                    let tab_w = (folder_w * 0.45).round().max(5.0);
-                    
-                    let bx = icon_x;
-                    let by = icon_y + tab_h;
-                    let bw = folder_w;
-                    let bh = folder_h - tab_h;
+                    let is_expanded = self.expanded_dirs.contains(&node.path);
+                    if is_expanded {
+                        // Open Folder Outline (Back flap + Front flap overlay)
+                        let tab_h = (folder_h * 0.25).round().max(2.0);
+                        let tab_w = (folder_w * 0.45).round().max(5.0);
 
-                    // Main body outline
-                    self.push_quad(vertices, indices, bx, by + bh - 1.0, bw, 1.0, white_uv, text_color); // Bottom
-                    self.push_quad(vertices, indices, bx, by, 1.0, bh, white_uv, text_color); // Left
-                    self.push_quad(vertices, indices, bx + bw - 1.0, by, 1.0, bh, white_uv, text_color); // Right
-                    self.push_quad(vertices, indices, bx + tab_w, by, bw - tab_w, 1.0, white_uv, text_color); // Top right
+                        let bx = icon_x + 1.0;
+                        let by = icon_y + tab_h;
+                        let bw = folder_w - 2.0;
+                        let bh = folder_h - tab_h;
 
-                    // Tab outline
-                    self.push_quad(vertices, indices, bx, icon_y, 1.0, tab_h, white_uv, text_color); // Left
-                    self.push_quad(vertices, indices, bx, icon_y, tab_w, 1.0, white_uv, text_color); // Top
-                    self.push_quad(vertices, indices, bx + tab_w, icon_y, 1.0, tab_h, white_uv, text_color); // Right
+                        // Back body outline
+                        self.push_quad(vertices, indices, bx, by, 1.0, bh, white_uv, text_color); // Left
+                        self.push_quad(vertices, indices, bx + tab_w, by, bw - tab_w, 1.0, white_uv, text_color); // Top right
+
+                        // Tab outline
+                        self.push_quad(vertices, indices, bx, icon_y, 1.0, tab_h, white_uv, text_color); // Left
+                        self.push_quad(vertices, indices, bx, icon_y, tab_w, 1.0, white_uv, text_color); // Top
+                        self.push_quad(vertices, indices, bx + tab_w, icon_y, 1.0, tab_h, white_uv, text_color); // Right
+
+                        // Front flap outline (placed on top, slightly open at 45% height)
+                        let flap_top_y = icon_y + (folder_h * 0.45).round();
+                        let flap_h = (folder_h * 0.55).round();
+                        self.push_quad(vertices, indices, icon_x, flap_top_y, folder_w, 1.0, white_uv, text_color); // Front Top
+                        self.push_quad(vertices, indices, icon_x + 1.0, icon_y + folder_h - 1.0, folder_w - 2.0, 1.0, white_uv, text_color); // Front Bottom
+                        self.push_quad(vertices, indices, icon_x, flap_top_y, 1.0, flap_h, white_uv, text_color); // Front Left
+                        self.push_quad(vertices, indices, icon_x + folder_w - 1.0, flap_top_y, 1.0, flap_h, white_uv, text_color); // Front Right
+
+                        // Semi-transparent fill inside the open flap to create visual depth
+                        let mut flap_fill = text_color;
+                        flap_fill[3] = 0.15;
+                        self.push_quad(vertices, indices, icon_x + 1.0, flap_top_y + 1.0, folder_w - 2.0, flap_h - 2.0, white_uv, flap_fill);
+                    } else {
+                        // Closed Folder Outline
+                        let tab_h = (folder_h * 0.25).round().max(2.0);
+                        let tab_w = (folder_w * 0.45).round().max(5.0);
+
+                        let bx = icon_x;
+                        let by = icon_y + tab_h;
+                        let bw = folder_w;
+                        let bh = folder_h - tab_h;
+
+                        // Main body outline
+                        self.push_quad(vertices, indices, bx, by + bh - 1.0, bw, 1.0, white_uv, text_color); // Bottom
+                        self.push_quad(vertices, indices, bx, by, 1.0, bh, white_uv, text_color); // Left
+                        self.push_quad(vertices, indices, bx + bw - 1.0, by, 1.0, bh, white_uv, text_color); // Right
+                        self.push_quad(vertices, indices, bx + tab_w, by, bw - tab_w, 1.0, white_uv, text_color); // Top right
+
+                        // Tab outline
+                        self.push_quad(vertices, indices, bx, icon_y, 1.0, tab_h, white_uv, text_color); // Left
+                        self.push_quad(vertices, indices, bx, icon_y, tab_w, 1.0, white_uv, text_color); // Top
+                        self.push_quad(vertices, indices, bx + tab_w, icon_y, 1.0, tab_h, white_uv, text_color); // Right
+                    }
                 } else {
-                    // Draw Document Outline Icon
+                    // Check file extension for specific icon types and colors
+                    let ext = node.path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    let (icon_color, is_rust, is_toml, is_json, is_md) = match ext {
+                        "rs" => ([0.87, 0.29, 0.15, 1.0], true, false, false, false), // Rust red-orange
+                        "toml" => ([0.65, 0.53, 0.43, 1.0], false, true, false, false), // TOML beige
+                        "json" => ([0.8, 0.68, 0.0, 1.0], false, false, true, false), // JSON yellow
+                        "md" => ([0.26, 0.53, 0.79, 1.0], false, false, false, true), // Markdown blue
+                        _ => (text_color, false, false, false, false),
+                    };
+
+                    // Draw Document Outline Icon (Inspired by Zed Editor)
                     let file_w = (self.ui_char_width * 1.25).round().max(10.0);
                     let file_h = (self.ui_char_width * 1.55).round().max(12.0);
                     let icon_x = indent_x + self.ui_char_width * 1.2;
@@ -1063,25 +1108,69 @@ impl UiState {
                     let bh = file_h;
 
                     // Bottom and Left borders
-                    self.push_quad(vertices, indices, bx, by + bh - 1.0, bw, 1.0, white_uv, text_color); // Bottom
-                    self.push_quad(vertices, indices, bx, by, 1.0, bh, white_uv, text_color); // Left
+                    self.push_quad(vertices, indices, bx, by + bh - 1.0, bw, 1.0, white_uv, icon_color); // Bottom
+                    self.push_quad(vertices, indices, bx, by, 1.0, bh, white_uv, icon_color); // Left
 
                     // Right border (stops below fold)
-                    self.push_quad(vertices, indices, bx + bw - 1.0, by + fold_size, 1.0, bh - fold_size, white_uv, text_color);
+                    self.push_quad(vertices, indices, bx + bw - 1.0, by + fold_size, 1.0, bh - fold_size, white_uv, icon_color);
 
                     // Top border (stops before fold)
-                    self.push_quad(vertices, indices, bx, by, bw - fold_size, 1.0, white_uv, text_color);
+                    self.push_quad(vertices, indices, bx, by, bw - fold_size, 1.0, white_uv, icon_color);
 
                     // Fold vertical and horizontal line
-                    self.push_quad(vertices, indices, bx + bw - fold_size, by, 1.0, fold_size, white_uv, text_color);
-                    self.push_quad(vertices, indices, bx + bw - fold_size, by + fold_size, fold_size, 1.0, white_uv, text_color);
+                    self.push_quad(vertices, indices, bx + bw - fold_size, by, 1.0, fold_size, white_uv, icon_color);
+                    self.push_quad(vertices, indices, bx + bw - fold_size, by + fold_size, fold_size, 1.0, white_uv, icon_color);
 
-                    // Content lines inside document
-                    let line_w = (bw - 5.0).max(4.0);
-                    let line_y1 = by + (bh * 0.45).round();
-                    let line_y2 = by + (bh * 0.7).round();
-                    self.push_quad(vertices, indices, bx + 3.0, line_y1, line_w, 1.0, white_uv, text_color);
-                    self.push_quad(vertices, indices, bx + 3.0, line_y2, line_w, 1.0, white_uv, text_color);
+                    if is_rust {
+                        // Draw a tiny gear center point and teeth
+                        let cx = bx + (bw / 2.0).round();
+                        let cy = by + (bh / 2.0).round() + 1.0;
+                        // Center hub
+                        self.push_quad(vertices, indices, cx - 1.0, cy - 1.0, 3.0, 3.0, white_uv, icon_color);
+                        // Teeth
+                        self.push_quad(vertices, indices, cx - 2.0, cy, 1.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx + 2.0, cy, 1.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx, cy - 2.0, 1.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx, cy + 2.0, 1.0, 1.0, white_uv, icon_color);
+                    } else if is_toml {
+                        // Draw brackets [ ] inside
+                        self.push_quad(vertices, indices, bx + 3.0, by + 4.0, 1.0, bh - 7.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, bx + 3.0, by + 4.0, 2.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, bx + 3.0, by + bh - 4.0, 2.0, 1.0, white_uv, icon_color);
+
+                        self.push_quad(vertices, indices, bx + bw - 4.0, by + 4.0, 1.0, bh - 7.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, bx + bw - 5.0, by + 4.0, 2.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, bx + bw - 5.0, by + bh - 4.0, 2.0, 1.0, white_uv, icon_color);
+                    } else if is_json {
+                        // Draw curly braces { } outline inside
+                        let cx = bx + (bw / 2.0).round();
+                        let cy = by + (bh / 2.0).round() + 1.0;
+                        self.push_quad(vertices, indices, cx - 2.0, cy - 2.0, 2.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx - 2.0, cy - 2.0, 1.0, 5.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx - 3.0, cy, 2.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx - 2.0, cy + 2.0, 2.0, 1.0, white_uv, icon_color);
+
+                        self.push_quad(vertices, indices, cx + 1.0, cy - 2.0, 2.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx + 2.0, cy - 2.0, 1.0, 5.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx + 2.0, cy, 2.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx + 1.0, cy + 2.0, 2.0, 1.0, white_uv, icon_color);
+                    } else if is_md {
+                        // Draw an 'M' shape inside
+                        let cx = bx + 3.0;
+                        let cy = by + 5.0;
+                        self.push_quad(vertices, indices, cx, cy, 1.0, bh - 8.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx + bw - 7.0, cy, 1.0, bh - 8.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx + 1.0, cy + 1.0, 1.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx + 2.0, cy + 2.0, 1.0, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, cx + 3.0, cy + 1.0, 1.0, 1.0, white_uv, icon_color);
+                    } else {
+                        // Default content lines inside document
+                        let line_w = (bw - 5.0).max(4.0);
+                        let line_y1 = by + (bh * 0.45).round();
+                        let line_y2 = by + (bh * 0.7).round();
+                        self.push_quad(vertices, indices, bx + 3.0, line_y1, line_w, 1.0, white_uv, icon_color);
+                        self.push_quad(vertices, indices, bx + 3.0, line_y2, line_w, 1.0, white_uv, icon_color);
+                    }
                 }
 
                 let text_x = indent_x + self.ui_char_width * 3.2;
