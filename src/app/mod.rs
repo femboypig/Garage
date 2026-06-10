@@ -13,7 +13,7 @@ use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::gpu::{GpuContext, Vertex};
-use crate::ui::{UiState, UiAction};
+use crate::ui::UiState;
 
 use self::state::{AppState, Tab};
 
@@ -24,7 +24,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
         .init();
 
     let event_loop = EventLoop::new()?;
-    let mut window = Arc::new(
+    let window = Arc::new(
         WindowBuilder::new()
             .with_title("Garage")
             .with_decorations(false)
