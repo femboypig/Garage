@@ -9,7 +9,7 @@ pub fn draw_about(
     modal_x: f32,
     modal_y: f32,
     modal_w: f32,
-    modal_h: f32,
+    _modal_h: f32,
     white_uv: [f32; 2],
 ) {
     let title = "Garage";
