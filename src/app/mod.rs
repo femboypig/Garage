@@ -238,17 +238,19 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 }
 
                 WindowEvent::KeyboardInput { event: key_event, .. } => {
-                    input::handle_keyboard_input(
-                        &mut ui,
-                        &mut state,
-                        &mut window.clone(),
-                        elwt,
-                        &mut gpu,
-                        &mut atlas,
-                        font_bytes,
-                        key_event.logical_key,
-                        key_event.physical_key,
-                    );
+                    if key_event.state == winit::event::ElementState::Pressed {
+                        input::handle_keyboard_input(
+                            &mut ui,
+                            &mut state,
+                            &mut window.clone(),
+                            elwt,
+                            &mut gpu,
+                            &mut atlas,
+                            font_bytes,
+                            key_event.logical_key,
+                            key_event.physical_key,
+                        );
+                    }
                 }
                 _ => {}
             },
