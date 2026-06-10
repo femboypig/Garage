@@ -239,17 +239,21 @@ impl GpuContext {
                 let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
                 creation_result = try_create_gl(&window, flags).await;
             } else {
-                let flags = if backend == wgpu::Backends::VULKAN {
-                    wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER
-                } else {
-                    wgpu::InstanceFlags::default()
-                };
-                creation_result = try_create(&window, backend, flags).await;
+                // Try compliant first even when forced
+                creation_result = try_create(&window, backend, wgpu::InstanceFlags::default()).await;
             }
         }
 
         if creation_result.is_none() {
-            // Try Vulkan first, but only compliant adapters to avoid hangs on older GPUs
+            // Try OpenGL/GL first — it never hangs
+            log::warn!("Trying OpenGL/GL backend first...");
+            let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
+            creation_result = try_create_gl(&window, flags).await;
+        }
+
+        if creation_result.is_none() {
+            // Try compliant Vulkan
+            log::warn!("OpenGL failed. Trying compliant Vulkan...");
             creation_result = try_create(
                 &window,
                 wgpu::Backends::VULKAN,
