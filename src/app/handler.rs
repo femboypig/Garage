@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use winit::window::{Window, WindowBuilder};
+use winit::window::Window;
 use winit::event_loop::EventLoopWindowTarget;
 use crate::ui::{UiState, UiAction};
 use crate::renderer::wgpu::GpuContext;
