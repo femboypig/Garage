@@ -218,20 +218,22 @@ pub fn draw_sidebar(
                 }
             }
 
-            let mut is_modified = is_unsaved_modified;
-            if let Some(status) = ui.git_statuses.get(relative_path) {
-                if status.contains('M') {
-                    is_modified = true;
-                }
+            if is_unsaved_modified {
+                file_color = [0.95, 0.45, 0.1, 1.0]; // bright unsaved orange
+                git_badge = Some("•");
             }
 
-            if is_modified {
-                file_color = [0.86, 0.49, 0.18, 1.0]; // orange-yellow
-                git_badge = Some("M");
-            } else if let Some(status) = ui.git_statuses.get(relative_path) {
-                if status.contains('?') || status.contains('A') {
-                    file_color = [0.18, 0.65, 0.43, 1.0]; // green
-                    git_badge = Some(if status.contains('A') { "A" } else { "U" });
+            if let Some(status) = ui.git_statuses.get(relative_path) {
+                if status.contains('M') {
+                    file_color = if is_unsaved_modified { [0.95, 0.45, 0.1, 1.0] } else { [0.86, 0.49, 0.18, 0.85] };
+                    git_badge = if is_unsaved_modified { Some("M•") } else { Some("M") };
+                } else if status.contains('?') || status.contains('A') {
+                    file_color = if is_unsaved_modified { [0.95, 0.45, 0.1, 1.0] } else { [0.18, 0.65, 0.43, 0.85] };
+                    git_badge = if is_unsaved_modified {
+                        Some("U•")
+                    } else {
+                        Some(if status.contains('A') { "A" } else { "U" })
+                    };
                 }
             }
         }
