@@ -54,6 +54,8 @@ pub struct TerminalGrid {
     pub current_bg: [f32; 4],
     pub bold: bool,
     pub title: String,
+    pub scrollback: Vec<Vec<Cell>>,
+    pub scroll_offset: usize,
 }
 
 impl TerminalGrid {
@@ -68,6 +70,8 @@ impl TerminalGrid {
             current_bg: DEFAULT_BG,
             bold: false,
             title: "terminal".to_string(),
+            scrollback: Vec::new(),
+            scroll_offset: 0,
         }
     }
 
@@ -78,23 +82,56 @@ impl TerminalGrid {
 
         let mut new_cells = vec![Cell::default(); new_cols * new_rows];
         
-        // Copy old cells to new grid
-        let copy_rows = self.rows.min(new_rows);
-        let copy_cols = self.cols.min(new_cols);
-        for y in 0..copy_rows {
-            for x in 0..copy_cols {
-                new_cells[y * new_cols + x] = self.cells[y * self.cols + x];
+        // Calculate vertical shift if the height is shrinking and the cursor would be off-screen
+        let shift_y = if new_rows < self.rows && self.cursor_y >= new_rows {
+            self.cursor_y - new_rows + 1
+        } else {
+            0
+        };
+
+        // If shifting, save the shifted out lines to scrollback
+        for y in 0..shift_y {
+            let mut row = vec![Cell::default(); self.cols];
+            for x in 0..self.cols {
+                row[x] = self.cells[y * self.cols + x];
+            }
+            self.scrollback.push(row);
+        }
+        if self.scrollback.len() > 1000 {
+            let to_remove = self.scrollback.len() - 1000;
+            self.scrollback.drain(0..to_remove);
+        }
+
+        // Copy cells from old grid with y-offset shift_y
+        for y in 0..new_rows {
+            let old_y = y + shift_y;
+            if old_y < self.rows {
+                let copy_cols = self.cols.min(new_cols);
+                for x in 0..copy_cols {
+                    new_cells[y * new_cols + x] = self.cells[old_y * self.cols + x];
+                }
             }
         }
 
         self.cells = new_cells;
         self.cols = new_cols;
         self.rows = new_rows;
-        self.cursor_x = self.cursor_x.min(new_cols - 1);
-        self.cursor_y = self.cursor_y.min(new_rows - 1);
+        self.cursor_x = self.cursor_x.min(new_cols.saturating_sub(1));
+        self.cursor_y = self.cursor_y.saturating_sub(shift_y).min(new_rows.saturating_sub(1));
+        self.scroll_offset = self.scroll_offset.min(self.scrollback.len());
     }
 
     fn scroll_up(&mut self) {
+        // Save the top row to scrollback
+        let mut top_row = vec![Cell::default(); self.cols];
+        for x in 0..self.cols {
+            top_row[x] = self.cells[x];
+        }
+        self.scrollback.push(top_row);
+        if self.scrollback.len() > 1000 {
+            self.scrollback.remove(0);
+        }
+
         // Shift all rows up by 1
         for y in 1..self.rows {
             for x in 0..self.cols {
@@ -277,6 +314,10 @@ impl vte::Perform for TerminalGrid {
                     }
                     self.cursor_x = 0;
                     self.cursor_y = 0;
+                    if mode == 3 {
+                        self.scrollback.clear();
+                        self.scroll_offset = 0;
+                    }
                 }
             }
             'K' => { // Erase in Line (EL)
