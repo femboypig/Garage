@@ -240,32 +240,24 @@ impl GpuContext {
                 let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
                 creation_result = try_create_gl(&window, flags).await;
             } else if backend == wgpu::Backends::VULKAN {
-                log::warn!("Trying forced compliant Vulkan backend...");
-                creation_result = try_create(&window, wgpu::Backends::VULKAN, wgpu::InstanceFlags::default()).await;
-                if creation_result.is_none() {
-                    log::warn!("Forced compliant Vulkan failed. Trying Vulkan with non-compliant adapter support...");
-                    creation_result = try_create(
-                        &window,
-                        wgpu::Backends::VULKAN,
-                        wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
-                    ).await;
-                }
+                log::warn!("Trying forced Vulkan backend (allowing non-compliant)...");
+                creation_result = try_create(
+                    &window,
+                    wgpu::Backends::VULKAN,
+                    wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
+                ).await;
             }
         }
 
         if creation_result.is_none() {
             let preferred_is_gl = forced_backend == Some(wgpu::Backends::GL);
             if preferred_is_gl {
-                log::warn!("Forced OpenGL failed. Trying compliant Vulkan fallback...");
-                creation_result = try_create(&window, wgpu::Backends::VULKAN, wgpu::InstanceFlags::default()).await;
-                if creation_result.is_none() {
-                    log::warn!("Compliant Vulkan fallback failed. Trying Vulkan with non-compliant adapter support...");
-                    creation_result = try_create(
-                        &window,
-                        wgpu::Backends::VULKAN,
-                        wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
-                    ).await;
-                }
+                log::warn!("Forced OpenGL failed. Trying Vulkan fallback (allowing non-compliant)...");
+                creation_result = try_create(
+                    &window,
+                    wgpu::Backends::VULKAN,
+                    wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
+                ).await;
             } else {
                 log::warn!("Forced Vulkan failed. Trying OpenGL/GL fallback...");
                 let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
