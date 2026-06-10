@@ -56,6 +56,11 @@ pub struct UiState {
     pub git_branch: Option<String>,
     pub last_branch_check: Option<std::time::Instant>,
 
+    pub git_branch_rx: Option<std::sync::mpsc::Receiver<String>>,
+    pub git_branch_tx: std::sync::mpsc::Sender<String>,
+    pub git_blame_rx: Option<std::sync::mpsc::Receiver<(String, usize, Option<String>)>>,
+    pub git_blame_tx: std::sync::mpsc::Sender<(String, usize, Option<String>)>,
+
     pub command_palette_query: String,
     pub command_palette_selected: usize,
     pub command_palette_scroll: usize,
@@ -108,6 +113,9 @@ impl UiState {
         let tabbar_height = (ui_line_height * 1.6).round().max(30.0);
         let breadcrumb_height = (ui_line_height * 1.3).round().max(22.0);
 
+        let (branch_tx, branch_rx) = std::sync::mpsc::channel();
+        let (blame_tx, blame_rx) = std::sync::mpsc::channel();
+
         let mut state = Self {
             ui_font_size,
             buffer_font_size,
@@ -139,6 +147,10 @@ impl UiState {
             last_blame_result: None,
             git_branch: None,
             last_branch_check: None,
+            git_branch_rx: Some(branch_rx),
+            git_branch_tx: branch_tx,
+            git_blame_rx: Some(blame_rx),
+            git_blame_tx: blame_tx,
             command_palette_query: String::new(),
             command_palette_selected: 0,
             command_palette_scroll: 0,
