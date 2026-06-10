@@ -162,11 +162,45 @@ pub fn draw_sidebar(
         let effective_depth = node.depth + 1;
         let indent_step = 18.0f32; // Increased to 18px to prevent guide lines from crossing icons
         let indent_x = activity_bar_width + 10.0 + effective_depth as f32 * indent_step;
-        let text_color = if node.is_dir {
+
+        let relative_path = node.path.strip_prefix("./").unwrap_or(&node.path);
+        let mut git_badge = None;
+        let mut file_color = if node.is_dir {
             ui.config.theme.sidebar_text_dir
         } else {
             ui.config.theme.sidebar_text_file
         };
+
+        if node.is_dir {
+            let mut has_modified = false;
+            let mut has_untracked = false;
+            for (path, status) in &ui.git_statuses {
+                if path.starts_with(relative_path) {
+                    if status.contains('M') {
+                        has_modified = true;
+                    } else if status.contains('?') || status.contains('A') {
+                        has_untracked = true;
+                    }
+                }
+            }
+            if has_modified {
+                file_color = [0.86, 0.49, 0.18, 0.85]; // muted orange
+            } else if has_untracked {
+                file_color = [0.18, 0.65, 0.43, 0.85]; // muted green
+            }
+        } else {
+            if let Some(status) = ui.git_statuses.get(relative_path) {
+                if status.contains('M') {
+                    file_color = [0.86, 0.49, 0.18, 1.0]; // orange-yellow
+                    git_badge = Some("M");
+                } else if status.contains('?') || status.contains('A') {
+                    file_color = [0.18, 0.65, 0.43, 1.0]; // green
+                    git_badge = Some(if status.contains('A') { "A" } else { "U" });
+                }
+            }
+        }
+
+        let text_color = file_color;
 
         let text_baseline = (row_y + ui.ui_line_height / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
         let icon_y_center = text_baseline - (ui.ui_font_ascent * 0.33).round();
@@ -261,7 +295,7 @@ pub fn draw_sidebar(
                 icon_path,
                 icon_x,
                 icon_y,
-                icon_color,
+                if ext == "rs" || ext == "toml" || ext == "json" || ext == "md" { icon_color } else { text_color },
                 icon_sz,
             );
         }
@@ -287,6 +321,24 @@ pub fn draw_sidebar(
                     ui.ui_font_size,
                     ui.ui_char_width,
                 );
+            }
+
+            // Draw Git status badge if space permits
+            if let Some(badge) = git_badge {
+                if current_x + 12.0 < max_x {
+                    ui.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        badge,
+                        current_x + 8.0,
+                        text_baseline,
+                        text_color,
+                        ui.ui_font_size * 0.85,
+                        ui.ui_char_width * 0.85,
+                    );
+                }
             }
         }
     }
