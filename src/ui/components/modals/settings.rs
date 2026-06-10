@@ -11,8 +11,8 @@ pub fn draw_settings(
     current_backend: wgpu::Backend,
     modal_x: f32,
     modal_y: f32,
-    modal_w: f32,
-    modal_h: f32,
+    _modal_w: f32,
+    _modal_h: f32,
     white_uv: [f32; 2],
 ) {
     let row_height = (ui.ui_line_height * 2.2).round();
