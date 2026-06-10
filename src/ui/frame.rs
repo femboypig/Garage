@@ -12,7 +12,9 @@ impl UiState {
             let mut len = line.chars().count();
             if self.config.show_git_blame && line_idx == cursor_line {
                 if let Some(blame_str) = self.get_or_update_blame(active_file_path, line_idx) {
-                    len += 4 + blame_str.chars().count();
+                    if blame_str != "Loading blame..." && !blame_str.is_empty() {
+                        len += 4 + blame_str.chars().count();
+                    }
                 }
             }
             if len > max_len {
