@@ -133,12 +133,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         }
                     }
 
-                    // Read data from PTY channels for all terminals and parse ANSI sequences
+                    // Read data from PTY channels for all terminals and parse ANSI sequences using persistent parser
                     for term in &mut state.dock_terminals {
-                        let mut parser = vte::Parser::new();
                         while let Ok(bytes) = term.rx.try_recv() {
                             for b in bytes {
-                                parser.advance(&mut term.grid, b);
+                                term.parser.advance(&mut term.grid, b);
                             }
                         }
                     }
