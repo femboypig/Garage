@@ -1,11 +1,8 @@
-pub mod config;
 pub mod editor;
 pub mod renderer;
 pub mod ui;
 pub mod window;
 pub mod terminal;
-pub mod actions;
-pub mod keymap;
 
 fn main() {
     let file_path = std::env::args().nth(1);
