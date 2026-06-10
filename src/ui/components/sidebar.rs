@@ -210,7 +210,7 @@ pub fn draw_sidebar(
                     let t_path_buf = std::path::Path::new(t_path);
                     let matches = t_path == relative_path.to_str().unwrap_or("")
                         || t_path == node.path.to_str().unwrap_or("")
-                        || std::fs::canonicalize(t_path_buf).ok() == std::fs::canonicalize(&node.path).ok();
+                        || crate::editor::lsp::normalize_path(t_path_buf) == crate::editor::lsp::normalize_path(&node.path);
                     if matches && tab_modified.get(t_idx).copied().unwrap_or(false) {
                         is_unsaved_modified = true;
                         break;
