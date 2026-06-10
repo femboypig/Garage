@@ -11,22 +11,20 @@ pub struct GlyphInfo {
     pub bearing_y: f32,
 }
 
-fn load_fallback_nerd_font() -> Option<fontdue::Font> {
-    let candidate_paths = [
-        "/usr/share/fonts/TTF/JetBrainsMonoNLNerdFontMono-Medium.ttf",
+fn load_fallback_nerd_fonts() -> Vec<fontdue::Font> {
+    let mut fonts = Vec::new();
+    let preferred = [
+        "/usr/share/fonts/TTF/SymbolsNerdFont-Regular.ttf",
         "/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-Regular.ttf",
         "/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf",
-        "/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Bold.ttf",
-        "/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-Bold.ttf",
-        "/usr/share/fonts/TTF/JetBrainsMonoNLNerdFontMono-Light.ttf",
         "/usr/share/fonts/TTF/CascadiaMonoNF.ttf",
     ];
 
-    for path in &candidate_paths {
+    for path in &preferred {
         if let Ok(bytes) = std::fs::read(path) {
             if let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
-                log::info!("Loaded fallback Nerd Font from {}", path);
-                return Some(font);
+                log::info!("Loaded preferred fallback font from {}", path);
+                fonts.push(font);
             }
         }
     }
@@ -38,11 +36,17 @@ fn load_fallback_nerd_font() -> Option<fontdue::Font> {
             if let Some(ext) = path.extension() {
                 if ext == "ttf" || ext == "otf" {
                     let name = path.to_string_lossy().to_string();
-                    if name.contains("Nerd") || name.contains("NF") {
+                    if name.contains("Nerd") || name.contains("NF") || name.contains("Symbols") {
+                        if preferred.iter().any(|p| name.contains(p.split('/').last().unwrap())) {
+                            continue;
+                        }
                         if let Ok(bytes) = std::fs::read(&path) {
                             if let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
                                 log::info!("Loaded fallback Nerd Font from search: {}", name);
-                                return Some(font);
+                                fonts.push(font);
+                                if fonts.len() >= 5 {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -50,12 +54,12 @@ fn load_fallback_nerd_font() -> Option<fontdue::Font> {
             }
         }
     }
-    None
+    fonts
 }
 
 pub struct FontAtlas {
     pub font: Font,
-    pub fallback_font: Option<Font>,
+    pub fallback_fonts: Vec<Font>,
     pub texture: wgpu::Texture,
     pub sampler: wgpu::Sampler,
     pub atlas_width: u32,
@@ -75,7 +79,7 @@ impl FontAtlas {
         font_bytes: &[u8],
     ) -> Result<Self, &'static str> {
         let font = Font::from_bytes(font_bytes, FontSettings::default())?;
-        let fallback_font = load_fallback_nerd_font();
+        let fallback_fonts = load_fallback_nerd_fonts();
         
         let atlas_width = 1024;
         let atlas_height = 1024;
@@ -130,7 +134,7 @@ impl FontAtlas {
 
         Ok(Self {
             font,
-            fallback_font,
+            fallback_fonts,
             texture,
             sampler,
             atlas_width,
@@ -161,9 +165,10 @@ impl FontAtlas {
 
         let mut raster_font = &self.font;
         if self.font.lookup_glyph_index(c) == 0 {
-            if let Some(ref fb_font) = self.fallback_font {
+            for fb_font in &self.fallback_fonts {
                 if fb_font.lookup_glyph_index(c) != 0 {
                     raster_font = fb_font;
+                    break;
                 }
             }
         }
@@ -280,7 +285,7 @@ impl FontAtlas {
             "close" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"currentColor\" d=\"M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z\"/></svg>",
             "minimize" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" d=\"M3 8h10\"/></svg>",
             "maximize" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"10\" height=\"10\" x=\"3\" y=\"3\" rx=\"1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/></svg>",
-            "terminal" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"14\" height=\"12\" x=\"1\" y=\"2\" rx=\"1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/><path fill=\"currentColor\" d=\"M4 5.5l2.5 2-2.5 2M8 9.5h4\"/></svg>",
+            "terminal" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"14\" height=\"11\" x=\"1\" y=\"2.5\" rx=\"2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/><path fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.5 5.5L7 7.5l-2.5 2M8.5 9.5h3\"/></svg>",
             "bug" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"currentColor\" d=\"M8 1.5a2.5 2.5 0 0 0-2.5 2.5V5H4.25a.75.75 0 0 0 0 1.5H5v1.25H3.75a.75.75 0 0 0 0 1.5H5V11H4.25a.75.75 0 0 0 0 1.5h1.25v.75c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5v-.75h1.25a.75.75 0 0 0 0-1.5H11V9.25h1.25a.75.75 0 0 0 0-1.5H11V6.5h.75a.75.75 0 0 0 0-1.5H11V4a2.5 2.5 0 0 0-2.5-2.5zM7 5H6.5V4a1.5 1.5 0 0 1 3 0v1H9V5H7zm-1 2.75h4V9H6V7.75zm0 2.75h4v1.5H6V10.5z\"/></svg>",
             _ => {
                 log::warn!("Unknown embedded icon name: '{}'", icon_name);
