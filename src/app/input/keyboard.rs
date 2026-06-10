@@ -7,9 +7,10 @@ use winit::event_loop::EventLoopWindowTarget;
 use crate::renderer::wgpu::GpuContext;
 use crate::ui::{UiState, UiAction};
 use crate::renderer::atlas::FontAtlas;
-use super::state::AppState;
-use super::handler::handle_action;
+use crate::app::state::AppState;
+use crate::app::handler::handle_action;
 use super::mouse::update_cursor_icon;
+
 
 pub fn handle_keyboard_input(
     ui: &mut UiState,
