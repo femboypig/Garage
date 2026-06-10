@@ -405,5 +405,60 @@ pub fn draw_dock(
                 }
             }
         }
+
+        // Draw Terminal Scrollbar if scrollback is not empty
+        if !grid.scrollback.is_empty() {
+            let sb_w = 10.0f32;
+            let sb_x = width - sb_w - 4.0;
+            
+            // Draw separator line
+            ui.push_quad(
+                vertices,
+                indices,
+                sb_x - 1.0,
+                content_y,
+                1.0,
+                content_h,
+                white_uv,
+                ui.config.theme.scrollbar_border,
+            );
+
+            // Draw scrollbar track background
+            ui.push_quad(
+                vertices,
+                indices,
+                sb_x,
+                content_y,
+                sb_w,
+                content_h,
+                white_uv,
+                ui.config.theme.scrollbar_track,
+            );
+
+            let total_lines = (grid.rows + grid.scrollback.len()) as f32;
+            let thumb_h = ((grid.rows as f32 / total_lines) * content_h).clamp(15.0, content_h);
+            let max_scroll = grid.scrollback.len() as f32;
+            let scroll_ratio = 1.0 - (grid.scroll_offset as f32 / max_scroll);
+            let thumb_y = content_y + scroll_ratio * (content_h - thumb_h);
+
+            let is_sb_hovered = ui.active_modal.is_none() && mouse_x >= sb_x && mouse_x < sb_x + sb_w && mouse_y >= content_y && mouse_y < content_y + content_h;
+            let thumb_color = if is_sb_hovered {
+                ui.config.theme.scrollbar_thumb_hover
+            } else {
+                ui.config.theme.scrollbar_thumb
+            };
+
+            // Draw thumb
+            ui.push_quad(
+                vertices,
+                indices,
+                sb_x + 2.0,
+                thumb_y,
+                sb_w - 4.0,
+                thumb_h,
+                white_uv,
+                thumb_color,
+            );
+        }
     }
 }
