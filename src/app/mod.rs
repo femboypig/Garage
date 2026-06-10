@@ -105,6 +105,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     if let Some(ref lsp) = lsp_client {
         if let Some(ref path) = initial_tab.path {
             lsp.notify_open(path, initial_tab.buffer.lines().join("\n"));
+            lsp.notify_active_file(path);
+        } else {
+            lsp.notify_active_file("");
         }
     }
 
@@ -113,6 +116,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     // Track dynamic vertices and indices
     let mut vertices: Vec<Vertex> = Vec::new();
     let mut indices: Vec<u16> = Vec::new();
+    let mut first_frame_rendered = false;
 
     // Run the event loop reactively to save power/CPU/GPU cycles when idle
     event_loop.run(move |event, elwt| {
@@ -150,7 +154,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     // Drain LSP diagnostics channel
                     if let Some(ref rx) = ui.lsp_diagnostics_rx {
                         while let Ok(update) = rx.try_recv() {
-                            if update.file_path.is_empty() {
+                            if update.file_path.starts_with("status:") {
+                                ui.lsp_status = update.file_path["status:".len()..].to_string();
+                            } else if update.file_path.is_empty() {
                                 if update.errors == 9999 {
                                     ui.lsp_status = "offline".to_string();
                                 } else {
@@ -284,6 +290,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 window.request_redraw();
             }
             Event::AboutToWait => {
+                if !first_frame_rendered {
+                    window.request_redraw();
+                    first_frame_rendered = true;
+                }
                 if state.terminal_focus {
                     elwt.set_control_flow(ControlFlow::WaitUntil(
                         std::time::Instant::now() + std::time::Duration::from_millis(15)
