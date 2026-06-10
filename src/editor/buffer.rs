@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, Write};
 use std::path::Path;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -40,13 +40,15 @@ impl Buffer {
 
     /// Load a file into the buffer.
     pub fn load_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let mut loaded_lines = Vec::new();
+        let mut file = File::open(path)?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut file, &mut bytes)?;
 
-        for line in reader.lines() {
-            loaded_lines.push(line?);
-        }
+        let text = String::from_utf8_lossy(&bytes);
+        let mut loaded_lines = text
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
 
         if loaded_lines.is_empty() {
             loaded_lines.push(String::new());
