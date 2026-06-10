@@ -54,8 +54,7 @@ pub fn draw_statusbar(
     if ui.config.show_git_branch {
         if let Some(ref branch) = ui.git_branch {
             let icon_sz = (ui.ui_font_size * 0.9).round().max(12.0);
-            let icon_y_center = baseline_y - (ui.ui_font_ascent * 0.33).round();
-            let icon_y = icon_y_center - (icon_sz / 2.0).round();
+            let icon_y = (status_y + (ui.status_height - icon_sz) / 2.0).round();
             ui.push_icon(
                 vertices,
                 indices,
@@ -119,7 +118,7 @@ pub fn draw_statusbar(
     let sb_btn_w = 26.0f32;
     let sb_btn_h = ui.status_height - 1.0;
     let icon_sz = 14.0f32;
-    let icon_y = status_y + (sb_btn_h - icon_sz) / 2.0;
+    let icon_y = (status_y + (ui.status_height - icon_sz) / 2.0).round();
     let term_btn_x = width - 10.0 - sb_btn_w;
 
     // Detect file type / extension to show programming language
@@ -129,17 +128,33 @@ pub fn draw_statusbar(
         .unwrap_or("");
 
     let language = match extension {
-        "rs" => "Rust",
-        "json" => "JSON",
-        "toml" => "TOML",
-        "md" => "Markdown",
-        "js" => "JavaScript",
-        "ts" => "TypeScript",
-        "html" => "HTML",
-        "css" => "CSS",
-        "wgsl" => "WGSL",
-        "sh" => "Shell",
-        _ => "Plain Text",
+        "rs" => "Rust".to_string(),
+        "json" => "JSON".to_string(),
+        "toml" => "TOML".to_string(),
+        "md" => "Markdown".to_string(),
+        "js" => "JavaScript".to_string(),
+        "ts" => "TypeScript".to_string(),
+        "html" => "HTML".to_string(),
+        "css" => "CSS".to_string(),
+        "wgsl" => "WGSL".to_string(),
+        "sh" => "Shell".to_string(),
+        "py" => "Python".to_string(),
+        "go" => "Go".to_string(),
+        "cpp" => "C++".to_string(),
+        "c" => "C".to_string(),
+        "h" => "C Header".to_string(),
+        "" => "Plain Text".to_string(),
+        other => {
+            let mut chars = other.chars();
+            match chars.next() {
+                None => "Plain Text".to_string(),
+                Some(first) => {
+                    let mut s = first.to_uppercase().to_string();
+                    s.push_str(&chars.as_str().to_lowercase());
+                    s
+                }
+            }
+        }
     };
 
     let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
@@ -147,7 +162,7 @@ pub fn draw_statusbar(
 
     let right_components = [
         cursor_str.as_str(),
-        language,
+        language.as_str(),
         lsp_str,
         "UTF-8",
         "LF",
