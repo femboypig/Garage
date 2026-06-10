@@ -191,45 +191,22 @@ impl GpuContext {
                 std::env::set_var("MESA_GL_VERSION_OVERRIDE", "3.3");
             }
 
-            // Try different Intel Mesa drivers sequentially to see if context creation succeeds
-            let drivers = [Some("crocus"), Some("i965"), None];
-
-            for driver in drivers {
-                if let Some(d) = driver {
-                    unsafe { std::env::set_var("MESA_LOADER_DRIVER_OVERRIDE", d); }
-                } else {
-                    unsafe { std::env::remove_var("MESA_LOADER_DRIVER_OVERRIDE"); }
-                }
-
-                // 1. Try default (EGL hardware)
-                if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
-                    restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
-                    return Some(res);
-                }
-
-                // 2. Try GLX hardware
-                log::warn!("OpenGL with default EGL failed (driver={:?}). Retrying OpenGL with GLX backend...", driver);
-                unsafe { std::env::set_var("WGPU_GL_BACKEND", "glx"); }
-                if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
-                    restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
-                    return Some(res);
-                }
-                
-                // Reset WGPU_GL_BACKEND to default for the next driver iteration
-                if let Some(ref val) = orig_wgpu_backend {
-                    unsafe { std::env::set_var("WGPU_GL_BACKEND", val); }
-                } else {
-                    unsafe { std::env::remove_var("WGPU_GL_BACKEND"); }
-                }
+            // 1. Try default OpenGL settings (usually EGL hardware)
+            if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+                restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
+                return Some(res);
             }
 
-            // Fallback to software rendering (no driver overrides)
-            unsafe {
-                std::env::remove_var("MESA_LOADER_DRIVER_OVERRIDE");
+            // 2. Try forcing GLX hardware
+            log::warn!("OpenGL with default EGL failed. Retrying OpenGL with GLX backend...");
+            unsafe { std::env::set_var("WGPU_GL_BACKEND", "glx"); }
+            if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+                restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
+                return Some(res);
             }
 
-            // 3. Try EGL software
-            log::warn!("OpenGL with hardware GLX failed. Retrying OpenGL with EGL software rendering (llvmpipe)...");
+            // 3. Try software rendering (EGL llvmpipe)
+            log::warn!("OpenGL hardware failed. Retrying with EGL software rendering (llvmpipe)...");
             unsafe {
                 std::env::set_var("WGPU_GL_BACKEND", "egl");
                 std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
@@ -239,8 +216,8 @@ impl GpuContext {
                 return Some(res);
             }
 
-            // 4. Try GLX software
-            log::warn!("OpenGL with software EGL failed. Retrying OpenGL with GLX software rendering (llvmpipe)...");
+            // 4. Try software rendering (GLX llvmpipe)
+            log::warn!("OpenGL software EGL failed. Retrying with GLX software rendering (llvmpipe)...");
             unsafe {
                 std::env::set_var("WGPU_GL_BACKEND", "glx");
                 std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
