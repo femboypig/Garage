@@ -312,21 +312,21 @@ impl UiState {
     }
 
     pub fn update_git_branch(&mut self) {
-        let output = std::process::Command::new("git")
-            .args(&["rev-parse", "--abbrev-ref", "HEAD"])
-            .output();
-        
-        self.git_branch = match output {
-            Ok(out) if out.status.success() => {
-                let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if branch.is_empty() {
-                    None
-                } else {
-                    Some(branch)
+        let tx = self.git_branch_tx.clone();
+        std::thread::spawn(move || {
+            let output = std::process::Command::new("git")
+                .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+                .output();
+            
+            if let Ok(out) = output {
+                if out.status.success() {
+                    let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if !branch.is_empty() {
+                        let _ = tx.send(branch);
+                    }
                 }
             }
-            _ => None,
-        };
+        });
     }
 
     pub fn get_or_update_blame(&mut self, file_path: Option<&str>, line_idx: usize) -> Option<String> {
@@ -336,71 +336,77 @@ impl UiState {
             return self.last_blame_result.clone();
         }
 
-        // Update cache
+        // Update cache to loading state
         self.last_blame_file = Some(file_path.to_string());
         self.last_blame_line = Some(line_idx);
+        self.last_blame_result = Some("Loading blame...".to_string());
 
-        // Run git blame for a single line (1-based index)
-        let git_line = line_idx + 1;
-        let output = std::process::Command::new("git")
-            .args(&["blame", "-L", &format!("{},{}", git_line, git_line), "--porcelain", file_path])
-            .output();
+        // Run git blame asynchronously
+        let tx = self.git_blame_tx.clone();
+        let path = file_path.to_string();
+        std::thread::spawn(move || {
+            let git_line = line_idx + 1;
+            let output = std::process::Command::new("git")
+                .args(&["blame", "-L", &format!("{},{}", git_line, git_line), "--porcelain", &path])
+                .output();
 
-        let blame_res = match output {
-            Ok(out) if out.status.success() => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                let mut author = None;
-                let mut author_time = None;
-                let mut summary = None;
+            let blame_res = match output {
+                Ok(out) if out.status.success() => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    let mut author = None;
+                    let mut author_time = None;
+                    let mut summary = None;
 
-                for line in stdout.lines() {
-                    if line.starts_with("author ") {
-                        author = Some(line["author ".len()..].trim().to_string());
-                    } else if line.starts_with("author-time ") {
-                        author_time = line["author-time ".len()..].trim().parse::<u64>().ok();
-                    } else if line.starts_with("summary ") {
-                        summary = Some(line["summary ".len()..].trim().to_string());
+                    for line in stdout.lines() {
+                        if line.starts_with("author ") {
+                            author = Some(line["author ".len()..].trim().to_string());
+                        } else if line.starts_with("author-time ") {
+                            author_time = line["author-time ".len()..].trim().parse::<u64>().ok();
+                        } else if line.starts_with("summary ") {
+                            summary = Some(line["summary ".len()..].trim().to_string());
+                        }
                     }
-                }
 
-                if let (Some(auth), Some(time), Some(sum)) = (author, author_time, summary) {
-                    if auth == "Not Committed Yet" {
-                        Some("Not Committed Yet".to_string())
-                    } else {
-                        // Calculate relative time
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs();
-                        let diff = now.saturating_sub(time);
-                        let time_str = if diff < 60 {
-                            "just now".to_string()
-                        } else if diff < 3600 {
-                            format!("{}m ago", diff / 60)
-                        } else if diff < 86400 {
-                            format!("{}h ago", diff / 3600)
-                        } else if diff < 2592000 {
-                            let days = diff / 86400;
-                            if days == 1 { "yesterday".to_string() } else { format!("{} days ago", days) }
-                        } else if diff < 31536000 {
-                            let months = diff / 2592000;
-                            if months == 1 { "1 month ago".to_string() } else { format!("{} months ago", months) }
+                    if let (Some(auth), Some(time), Some(sum)) = (author, author_time, summary) {
+                        if auth == "Not Committed Yet" {
+                            Some("Not Committed Yet".to_string())
                         } else {
-                            let years = diff / 31536000;
-                            if years == 1 { "1 year ago".to_string() } else { format!("{} years ago", years) }
-                        };
+                            // Calculate relative time
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs();
+                            let diff = now.saturating_sub(time);
+                            let time_str = if diff < 60 {
+                                "just now".to_string()
+                            } else if diff < 3600 {
+                                format!("{}m ago", diff / 60)
+                            } else if diff < 86400 {
+                                format!("{}h ago", diff / 3600)
+                            } else if diff < 2592000 {
+                                let days = diff / 86400;
+                                if days == 1 { "yesterday".to_string() } else { format!("{} days ago", days) }
+                            } else if diff < 31536000 {
+                                let months = diff / 2592000;
+                                if months == 1 { "1 month ago".to_string() } else { format!("{} months ago", months) }
+                            } else {
+                                let years = diff / 31536000;
+                                if years == 1 { "1 year ago".to_string() } else { format!("{} years ago", years) }
+                            };
 
-                        Some(format!("{} • {} • {}", auth, time_str, sum))
+                            Some(format!("{} • {} • {}", auth, time_str, sum))
+                        }
+                    } else {
+                        None
                     }
-                } else {
-                    None
                 }
-            }
-            _ => None,
-        };
+                _ => None,
+            };
 
-        self.last_blame_result = blame_res.clone();
-        blame_res
+            let _ = tx.send((path, line_idx, blame_res));
+        });
+
+        self.last_blame_result.clone()
     }
 
     pub fn get_all_commands(&self) -> Vec<(&'static str, &'static str)> {
@@ -487,6 +493,22 @@ impl UiState {
         _is_window_maximized: bool,
     ) {
         self.active_dock_tab = active_terminal_idx;
+
+        // Drain git branch channel
+        if let Some(ref rx) = self.git_branch_rx {
+            while let Ok(branch) = rx.try_recv() {
+                self.git_branch = Some(branch);
+            }
+        }
+
+        // Drain git blame channel
+        if let Some(ref rx) = self.git_blame_rx {
+            while let Ok((file, line, blame)) = rx.try_recv() {
+                if self.last_blame_file.as_deref() == Some(&file) && self.last_blame_line == Some(line) {
+                    self.last_blame_result = blame;
+                }
+            }
+        }
 
         // Throttled git branch check
         if self.config.show_git_branch {
