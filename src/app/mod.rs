@@ -102,7 +102,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let lsp_client = Some(crate::editor::lsp::LspClient::new(lsp_diag_tx));
     if let Some(ref lsp) = lsp_client {
         if let Some(ref path) = initial_tab.path {
-            lsp.notify_open(path, initial_tab.buffer.to_string());
+            lsp.notify_open(path, initial_tab.buffer.lines().join("\n"));
         }
     }
 
@@ -270,7 +270,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             let active_tab = &state.tabs[state.active_tab_idx];
                             if let Some(ref path) = active_tab.path {
                                 if let Some(ref lsp) = state.lsp_client {
-                                    lsp.notify_change(path, active_tab.buffer.to_string());
+                                    lsp.notify_change(path, active_tab.buffer.lines().join("\n"));
                                 }
                             }
                         }
