@@ -30,7 +30,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
     // Initialize wgpu rendering context and pipeline synchronously
     // Load configuration at startup
-    let mut config = crate::config::AppConfig::load();
+    let mut config = crate::editor::config::AppConfig::load();
 
     // Select backend based on config
     let initial_backends = match config.backend.as_str() {
@@ -292,7 +292,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         ui.config.save_in_background();
                     }
                     UiAction::ChangeTheme(theme_name) => {
-                        let selected_theme = crate::config::Theme::get_by_name(&theme_name);
+                        let selected_theme = crate::editor::config::Theme::get_by_name(&theme_name);
                         ui.config.theme = selected_theme;
                         ui.config.save_in_background();
                     }
@@ -1139,30 +1139,30 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         }
 
                         // 3. Otherwise map key input to Action
-                        if let Some(action) = crate::keymap::map_key(&kb_event.logical_key, kb_event.physical_key, ctrl, shift, alt) {
+                        if let Some(action) = crate::editor::keymap::map_key(&kb_event.logical_key, kb_event.physical_key, ctrl, shift, alt) {
                             match action {
-                                crate::actions::Action::ZoomIn => {
+                                crate::editor::actions::Action::ZoomIn => {
                                     let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
                                     ui.update_buffer_font_size(&atlas.font, new_size);
                                 }
-                                crate::actions::Action::ZoomOut => {
+                                crate::editor::actions::Action::ZoomOut => {
                                     let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
                                     ui.update_buffer_font_size(&atlas.font, new_size);
                                 }
-                                crate::actions::Action::CommandPalette => {
+                                crate::editor::actions::Action::CommandPalette => {
                                     ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
                                     ui.command_palette_query.clear();
                                     ui.command_palette_selected = 0;
                                 }
-                                crate::actions::Action::SaveFile => {
+                                crate::editor::actions::Action::SaveFile => {
                                     handle_action!(UiAction::SaveFile);
                                 }
-                                crate::actions::Action::Escape => {
+                                crate::editor::actions::Action::Escape => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     active_tab.buffer.commit_transaction();
                                     active_tab.cursor.clear_selection();
                                 }
-                                crate::actions::Action::MoveLeft { select, word } => {
+                                crate::editor::actions::Action::MoveLeft { select, word } => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     active_tab.buffer.commit_transaction();
                                     if word {
@@ -1171,7 +1171,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         active_tab.cursor.move_left(&active_tab.buffer, select);
                                     }
                                 }
-                                crate::actions::Action::MoveRight { select, word } => {
+                                crate::editor::actions::Action::MoveRight { select, word } => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     active_tab.buffer.commit_transaction();
                                     if word {
@@ -1180,27 +1180,27 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         active_tab.cursor.move_right(&active_tab.buffer, select);
                                     }
                                 }
-                                crate::actions::Action::MoveUp { select } => {
+                                crate::editor::actions::Action::MoveUp { select } => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     active_tab.buffer.commit_transaction();
                                     active_tab.cursor.move_up(&active_tab.buffer, select);
                                 }
-                                crate::actions::Action::MoveDown { select } => {
+                                crate::editor::actions::Action::MoveDown { select } => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     active_tab.buffer.commit_transaction();
                                     active_tab.cursor.move_down(&active_tab.buffer, select);
                                 }
-                                crate::actions::Action::MoveToLineStart { select } => {
+                                crate::editor::actions::Action::MoveToLineStart { select } => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     active_tab.buffer.commit_transaction();
                                     active_tab.cursor.move_to_line_start(select);
                                 }
-                                crate::actions::Action::MoveToLineEnd { select } => {
+                                crate::editor::actions::Action::MoveToLineEnd { select } => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     active_tab.buffer.commit_transaction();
                                     active_tab.cursor.move_to_line_end(&active_tab.buffer, select);
                                 }
-                                crate::actions::Action::SelectAll => {
+                                crate::editor::actions::Action::SelectAll => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     active_tab.buffer.commit_transaction();
                                     active_tab.cursor.selection_anchor = Some((0, 0));
@@ -1208,13 +1208,13 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     active_tab.cursor.col = active_tab.buffer.lines()[active_tab.cursor.line].chars().count();
                                     active_tab.cursor.intended_col = active_tab.cursor.col;
                                 }
-                                crate::actions::Action::Copy => {
+                                crate::editor::actions::Action::Copy => {
                                     let active_tab = &tabs[active_tab_idx];
                                     if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                                         internal_clipboard = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
                                     }
                                 }
-                                crate::actions::Action::Cut => {
+                                crate::editor::actions::Action::Cut => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                                         internal_clipboard = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
@@ -1227,7 +1227,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         active_tab.buffer.commit_transaction();
                                     }
                                 }
-                                crate::actions::Action::Paste => {
+                                crate::editor::actions::Action::Paste => {
                                     if !internal_clipboard.is_empty() {
                                         let active_tab = &mut tabs[active_tab_idx];
                                         active_tab.buffer.start_transaction();
@@ -1250,15 +1250,15 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         active_tab.buffer.commit_transaction();
                                     }
                                 }
-                                crate::actions::Action::Undo => {
+                                crate::editor::actions::Action::Undo => {
                                     handle_action!(UiAction::Undo);
                                     tabs[active_tab_idx].cursor.intended_col = tabs[active_tab_idx].cursor.col;
                                 }
-                                crate::actions::Action::Redo => {
+                                crate::editor::actions::Action::Redo => {
                                     handle_action!(UiAction::Redo);
                                     tabs[active_tab_idx].cursor.intended_col = tabs[active_tab_idx].cursor.col;
                                 }
-                                crate::actions::Action::DeleteLeft => {
+                                crate::editor::actions::Action::DeleteLeft => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                                         active_tab.buffer.start_transaction();
@@ -1295,7 +1295,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         active_tab.buffer.commit_transaction();
                                     }
                                 }
-                                crate::actions::Action::DeleteRight => {
+                                crate::editor::actions::Action::DeleteRight => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                                         active_tab.buffer.start_transaction();
@@ -1316,7 +1316,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                         }
                                     }
                                 }
-                                crate::actions::Action::InsertNewLine => {
+                                crate::editor::actions::Action::InsertNewLine => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                                         active_tab.buffer.start_transaction();
@@ -1332,7 +1332,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     active_tab.cursor.intended_col = 0;
                                     active_tab.buffer.commit_transaction();
                                 }
-                                crate::actions::Action::InsertTab => {
+                                crate::editor::actions::Action::InsertTab => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                                         active_tab.buffer.start_transaction();
@@ -1347,7 +1347,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     active_tab.cursor.intended_col = active_tab.cursor.col;
                                     active_tab.buffer.commit_transaction();
                                 }
-                                crate::actions::Action::InsertChar(c) => {
+                                crate::editor::actions::Action::InsertChar(c) => {
                                     let active_tab = &mut tabs[active_tab_idx];
                                     let step_over = if active_tab.cursor.selection_range().is_none() && (c == ')' || c == ']' || c == '}' || c == '"' || c == '\'') {
                                         let line_chars: Vec<char> = active_tab.buffer.lines()[active_tab.cursor.line].chars().collect();
