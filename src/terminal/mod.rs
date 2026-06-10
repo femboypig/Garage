@@ -490,7 +490,15 @@ impl TerminalInstance {
             parser,
         })
     }
+}
 
+impl Drop for TerminalInstance {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+    }
+}
+
+impl TerminalInstance {
     pub fn resize_pty(&self, cols: usize, rows: usize) {
         let _ = self.pty_pair.master.resize(PtySize {
             rows: rows as u16,
