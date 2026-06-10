@@ -105,28 +105,30 @@ pub fn draw_text_area(
         // Draw Git Blame inline annotation at the end of the active line
         if ui.config.show_git_blame && line_idx == cursor.line {
             if let Some(blame_str) = ui.get_or_update_blame(active_file_path, line_idx) {
-                let line_len = line_text.chars().count();
-                for (c_idx, c) in blame_str.chars().enumerate() {
-                    let v_idx = line_len + 4 + c_idx;
-                    if v_idx < ui.scroll_x {
-                        continue;
+                if blame_str != "Loading blame..." && !blame_str.is_empty() {
+                    let line_len = line_text.chars().count();
+                    for (c_idx, c) in blame_str.chars().enumerate() {
+                        let v_idx = line_len + 4 + c_idx;
+                        if v_idx < ui.scroll_x {
+                            continue;
+                        }
+                        let blame_char_x = text_area_x + (v_idx - ui.scroll_x) as f32 * ui.buffer_char_width;
+                        if blame_char_x + ui.buffer_char_width > minimap_x {
+                            break;
+                        }
+                        ui.push_char(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            c,
+                            blame_char_x,
+                            baseline_y,
+                            ui.config.theme.syntax_comment,
+                            ui.buffer_font_size,
+                            ui.buffer_char_width,
+                        );
                     }
-                    let blame_char_x = text_area_x + (v_idx - ui.scroll_x) as f32 * ui.buffer_char_width;
-                    if blame_char_x + ui.buffer_char_width > minimap_x {
-                        break;
-                    }
-                    ui.push_char(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        c,
-                        blame_char_x,
-                        baseline_y,
-                        ui.config.theme.syntax_comment,
-                        ui.buffer_font_size,
-                        ui.buffer_char_width,
-                    );
                 }
             }
         }
