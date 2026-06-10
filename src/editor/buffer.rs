@@ -22,6 +22,7 @@ pub struct Buffer {
     redo_stack: Vec<Vec<Action>>,
     current_transaction: Option<Vec<Action>>,
     pub is_modified: bool,
+    initial_lines: Vec<String>,
 }
 
 impl Buffer {
@@ -33,6 +34,7 @@ impl Buffer {
             redo_stack: Vec::new(),
             current_transaction: None,
             is_modified: false,
+            initial_lines: vec![String::new()],
         }
     }
 
@@ -51,11 +53,18 @@ impl Buffer {
         }
 
         self.lines = loaded_lines;
+        self.initial_lines = self.lines.clone();
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.current_transaction = None;
         self.is_modified = false;
         Ok(())
+    }
+
+    /// Mark the buffer as saved by syncing the initial lines.
+    pub fn mark_saved(&mut self) {
+        self.initial_lines = self.lines.clone();
+        self.is_modified = false;
     }
 
     /// Save the buffer contents to a file.
@@ -126,7 +135,6 @@ impl Buffer {
 
     /// Perform raw insertion without touching undo/redo stacks.
     fn insert_raw(&mut self, line: usize, col: usize, text: &str) {
-        self.is_modified = true;
         let cur_line = &mut self.lines[line];
         
         // Clamp column to line boundaries
@@ -160,6 +168,7 @@ impl Buffer {
             }
             self.lines.insert(insert_idx, last_line);
         }
+        self.is_modified = self.lines != self.initial_lines;
     }
 
     /// Delete text from start coordinates to end coordinates.
@@ -188,7 +197,6 @@ impl Buffer {
 
     /// Perform raw deletion without touching undo/redo stacks.
     fn delete_raw(&mut self, start_line: usize, start_col: usize, end_line: usize, end_col: usize) {
-        self.is_modified = true;
         if start_line >= self.lines.len() || end_line >= self.lines.len() {
             return;
         }
@@ -214,6 +222,7 @@ impl Buffer {
         if self.lines.is_empty() {
             self.lines.push(String::new());
         }
+        self.is_modified = self.lines != self.initial_lines;
     }
 
     /// Undo the last transaction. Returns true if successful.
