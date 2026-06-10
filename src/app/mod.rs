@@ -132,7 +132,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                 WindowEvent::RedrawRequested => {
                     let size = window.inner_size();
-                    if ui.show_dock && !state.dock_terminals.is_empty() {
+                    if ui.show_dock && !state.dock_terminals.is_empty() && !state.is_dragging_sidebar && !state.is_dragging_dock_border {
                         let width_content = size.width as f32 - ui.sidebar_width - 16.0;
                         let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
                         let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
