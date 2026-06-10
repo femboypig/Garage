@@ -45,6 +45,9 @@ pub fn handle_action(
                 ui.scroll_x = 0;
                 ui.scroll_y = 0;
             }
+            if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
+                ui.update_git_diff(Some(active_path));
+            }
         }
         UiAction::SaveFile => {
             let active_tab = &mut state.tabs[state.active_tab_idx];
@@ -58,6 +61,7 @@ pub fn handle_action(
             } else {
                 active_tab.buffer.is_modified = false;
                 ui.rebuild_tree();
+                ui.update_git_diff(Some(&path_to_save));
             }
         }
         UiAction::Undo => {
