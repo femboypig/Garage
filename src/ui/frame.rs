@@ -315,6 +315,7 @@ impl UiState {
 
     pub fn update_git_branch(&mut self) {
         let tx = self.git_branch_tx.clone();
+        let proxy = self.event_loop_proxy.clone();
         std::thread::spawn(move || {
             let output = std::process::Command::new("git")
                 .args(&["rev-parse", "--abbrev-ref", "HEAD"])
@@ -325,6 +326,7 @@ impl UiState {
                     let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
                     if !branch.is_empty() {
                         let _ = tx.send(branch);
+                        let _ = proxy.send_event(());
                     }
                 }
             }
@@ -333,6 +335,7 @@ impl UiState {
 
     pub fn update_git_statuses(&mut self) {
         let tx = self.git_status_tx.clone();
+        let proxy = self.event_loop_proxy.clone();
         std::thread::spawn(move || {
             let output = std::process::Command::new("git")
                 .args(&["status", "--porcelain"])
@@ -350,6 +353,7 @@ impl UiState {
                         }
                     }
                     let _ = tx.send(map);
+                    let _ = proxy.send_event(());
                 }
             }
         });
@@ -361,6 +365,7 @@ impl UiState {
             None => return,
         };
         let tx = self.git_diff_tx.clone();
+        let proxy = self.event_loop_proxy.clone();
         std::thread::spawn(move || {
             let output = std::process::Command::new("git")
                 .args(&["diff", "--no-ext-diff", "-U0", "--", &file_path])
@@ -416,6 +421,7 @@ impl UiState {
                     }
                 }
                 let _ = tx.send((file_path, hunks));
+                let _ = proxy.send_event(());
             }
         });
     }
@@ -435,6 +441,7 @@ impl UiState {
             None => return,
         };
         let tx = self.git_blame_file_tx.clone();
+        let proxy = self.event_loop_proxy.clone();
         std::thread::spawn(move || {
             let output = std::process::Command::new("git")
                 .args(&["blame", "--porcelain", &file_path])
@@ -531,6 +538,7 @@ impl UiState {
                     }
 
                     let _ = tx.send((file_path, file_blame_map));
+                    let _ = proxy.send_event(());
                 }
             }
         });
@@ -706,6 +714,8 @@ impl UiState {
             main_height,
             mouse_x,
             mouse_y,
+            tab_paths,
+            tab_modified,
         );
 
         // --- 3. Draw Editor Tabbar, Breadcrumbs, Text Area, Gutter, Scrollbars & Minimap ---
