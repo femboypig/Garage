@@ -67,6 +67,10 @@ pub struct UiState {
     pub git_status_rx: Option<std::sync::mpsc::Receiver<std::collections::HashMap<PathBuf, String>>>,
     pub git_status_tx: std::sync::mpsc::Sender<std::collections::HashMap<PathBuf, String>>,
 
+    pub git_diffs: std::collections::HashMap<String, Vec<types::GitDiffHunk>>,
+    pub git_diff_rx: Option<std::sync::mpsc::Receiver<(String, Vec<types::GitDiffHunk>)>>,
+    pub git_diff_tx: std::sync::mpsc::Sender<(String, Vec<types::GitDiffHunk>)>,
+
     pub command_palette_query: String,
     pub command_palette_selected: usize,
     pub command_palette_scroll: usize,
@@ -122,6 +126,7 @@ impl UiState {
         let (branch_tx, branch_rx) = std::sync::mpsc::channel();
         let (blame_tx, blame_rx) = std::sync::mpsc::channel();
         let (status_tx, status_rx) = std::sync::mpsc::channel();
+        let (diff_tx, diff_rx) = std::sync::mpsc::channel();
 
         let mut languages = std::collections::HashMap::new();
         if let Ok(content) = std::fs::read_to_string("assets/languages.json") {
@@ -174,6 +179,9 @@ impl UiState {
             git_statuses: std::collections::HashMap::new(),
             git_status_rx: Some(status_rx),
             git_status_tx: status_tx,
+            git_diffs: std::collections::HashMap::new(),
+            git_diff_rx: Some(diff_rx),
+            git_diff_tx: diff_tx,
             languages,
             command_palette_query: String::new(),
             command_palette_selected: 0,
