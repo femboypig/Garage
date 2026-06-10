@@ -290,4 +290,46 @@ pub fn draw_sidebar(
             }
         }
     }
+
+    // Draw Sidebar Scrollbar if needed
+    if total_rows > visible_rows {
+        let track_x = activity_bar_width + ui.sidebar_width - 6.0;
+        let track_w = 3.0f32;
+        let track_y = main_y;
+        let track_h = main_height;
+
+        // Draw track
+        ui.push_quad(
+            vertices,
+            indices,
+            track_x,
+            track_y,
+            track_w,
+            track_h,
+            white_uv,
+            ui.config.theme.scrollbar_track,
+        );
+
+        let ratio = visible_rows as f32 / total_rows as f32;
+        let thumb_h = (track_h * ratio).clamp(15.0, track_h);
+        let max_scroll_f = max_scroll as f32;
+        let scroll_ratio = if max_scroll_f > 0.0 {
+            sidebar_scroll as f32 / max_scroll_f
+        } else {
+            0.0
+        };
+        let thumb_y = track_y + scroll_ratio * (track_h - thumb_h);
+
+        // Draw thumb
+        ui.push_quad(
+            vertices,
+            indices,
+            track_x,
+            thumb_y,
+            track_w,
+            thumb_h,
+            white_uv,
+            ui.config.theme.scrollbar_thumb,
+        );
+    }
 }
