@@ -27,26 +27,42 @@ struct ServerInstance {
     cmd_name: String,
 }
 
+fn get_local_lsp_path(subpath: &str) -> String {
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    current_dir.join(".lsp").join(subpath).to_string_lossy().to_string()
+}
+
 fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> {
     let alternatives = match lang_id {
-        "rust" => vec![("rust-analyzer", vec![])],
-        "python" => vec![
-            ("pyright-langserver", vec!["--stdio"]),
-            ("pylsp", vec![]),
+        "rust" => vec![
+            ("rust-analyzer".to_string(), vec![]),
+            (get_local_lsp_path("rust-analyzer"), vec![]),
         ],
-        "go" => vec![("gopls", vec![])],
-        "c" | "cpp" => vec![("clangd", vec![])],
+        "python" => vec![
+            ("pyright-langserver".to_string(), vec!["--stdio".to_string()]),
+            (get_local_lsp_path("node_modules/.bin/pyright-langserver"), vec!["--stdio".to_string()]),
+            ("pylsp".to_string(), vec![]),
+            (get_local_lsp_path("venv/bin/pylsp"), vec![]),
+        ],
+        "go" => vec![
+            ("gopls".to_string(), vec![]),
+            (get_local_lsp_path("go/gopls"), vec![]),
+        ],
+        "c" | "cpp" => vec![("clangd".to_string(), vec![])],
         "typescript" | "javascript" => vec![
-            ("typescript-language-server", vec!["--stdio"]),
-            ("deno", vec!["lsp"]),
+            ("typescript-language-server".to_string(), vec!["--stdio".to_string()]),
+            ("deno".to_string(), vec!["lsp".to_string()]),
         ],
         _ => return Err("No configured LSP server for this language".to_string()),
     };
 
     let mut last_err = String::new();
     for (cmd, args) in alternatives {
+        if cmd.contains('/') && !std::path::Path::new(&cmd).exists() {
+            continue;
+        }
         log::info!("LSP: Trying to spawn {} {:?}", cmd, args);
-        match Command::new(cmd)
+        match Command::new(&cmd)
             .args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -54,7 +70,12 @@ fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> 
             .spawn()
         {
             Ok(child) => {
-                return Ok((child, cmd.to_string()));
+                let cmd_name = std::path::Path::new(&cmd)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                return Ok((child, cmd_name));
             }
             Err(e) => {
                 last_err = format!("{} not found ({:?})", cmd, e.kind());
@@ -74,30 +95,100 @@ fn attempt_auto_install(
     let diag_tx = diagnostics_tx;
     let proxy = event_loop_proxy;
     std::thread::spawn(move || {
-        let (cmd, args) = match lang_id {
-            "rust" => ("rustup", vec!["component", "add", "rust-analyzer"]),
-            "python" => ("pip", vec!["install", "--user", "python-lsp-server"]),
-            "go" => ("go", vec!["install", "golang.org/x/tools/gopls@latest"]),
-            _ => return,
+        let lsp_dir = std::env::current_dir().unwrap_or_default().join(".lsp");
+        let _ = std::fs::create_dir_all(&lsp_dir);
+
+        let install_result = match lang_id {
+            "rust" => {
+                let arch = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86_64" };
+                let os = if cfg!(target_os = "macos") { "apple-darwin" } else { "unknown-linux-gnu" };
+                let url = format!("https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-{}-{}.gz", arch, os);
+                let dest_gz = lsp_dir.join("rust-analyzer.gz");
+                let dest_bin = lsp_dir.join("rust-analyzer");
+
+                log::info!("LSP Auto-Install: Downloading rust-analyzer from {}", url);
+                let curl_status = std::process::Command::new("curl")
+                    .args(&["-L", "-o", dest_gz.to_str().unwrap(), &url])
+                    .status();
+                
+                if curl_status.map(|s| s.success()).unwrap_or(false) {
+                    let gunzip_status = std::process::Command::new("gunzip")
+                        .args(&["-f", dest_gz.to_str().unwrap()])
+                        .status();
+                    
+                    if gunzip_status.map(|s| s.success()).unwrap_or(false) {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if let Ok(metadata) = std::fs::metadata(&dest_bin) {
+                                let mut perms = metadata.permissions();
+                                perms.set_mode(0o755);
+                                let _ = std::fs::set_permissions(&dest_bin, perms);
+                            }
+                        }
+                        Ok(())
+                    } else {
+                        Err("Failed to decompress rust-analyzer".to_string())
+                    }
+                } else {
+                    Err("Failed to download rust-analyzer".to_string())
+                }
+            }
+            "python" => {
+                log::info!("LSP Auto-Install: Installing pyright via npm");
+                let npm_status = std::process::Command::new("npm")
+                    .args(&["install", "--prefix", lsp_dir.to_str().unwrap(), "pyright"])
+                    .status();
+                
+                if npm_status.map(|s| s.success()).unwrap_or(false) {
+                    Ok(())
+                } else {
+                    log::warn!("LSP Auto-Install: npm pyright install failed. Retrying with python-lsp-server via venv");
+                    let venv_status = std::process::Command::new("python3")
+                        .args(&["-m", "venv", lsp_dir.join("venv").to_str().unwrap()])
+                        .status();
+                    
+                    if venv_status.map(|s| s.success()).unwrap_or(false) {
+                        let pip_bin = lsp_dir.join("venv").join("bin").join("pip");
+                        let pip_status = std::process::Command::new(pip_bin)
+                            .args(&["install", "python-lsp-server"])
+                            .status();
+                        if pip_status.map(|s| s.success()).unwrap_or(false) {
+                            Ok(())
+                        } else {
+                            Err("Failed to install python-lsp-server via pip".to_string())
+                        }
+                    } else {
+                        Err("Failed to create venv or install pyright".to_string())
+                    }
+                }
+            }
+            "go" => {
+                log::info!("LSP Auto-Install: Installing gopls via go install");
+                let bin_dir = lsp_dir.join("go");
+                let go_status = std::process::Command::new("go")
+                    .env("GOBIN", bin_dir.to_str().unwrap())
+                    .args(&["install", "golang.org/x/tools/gopls@latest"])
+                    .status();
+                if go_status.map(|s| s.success()).unwrap_or(false) {
+                    Ok(())
+                } else {
+                    Err("Failed to install gopls via go install".to_string())
+                }
+            }
+            _ => Err(format!("Unsupported language {}", lang_id)),
         };
 
-        log::info!("LSP Auto-Install: Spawning command '{}' with args '{:?}'", cmd, args);
-        let status = std::process::Command::new(cmd)
-            .args(&args)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-
-        match status {
-            Ok(s) if s.success() => {
+        match install_result {
+            Ok(_) => {
                 log::info!("LSP Auto-Install: Success for {}", lang_id);
                 let _ = tx.send(LspCommand::RetrySpawn { lang_id: lang_id.to_string() });
             }
-            other => {
-                log::warn!("LSP Auto-Install: Failed for {}: {:?}", lang_id, other);
+            Err(e) => {
+                log::warn!("LSP Auto-Install: Failed for {}: {}", lang_id, e);
                 let display_name = match lang_id {
                     "rust" => "rust-analyzer",
-                    "python" => "python-lsp-server",
+                    "python" => "pyright/pylsp",
                     "go" => "gopls",
                     _ => lang_id,
                 };
