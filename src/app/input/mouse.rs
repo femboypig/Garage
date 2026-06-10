@@ -8,8 +8,9 @@ use crate::renderer::wgpu::GpuContext;
 use crate::ui::{UiState, UiAction};
 use crate::editor::buffer::Buffer;
 use crate::renderer::atlas::FontAtlas;
-use super::state::AppState;
-use super::handler::handle_action;
+use crate::app::state::AppState;
+use crate::app::handler::handle_action;
+
 
 pub fn update_cursor_icon(window: &Window, ui: &UiState, buffer: &Buffer, mouse_x: f32, mouse_y: f32) {
     let size = window.inner_size();
@@ -469,7 +470,7 @@ pub fn handle_mouse_wheel(
         let text_viewport_w = (minimap_x - text_area_x).max(10.0);
         let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
  
-        let max_line_len = state.tabs[state.active_tab_idx].buffer.lines().iter().map(|l| l.chars().count()).max().unwrap_or(0);
+        let max_line_len = state.tabs[state.active_tab_idx].buffer.lines().iter().map(|l: &String| l.chars().count()).max().unwrap_or(0);
         let max_scroll = (max_line_len as isize - visible_cols as isize).max(0);
         let new_scroll = ui.scroll_x as isize + scroll_cols;
         ui.scroll_x = new_scroll.clamp(0, max_scroll) as usize;
