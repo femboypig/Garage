@@ -87,10 +87,16 @@ pub struct UiState {
     pub dock_height: f32,
     pub active_dock_tab: usize,
     pub hovered_dock_tab_close: Option<usize>,
+    pub event_loop_proxy: winit::event_loop::EventLoopProxy<()>,
 }
 
 impl UiState {
-    pub fn new(atlas: &mut FontAtlas, _queue: &wgpu::Queue, config: crate::editor::config::AppConfig) -> Self {
+    pub fn new(
+        atlas: &mut FontAtlas,
+        _queue: &wgpu::Queue,
+        config: crate::editor::config::AppConfig,
+        event_loop_proxy: winit::event_loop::EventLoopProxy<()>,
+    ) -> Self {
         let ui_font_size = config.ui_font_size;
         let buffer_font_size = config.buffer_font_size;
 
@@ -201,6 +207,7 @@ impl UiState {
             dock_height: 250.0,
             active_dock_tab: 0,
             hovered_dock_tab_close: None,
+            event_loop_proxy,
         };
 
         state.rebuild_tree();
