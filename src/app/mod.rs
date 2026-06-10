@@ -12,7 +12,7 @@ use winit::{
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
-use crate::renderer::gpu::{GpuContext, Vertex};
+use crate::renderer::wgpu::{GpuContext, Vertex};
 use crate::ui::UiState;
 
 use self::state::{AppState, Tab};
