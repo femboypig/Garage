@@ -50,7 +50,7 @@ pub fn handle_action(
                 ui.update_git_file_blame(Some(active_path));
                 ui.update_git_statuses();
                 if let Some(ref lsp) = state.lsp_client {
-                    lsp.notify_open(active_path, state.tabs[state.active_tab_idx].buffer.to_string());
+                    lsp.notify_open(active_path, state.tabs[state.active_tab_idx].buffer.lines().join("\n"));
                 }
             }
         }
