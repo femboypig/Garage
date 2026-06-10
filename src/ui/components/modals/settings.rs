@@ -49,7 +49,7 @@ pub fn draw_settings(
         bh: f32,
         is_selected: bool,
         is_hovered: bool,
-        theme: &crate::config::Theme,
+        theme: &crate::editor::config::Theme,
         white_uv: [f32; 2],
         ui_char_width: f32,
         ui_font_ascent: f32,
