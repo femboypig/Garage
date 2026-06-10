@@ -6,7 +6,7 @@ pub mod settings;
 
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::gpu::Vertex;
-use crate::ui::{UiState, MenuType, ModalType};
+use crate::ui::{UiState, ModalType};
 
 pub fn draw_modals(
     ui: &mut UiState,
