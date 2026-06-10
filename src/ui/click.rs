@@ -1,7 +1,7 @@
 use std::path::Path;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
-use super::{UiState, UiAction, MenuType, ModalType, FileNode};
+use super::{UiState, UiAction, MenuType, ModalType};
 
 impl UiState {
     /// Handle click coordinates to determine if a menu, tree, or scroll item was clicked
