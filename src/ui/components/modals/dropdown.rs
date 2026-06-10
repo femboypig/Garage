@@ -88,7 +88,15 @@ pub fn draw_dropdown(
             label,
             menu_x + 12.0,
             (row_y + item_height / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round(),
-            if is_hovered { [0.0, 0.0, 0.0, 1.0] } else { ui.config.theme.modal_text_normal },
+            if is_hovered {
+                if ui.config.theme.name.contains("Dark") {
+                    [1.0, 1.0, 1.0, 1.0]
+                } else {
+                    [0.0, 0.0, 0.0, 1.0]
+                }
+            } else {
+                ui.config.theme.modal_text_normal
+            },
             ui.ui_font_size,
             ui.ui_char_width,
         );
