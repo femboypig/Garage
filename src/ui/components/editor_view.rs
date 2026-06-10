@@ -95,6 +95,7 @@ pub fn draw_editor_view(
         start_idx,
         end_idx,
         max_line_digits,
+        active_file_path,
     );
 
     // 4. Draw Text Area
