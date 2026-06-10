@@ -1,2 +1,2 @@
 pub mod atlas;
-pub mod gpu;
+pub mod wgpu;
