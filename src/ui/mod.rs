@@ -61,6 +61,8 @@ pub struct UiState {
     pub git_blame_rx: Option<std::sync::mpsc::Receiver<(String, usize, Option<String>)>>,
     pub git_blame_tx: std::sync::mpsc::Sender<(String, usize, Option<String>)>,
 
+    pub languages: std::collections::HashMap<String, String>,
+
     pub command_palette_query: String,
     pub command_palette_selected: usize,
     pub command_palette_scroll: usize,
@@ -116,6 +118,19 @@ impl UiState {
         let (branch_tx, branch_rx) = std::sync::mpsc::channel();
         let (blame_tx, blame_rx) = std::sync::mpsc::channel();
 
+        let mut languages = std::collections::HashMap::new();
+        if let Ok(content) = std::fs::read_to_string("assets/languages.json") {
+            if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, String>>(&content) {
+                languages = map;
+            }
+        }
+        if languages.is_empty() {
+            languages.insert("rs".to_string(), "Rust".to_string());
+            languages.insert("json".to_string(), "JSON".to_string());
+            languages.insert("toml".to_string(), "TOML".to_string());
+            languages.insert("md".to_string(), "Markdown".to_string());
+        }
+
         let mut state = Self {
             ui_font_size,
             buffer_font_size,
@@ -151,6 +166,7 @@ impl UiState {
             git_branch_tx: branch_tx,
             git_blame_rx: Some(blame_rx),
             git_blame_tx: blame_tx,
+            languages,
             command_palette_query: String::new(),
             command_palette_selected: 0,
             command_palette_scroll: 0,
