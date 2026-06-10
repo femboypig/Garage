@@ -1,5 +1,5 @@
 use crate::renderer::atlas::FontAtlas;
-use crate::renderer::gpu::Vertex;
+use crate::renderer::wgpu::Vertex;
 use crate::terminal::TerminalInstance;
 use crate::ui::UiState;
 
