@@ -649,8 +649,8 @@ impl UiState {
             }
         }
 
-        // Throttled git branch, status and diff check
-        if self.last_branch_check.is_none() || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(5) {
+        // Throttled git branch, status and diff check (every 1 second)
+        if self.last_branch_check.is_none() || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(1) {
             if self.config.show_git_branch {
                 self.update_git_branch();
             }

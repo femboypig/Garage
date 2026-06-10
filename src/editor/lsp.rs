@@ -48,7 +48,84 @@ impl LspClient {
             let stdout = child.stdout.take().expect("Failed to open stdout");
             let mut stdout_reader = BufReader::new(stdout);
 
-            // Spawn Reader thread
+            // Initialize rust-analyzer
+            let current_dir = std::env::current_dir().unwrap_or_default();
+            let root_uri = format!("file://{}", current_dir.to_string_lossy());
+            
+            let init_msg = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "processId": std::process::id(),
+                    "rootUri": root_uri,
+                    "capabilities": {
+                        "textDocument": {
+                            "publishDiagnostics": {
+                                "relatedInformation": true
+                            },
+                            "synchronization": {
+                                "didOpen": true,
+                                "didChange": true,
+                                "didSave": true,
+                                "willSave": false,
+                                "willSaveWaitUntil": false
+                            }
+                        }
+                    },
+                    "workspaceFolders": [{
+                        "uri": root_uri,
+                        "name": current_dir.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("workspace")
+                    }]
+                }
+            });
+
+            log::info!("LSP: Sending initialize request...");
+            if let Err(e) = write_message(&mut stdin, &init_msg.to_string()) {
+                log::warn!("LSP: Failed to write initialize message: {:?}", e);
+                return;
+            }
+
+            // Wait for initialize response synchronously (MUST come before initialized notification)
+            log::info!("LSP: Waiting for initialize response...");
+            match read_message(&mut stdout_reader) {
+                Ok(resp_str) => {
+                    if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&resp_str) {
+                        if resp.get("error").is_some() {
+                            log::warn!("LSP: Initialize returned error: {}", resp["error"]);
+                            return;
+                        }
+                        log::info!("LSP: Initialize response received successfully");
+                    }
+                }
+                Err(e) => {
+                    log::warn!("LSP: Failed to read initialize response: {:?}", e);
+                    return;
+                }
+            }
+
+            // NOW send initialized notification (per LSP spec, only after receiving response)
+            let initialized_msg = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "initialized",
+                "params": {}
+            });
+            if let Err(e) = write_message(&mut stdin, &initialized_msg.to_string()) {
+                log::warn!("LSP: Failed to write initialized notification: {:?}", e);
+                return;
+            }
+            log::info!("LSP: Handshake complete, starting reader thread");
+
+            // Send notification that we are online
+            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                file_path: "".to_string(),
+                errors: 0,
+                warnings: 0,
+            });
+
+            // Now spawn Reader thread — after handshake is done
             let diag_tx = diagnostics_tx.clone();
             std::thread::spawn(move || {
                 loop {
@@ -78,6 +155,7 @@ impl LspClient {
                                                     }
                                                 }
                                                 
+                                                log::info!("LSP: Diagnostics for {}: {} errors, {} warnings", file_path, errors, warnings);
                                                 let _ = diag_tx.send(LspDiagnosticsUpdate {
                                                     file_path,
                                                     errors,
@@ -95,45 +173,6 @@ impl LspClient {
                         }
                     }
                 }
-            });
-
-            // Initialize rust-analyzer
-            let current_dir = std::env::current_dir().unwrap_or_default();
-            let root_uri = format!("file://{}", current_dir.to_string_lossy());
-            
-            let init_msg = serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "processId": std::process::id(),
-                    "rootUri": root_uri,
-                    "capabilities": {},
-                    "workspaceFolders": null
-                }
-            });
-
-            if let Err(e) = write_message(&mut stdin, &init_msg.to_string()) {
-                log::warn!("LSP: Failed to write initialize message: {:?}", e);
-                return;
-            }
-
-            // Send initialized notification
-            let initialized_msg = serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "initialized",
-                "params": {}
-            });
-            if let Err(e) = write_message(&mut stdin, &initialized_msg.to_string()) {
-                log::warn!("LSP: Failed to write initialized notification: {:?}", e);
-                return;
-            }
-
-            // Send notification that we are online
-            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                file_path: "".to_string(),
-                errors: 0,
-                warnings: 0,
             });
 
             let mut document_versions = HashMap::<String, usize>::new();
@@ -172,18 +211,21 @@ impl LspClient {
                     Ok(LspCommand::OpenFile { path, text }) => {
                         let version = document_versions.entry(path.clone()).or_insert(0);
                         *version += 1;
+                        // Detect language from file extension
+                        let lang_id = detect_language_id(&path);
                         let open_msg = serde_json::json!({
                             "jsonrpc": "2.0",
                             "method": "textDocument/didOpen",
                             "params": {
                                 "textDocument": {
                                     "uri": format!("file://{}", path),
-                                    "languageId": "rust",
+                                    "languageId": lang_id,
                                     "version": *version,
                                     "text": text
                                 }
                             }
                         });
+                        log::info!("LSP: didOpen {} (lang: {})", path, lang_id);
                         let _ = write_message(&mut stdin, &open_msg.to_string());
                     }
                     Ok(LspCommand::ChangeFile { path, text }) => {
@@ -203,6 +245,7 @@ impl LspClient {
                                 }
                             }
                         });
+                        log::info!("LSP: didSave {}", path);
                         let _ = write_message(&mut stdin, &save_msg.to_string());
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
@@ -265,4 +308,37 @@ fn write_message<W: Write>(writer: &mut W, msg: &str) -> Result<(), Box<dyn std:
     writer.write_all(content.as_bytes())?;
     writer.flush()?;
     Ok(())
+}
+
+fn detect_language_id(path: &str) -> &'static str {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    match ext {
+        "rs" => "rust",
+        "toml" => "toml",
+        "json" => "json",
+        "md" => "markdown",
+        "py" => "python",
+        "js" => "javascript",
+        "ts" => "typescript",
+        "tsx" => "typescriptreact",
+        "jsx" => "javascriptreact",
+        "html" => "html",
+        "css" => "css",
+        "scss" => "scss",
+        "yaml" | "yml" => "yaml",
+        "c" => "c",
+        "cpp" | "cc" | "cxx" => "cpp",
+        "h" | "hpp" => "cpp",
+        "go" => "go",
+        "sh" | "bash" => "shellscript",
+        "lua" => "lua",
+        "rb" => "ruby",
+        "java" => "java",
+        "xml" => "xml",
+        "sql" => "sql",
+        _ => "plaintext",
+    }
 }
