@@ -1,7 +1,7 @@
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
-use crate::renderer::gpu::Vertex;
+use crate::renderer::wgpu::Vertex;
 use crate::ui::UiState;
 
 pub fn draw_statusbar(
@@ -139,14 +139,12 @@ pub fn draw_statusbar(
     let is_term_hover = ui.active_modal.is_none() && mouse_y >= status_y && mouse_x >= term_btn_x && mouse_x < term_btn_x + sb_btn_w;
 
     // Terminal Button
-    let term_bg = if ui.show_dock {
-        [0.2, 0.5, 0.8, 0.35] // blue tint when open
-    } else if is_term_hover {
+    let term_bg = if is_term_hover {
         ui.config.theme.titlebar_hover_bg
     } else {
         ui.config.theme.statusbar_bg
     };
     ui.push_quad(vertices, indices, term_btn_x, status_y + 1.0, sb_btn_w, sb_btn_h, white_uv, term_bg);
-    let term_color = if ui.show_dock { [0.3, 0.6, 0.95, 1.0] } else { ui.config.theme.statusbar_text };
+    let term_color = if ui.show_dock { [0.38, 0.69, 0.94, 1.0] } else { ui.config.theme.statusbar_text };
     ui.push_icon(vertices, indices, atlas, queue, "terminal", term_btn_x + (sb_btn_w - icon_sz) / 2.0, icon_y, term_color, icon_sz);
 }
