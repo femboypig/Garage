@@ -276,8 +276,18 @@ pub fn handle_mouse_input(
                         UiAction::None => {
                             let active_tab = &mut state.tabs[state.active_tab_idx];
                             let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
-                            let status_y = (size.height as f32 - ui.status_height).round();
-                            let editor_height = status_y - editor_top - 14.0;
+                            
+                            let main_y = ui.titlebar_height;
+                            let mut dock_start_y = size.height as f32 - ui.status_height;
+                            if ui.show_dock {
+                                dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
+                            }
+                            let editor_bottom_limit = if ui.show_dock {
+                                dock_start_y
+                            } else {
+                                size.height as f32 - ui.status_height
+                            };
+                            let editor_height = editor_bottom_limit - editor_top - 14.0;
                             
                             let max_line_digits = active_tab.buffer.len().to_string().len().max(3);
                             let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
@@ -287,11 +297,11 @@ pub fn handle_mouse_input(
                             let sb_x = size.width as f32 - scrollbar_width;
                             let minimap_x = sb_x - minimap_width;
                             let text_viewport_w = (minimap_x - text_area_x).max(10.0);
- 
+
                             // 1. Check if click is on minimap
-                            if state.mouse_x >= minimap_x && state.mouse_x < sb_x && state.mouse_y >= editor_top && state.mouse_y < size.height as f32 - ui.status_height {
+                            if state.mouse_x >= minimap_x && state.mouse_x < sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit {
                                 state.is_dragging_minimap = true;
-                                let total_editor_height = status_y - editor_top;
+                                let total_editor_height = editor_bottom_limit - editor_top;
                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                 let max_scroll = (active_tab.buffer.len() as isize - visible_lines as isize).max(0) as f32;
                                 let relative_y = state.mouse_y - editor_top;
@@ -308,7 +318,7 @@ pub fn handle_mouse_input(
                                 }
                             }
                             // 2. Check if click is on scrollbar
-                            else if state.mouse_x >= sb_x && state.mouse_y >= editor_top && state.mouse_y < size.height as f32 - ui.status_height {
+                            else if state.mouse_x >= sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit {
                                 state.is_dragging_scroll = true;
                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                 let ratio = visible_lines as f32 / active_tab.buffer.len() as f32;
@@ -329,7 +339,7 @@ pub fn handle_mouse_input(
                                 }
                             }
                             // 3. Check if click is on horizontal scrollbar
-                            else if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= size.height as f32 - ui.status_height - 14.0 && state.mouse_y < size.height as f32 - ui.status_height {
+                            else if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_bottom_limit - 14.0 && state.mouse_y < editor_bottom_limit {
                                 state.is_dragging_horizontal_scroll = true;
                                 let max_line_len = ui.get_max_line_len(&active_tab.buffer, active_tab.path.as_deref(), active_tab.cursor.line);
                                 let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
@@ -351,7 +361,7 @@ pub fn handle_mouse_input(
                                 }
                             } else {
                                  // Click inside editor area
-                                 if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < size.height as f32 - ui.status_height - 14.0 {
+                                 if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit - 14.0 {
                                      active_tab.buffer.commit_transaction();
                                      state.is_dragging = true;
  
