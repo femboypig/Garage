@@ -426,7 +426,12 @@ pub struct TerminalInstance {
 }
 
 impl TerminalInstance {
-    pub fn new(cols: usize, rows: usize, window: std::sync::Arc<winit::window::Window>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(
+        cols: usize,
+        rows: usize,
+        window: std::sync::Arc<winit::window::Window>,
+        event_loop_proxy: winit::event_loop::EventLoopProxy<()>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let pty_system = native_pty_system();
         let pty_pair = pty_system.openpty(PtySize {
             rows: rows as u16,
@@ -457,6 +462,7 @@ impl TerminalInstance {
 
         // Background reader thread
         let win = window.clone();
+        let proxy = event_loop_proxy.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             while let Ok(n) = pty_reader.read(&mut buf) {
@@ -466,6 +472,7 @@ impl TerminalInstance {
                 if tx.send(buf[..n].to_vec()).is_err() {
                     break;
                 }
+                let _ = proxy.send_event(());
                 win.request_redraw();
             }
         });
@@ -491,5 +498,39 @@ impl TerminalInstance {
             pixel_width: 0,
             pixel_height: 0,
         });
+    }
+
+    pub fn get_cwd_title(&self) -> Option<String> {
+        #[cfg(target_os = "linux")]
+        {
+            // Try to get process ID and read from /proc/PID/cwd
+            if let Some(pid) = self.child.process_id() {
+                if let Ok(target) = std::fs::read_link(format!("/proc/{}/cwd", pid)) {
+                    if let Some(dir_name) = target.file_name().and_then(|f| f.to_str()) {
+                        return Some(dir_name.to_string());
+                    } else if target.to_str() == Some("/") {
+                        return Some("/".to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn get_display_name(&self, idx: usize) -> String {
+        let raw_name = if let Some(cwd_title) = self.get_cwd_title() {
+            cwd_title
+        } else if self.grid.title.is_empty() {
+            format!("terminal-{}", idx + 1)
+        } else {
+            self.grid.title.clone()
+        };
+        
+        let mut name = raw_name;
+        if name.chars().count() > 20 {
+            let prefix: String = name.chars().take(17).collect();
+            name = format!("{}...", prefix);
+        }
+        name
     }
 }
