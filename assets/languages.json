@@ -1,0 +1,20 @@
+{
+  "rs": "Rust",
+  "json": "JSON",
+  "toml": "TOML",
+  "md": "Markdown",
+  "js": "JavaScript",
+  "ts": "TypeScript",
+  "html": "HTML",
+  "css": "CSS",
+  "wgsl": "WGSL",
+  "sh": "Shell",
+  "py": "Python",
+  "go": "Go",
+  "cpp": "C++",
+  "c": "C",
+  "h": "C Header",
+  "yaml": "YAML",
+  "yml": "YAML",
+  "rsvg": "SVG"
+}
