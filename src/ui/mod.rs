@@ -58,10 +58,14 @@ pub struct UiState {
 
     pub git_branch_rx: Option<std::sync::mpsc::Receiver<String>>,
     pub git_branch_tx: std::sync::mpsc::Sender<String>,
-    pub git_blame_rx: Option<std::sync::mpsc::Receiver<(String, usize, Option<String>)>>,
-    pub git_blame_tx: std::sync::mpsc::Sender<(String, usize, Option<String>)>,
+    
+    pub git_file_blames: std::collections::HashMap<String, std::collections::HashMap<usize, String>>,
+    pub git_blame_file_rx: Option<std::sync::mpsc::Receiver<(String, std::collections::HashMap<usize, String>)>>,
+    pub git_blame_file_tx: std::sync::mpsc::Sender<(String, std::collections::HashMap<usize, String>)>,
 
-    pub languages: std::collections::HashMap<String, String>,
+    pub lsp_diagnostics: std::collections::HashMap<String, (usize, usize)>,
+    pub lsp_diagnostics_rx: Option<std::sync::mpsc::Receiver<crate::editor::lsp::LspDiagnosticsUpdate>>,
+    pub lsp_status: String,
 
     pub git_statuses: std::collections::HashMap<PathBuf, String>,
     pub git_status_rx: Option<std::sync::mpsc::Receiver<std::collections::HashMap<PathBuf, String>>>,
@@ -70,6 +74,8 @@ pub struct UiState {
     pub git_diffs: std::collections::HashMap<String, Vec<types::GitDiffHunk>>,
     pub git_diff_rx: Option<std::sync::mpsc::Receiver<(String, Vec<types::GitDiffHunk>)>>,
     pub git_diff_tx: std::sync::mpsc::Sender<(String, Vec<types::GitDiffHunk>)>,
+
+    pub languages: std::collections::HashMap<String, String>,
 
     pub command_palette_query: String,
     pub command_palette_selected: usize,
@@ -127,6 +133,7 @@ impl UiState {
         let (blame_tx, blame_rx) = std::sync::mpsc::channel();
         let (status_tx, status_rx) = std::sync::mpsc::channel();
         let (diff_tx, diff_rx) = std::sync::mpsc::channel();
+        let (blame_file_tx, blame_file_rx) = std::sync::mpsc::channel();
 
         let mut languages = std::collections::HashMap::new();
         if let Ok(content) = std::fs::read_to_string("assets/languages.json") {
@@ -176,6 +183,9 @@ impl UiState {
             git_branch_tx: branch_tx,
             git_blame_rx: Some(blame_rx),
             git_blame_tx: blame_tx,
+            git_file_blames: std::collections::HashMap::new(),
+            git_blame_file_rx: Some(blame_file_rx),
+            git_blame_file_tx: blame_file_tx,
             git_statuses: std::collections::HashMap::new(),
             git_status_rx: Some(status_rx),
             git_status_tx: status_tx,
@@ -183,6 +193,9 @@ impl UiState {
             git_diff_rx: Some(diff_rx),
             git_diff_tx: diff_tx,
             languages,
+            lsp_diagnostics: std::collections::HashMap::new(),
+            lsp_diagnostics_rx: None,
+            lsp_status: "starting".to_string(),
             command_palette_query: String::new(),
             command_palette_selected: 0,
             command_palette_scroll: 0,
