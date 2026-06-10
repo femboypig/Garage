@@ -81,7 +81,11 @@ pub fn draw_titlebar(
         }
         
         let label_color = if is_active || is_hovered {
-            [0.0, 0.0, 0.0, 1.0]
+            if ui.config.theme.name.contains("Dark") {
+                [1.0, 1.0, 1.0, 1.0]
+            } else {
+                [0.0, 0.0, 0.0, 1.0]
+            }
         } else {
             ui.config.theme.titlebar_text
         };
