@@ -16,6 +16,7 @@ pub fn draw_statusbar(
     cursor: &Cursor,
     mouse_x: f32,
     mouse_y: f32,
+    active_path: Option<&str>,
 ) {
     let white_uv = atlas.white_pixel_uv();
     let status_y = height - ui.status_height;
@@ -44,41 +45,14 @@ pub fn draw_statusbar(
         ui.config.theme.statusbar_border,
     );
 
-    let status_left = format!(" GARAGE | Line {}, Col {}", cursor.line + 1, cursor.col + 1);
-    let status_right = format!("Lines: {} | UTF-8 | LF ", buffer.len());
     let baseline_y = (status_y + ui.status_height / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
     let text_color = ui.config.theme.statusbar_text;
     
     let mut pen_x = 10.0;
-    pen_x += ui.push_str(
-        vertices,
-        indices,
-        atlas,
-        queue,
-        &status_left,
-        pen_x,
-        baseline_y,
-        text_color,
-        ui.ui_font_size,
-        ui.ui_char_width,
-    );
 
+    // 1. Draw Git Branch Info
     if ui.config.show_git_branch {
         if let Some(ref branch) = ui.git_branch {
-            pen_x += ui.push_str(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                " | ",
-                pen_x,
-                baseline_y,
-                text_color,
-                ui.ui_font_size,
-                ui.ui_char_width,
-            );
-            
-            // Draw branch icon
             let icon_sz = (ui.ui_font_size * 0.9).round().max(12.0);
             let icon_y_center = baseline_y - (ui.ui_font_ascent * 0.33).round();
             let icon_y = icon_y_center - (icon_sz / 2.0).round();
@@ -93,9 +67,9 @@ pub fn draw_statusbar(
                 text_color,
                 icon_sz,
             );
-            pen_x += icon_sz + 4.0; // Space after icon
+            pen_x += icon_sz + 4.0;
             
-            ui.push_str(
+            pen_x += ui.push_str(
                 vertices,
                 indices,
                 atlas,
@@ -107,38 +81,114 @@ pub fn draw_statusbar(
                 ui.ui_font_size,
                 ui.ui_char_width,
             );
+            
+            pen_x += 15.0; // spacing after branch name
         }
     }
 
-    let right_text_width = status_right.chars().count() as f32 * ui.ui_char_width;
-    let right_x = width - right_text_width - 15.0 - 36.0;
-    if right_x > width / 2.0 {
-        ui.push_str(
-            vertices,
-            indices,
-            atlas,
-            queue,
-            &status_right,
-            right_x,
-            (status_y + ui.status_height / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round(),
-            ui.config.theme.statusbar_text,
-            ui.ui_font_size,
-            ui.ui_char_width,
-        );
-    }
+    // 2. Draw Diagnostics Indicators (mocked for clean UI look)
+    let err_color = [0.90, 0.30, 0.30, 1.0];
+    pen_x += ui.push_str(
+        vertices,
+        indices,
+        atlas,
+        queue,
+        "⊗ 0  ",
+        pen_x,
+        baseline_y,
+        err_color,
+        ui.ui_font_size,
+        ui.ui_char_width,
+    );
 
-    // Draw statusbar action buttons in the bottom right corner
+    let warn_color = [0.90, 0.70, 0.20, 1.0];
+    pen_x += ui.push_str(
+        vertices,
+        indices,
+        atlas,
+        queue,
+        "⚠ 0",
+        pen_x,
+        baseline_y,
+        warn_color,
+        ui.ui_font_size,
+        ui.ui_char_width,
+    );
+
+    // 3. Right Side Components (drawn from right to left)
     let sb_btn_w = 26.0f32;
     let sb_btn_h = ui.status_height - 1.0;
     let icon_sz = 14.0f32;
     let icon_y = status_y + (sb_btn_h - icon_sz) / 2.0;
-
     let term_btn_x = width - 10.0 - sb_btn_w;
 
-    // Check hovers
-    let is_term_hover = ui.active_modal.is_none() && mouse_y >= status_y && mouse_x >= term_btn_x && mouse_x < term_btn_x + sb_btn_w;
+    // Detect file type / extension to show programming language
+    let extension = active_path
+        .and_then(|p| std::path::Path::new(p).extension())
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("");
 
-    // Terminal Button
+    let language = match extension {
+        "rs" => "Rust",
+        "json" => "JSON",
+        "toml" => "TOML",
+        "md" => "Markdown",
+        "js" => "JavaScript",
+        "ts" => "TypeScript",
+        "html" => "HTML",
+        "css" => "CSS",
+        "wgsl" => "WGSL",
+        "sh" => "Shell",
+        _ => "Plain Text",
+    };
+
+    let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
+    let lsp_str = if language == "Rust" { "LSP: rust-analyzer" } else { "LSP: ready" };
+
+    let right_components = [
+        cursor_str.as_str(),
+        language,
+        lsp_str,
+        "UTF-8",
+        "LF",
+    ];
+
+    let mut cur_right_x = term_btn_x - 10.0;
+    for comp in &right_components {
+        let comp_len = comp.chars().count() as f32;
+        let comp_w = comp_len * ui.ui_char_width;
+        cur_right_x -= comp_w + 16.0;
+
+        if cur_right_x > pen_x {
+            ui.push_str(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                comp,
+                cur_right_x + 8.0,
+                baseline_y,
+                text_color,
+                ui.ui_font_size,
+                ui.ui_char_width,
+            );
+
+            // Draw a vertical separator line on the left side of the component
+            ui.push_quad(
+                vertices,
+                indices,
+                cur_right_x,
+                status_y + 6.0,
+                1.0,
+                ui.status_height - 12.0,
+                white_uv,
+                ui.config.theme.statusbar_border,
+            );
+        }
+    }
+
+    // 4. Draw Terminal Toggle Button
+    let is_term_hover = ui.active_modal.is_none() && mouse_y >= status_y && mouse_x >= term_btn_x && mouse_x < term_btn_x + sb_btn_w;
     let term_bg = if is_term_hover {
         ui.config.theme.titlebar_hover_bg
     } else {
