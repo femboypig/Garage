@@ -402,6 +402,7 @@ impl TerminalInstance {
 
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
         let mut cmd = CommandBuilder::new(&shell);
+        cmd.env("TERM", "xterm-256color");
         
         if let Ok(current_dir) = std::env::current_dir() {
             cmd.cwd(current_dir);
