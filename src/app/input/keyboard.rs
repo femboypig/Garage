@@ -57,6 +57,7 @@ pub fn handle_keyboard_input(
         if let Some(bytes) = bytes_to_write {
             let _ = active_term.pty_writer.write_all(&bytes);
             let _ = active_term.pty_writer.flush();
+            active_term.grid.scroll_offset = 0;
         }
         window.request_redraw();
         return;
