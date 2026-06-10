@@ -35,6 +35,11 @@ impl LspClient {
                 Ok(c) => c,
                 Err(e) => {
                     log::warn!("LSP: Failed to spawn rust-analyzer: {:?}", e);
+                    let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                        file_path: "".to_string(),
+                        errors: 9999,
+                        warnings: 0,
+                    });
                     return;
                 }
             };
@@ -123,6 +128,13 @@ impl LspClient {
                 log::warn!("LSP: Failed to write initialized notification: {:?}", e);
                 return;
             }
+
+            // Send notification that we are online
+            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                file_path: "".to_string(),
+                errors: 0,
+                warnings: 0,
+            });
 
             let mut document_versions = HashMap::<String, usize>::new();
             let pending_changes = Arc::new(Mutex::new(HashMap::<String, (String, usize, bool)>::new()));
