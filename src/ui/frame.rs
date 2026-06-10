@@ -331,6 +331,30 @@ impl UiState {
         });
     }
 
+    pub fn update_git_statuses(&mut self) {
+        let tx = self.git_status_tx.clone();
+        std::thread::spawn(move || {
+            let output = std::process::Command::new("git")
+                .args(&["status", "--porcelain"])
+                .output();
+            
+            if let Ok(out) = output {
+                if out.status.success() {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    let mut map = std::collections::HashMap::new();
+                    for line in stdout.lines() {
+                        if line.len() > 3 {
+                            let status = line[0..2].to_string();
+                            let file_path = std::path::PathBuf::from(line[3..].trim().to_string());
+                            map.insert(file_path, status);
+                        }
+                    }
+                    let _ = tx.send(map);
+                }
+            }
+        });
+    }
+
     pub fn get_or_update_blame(&mut self, file_path: Option<&str>, line_idx: usize) -> Option<String> {
         let file_path = file_path?;
         // Check if cached
@@ -512,14 +536,20 @@ impl UiState {
             }
         }
 
-        // Throttled git branch check
-        if self.config.show_git_branch {
-            if self.last_branch_check.is_none() || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(5) {
-                self.update_git_branch();
-                self.last_branch_check = Some(std::time::Instant::now());
+        // Drain git status channel
+        if let Some(ref rx) = self.git_status_rx {
+            while let Ok(statuses) = rx.try_recv() {
+                self.git_statuses = statuses;
             }
-        } else {
-            self.git_branch = None;
+        }
+
+        // Throttled git branch and status check
+        if self.last_branch_check.is_none() || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(5) {
+            if self.config.show_git_branch {
+                self.update_git_branch();
+            }
+            self.update_git_statuses();
+            self.last_branch_check = Some(std::time::Instant::now());
         }
         let main_y = self.titlebar_height;
         let main_height = height - self.titlebar_height - self.status_height;
