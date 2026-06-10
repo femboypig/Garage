@@ -118,13 +118,21 @@ pub fn handle_cursor_moved(
         let minimap_line_height = (ui.buffer_font_size * 0.22).round().max(2.0);
         let minimap_total_h = state.tabs[state.active_tab_idx].buffer.len() as f32 * minimap_line_height;
         
-        if minimap_total_h > total_editor_height {
+        let active_tab = &mut state.tabs[state.active_tab_idx];
+        let clicked_line = if minimap_total_h > total_editor_height {
             let scroll_ratio = (relative_y / total_editor_height).clamp(0.0, 1.0);
-            ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+            (scroll_ratio * (active_tab.buffer.len() - 1) as f32).round() as usize
         } else {
-            let line_idx = (relative_y / minimap_line_height).floor() as usize;
-            ui.scroll_y = line_idx.saturating_sub(visible_lines / 2).min(max_scroll as usize);
-        }
+            (relative_y / minimap_line_height).floor() as usize
+        };
+        let clicked_line = clicked_line.min(active_tab.buffer.len() - 1);
+        
+        active_tab.cursor.line = clicked_line;
+        let line_chars = active_tab.buffer.lines()[clicked_line].chars().count();
+        active_tab.cursor.col = active_tab.cursor.col.min(line_chars);
+        active_tab.cursor.intended_col = active_tab.cursor.col;
+        
+        ui.scroll_y = clicked_line.saturating_sub(visible_lines / 2).min(max_scroll as usize);
     } else if state.is_dragging {
         let max_line_digits = state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3);
         let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
@@ -158,6 +166,17 @@ pub fn handle_cursor_moved(
         ui.scroll_to_cursor(&state.tabs[state.active_tab_idx].cursor, state.tabs[state.active_tab_idx].buffer.len(), size.width as f32, size.height as f32);
     }
  
+    let any_dragging = state.is_dragging_sidebar
+        || state.is_dragging_dock_border
+        || state.is_dragging_scroll
+        || state.is_dragging_horizontal_scroll
+        || state.is_dragging_minimap
+        || state.is_dragging;
+
+    if any_dragging {
+        window.request_redraw();
+    }
+
     update_cursor_icon(window, ui, &state.tabs[state.active_tab_idx].buffer, state.mouse_x, state.mouse_y);
 }
 
@@ -309,13 +328,21 @@ pub fn handle_mouse_input(
                                 let minimap_line_height = (ui.buffer_font_size * 0.22).round().max(2.0);
                                 let minimap_total_h = active_tab.buffer.len() as f32 * minimap_line_height;
                                 
-                                if minimap_total_h > total_editor_height {
+                                let clicked_line = if minimap_total_h > total_editor_height {
                                     let scroll_ratio = (relative_y / total_editor_height).clamp(0.0, 1.0);
-                                    ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+                                    (scroll_ratio * (active_tab.buffer.len() - 1) as f32).round() as usize
                                 } else {
-                                    let line_idx = (relative_y / minimap_line_height).floor() as usize;
-                                    ui.scroll_y = line_idx.saturating_sub(visible_lines / 2).min(max_scroll as usize);
-                                }
+                                    (relative_y / minimap_line_height).floor() as usize
+                                };
+                                let clicked_line = clicked_line.min(active_tab.buffer.len() - 1);
+                                
+                                active_tab.cursor.line = clicked_line;
+                                let line_chars = active_tab.buffer.lines()[clicked_line].chars().count();
+                                active_tab.cursor.col = active_tab.cursor.col.min(line_chars);
+                                active_tab.cursor.intended_col = active_tab.cursor.col;
+                                
+                                ui.scroll_y = clicked_line.saturating_sub(visible_lines / 2).min(max_scroll as usize);
+                                window.request_redraw();
                             }
                             // 2. Check if click is on scrollbar
                             else if state.mouse_x >= sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit {
