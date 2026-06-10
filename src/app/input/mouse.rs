@@ -431,8 +431,32 @@ pub fn handle_mouse_wheel(
         return;
     }
  
-    // Handle Sidebar Scroll
+    // Handle Terminal Dock Scroll
     let size = window.inner_size();
+    let main_y = ui.titlebar_height;
+    let mut dock_start_y = size.height as f32 - ui.status_height;
+    if ui.show_dock {
+        dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
+    }
+    let is_mouse_over_terminal = ui.show_dock 
+        && state.mouse_y >= dock_start_y + 28.0 
+        && state.mouse_y < size.height as f32 - ui.status_height
+        && state.mouse_x >= ui.sidebar_width;
+
+    if is_mouse_over_terminal && !state.dock_terminals.is_empty() {
+        let scroll_lines = match delta {
+            MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
+            MouseScrollDelta::PixelDelta(pos) => ((pos.y / 15.0) * 3.0) as isize * -1,
+        };
+        let active_term = &mut state.dock_terminals[state.active_terminal_idx];
+        let max_scroll = active_term.grid.scrollback.len() as isize;
+        let new_offset = active_term.grid.scroll_offset as isize + scroll_lines;
+        active_term.grid.scroll_offset = new_offset.clamp(0, max_scroll) as usize;
+        window.request_redraw();
+        return;
+    }
+
+    // Handle Sidebar Scroll
     let sidebar_top = ui.titlebar_height;
     let sidebar_bottom = size.height as f32 - ui.status_height;
     if ui.sidebar_width > 0.0 && state.mouse_x >= 0.0 && state.mouse_x < ui.sidebar_width && state.mouse_y >= sidebar_top && state.mouse_y < sidebar_bottom {
