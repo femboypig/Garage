@@ -47,6 +47,8 @@ pub fn handle_action(
             }
             if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
                 ui.update_git_diff(Some(active_path));
+                ui.update_git_file_blame(Some(active_path));
+                ui.update_git_statuses();
             }
         }
         UiAction::SaveFile => {
@@ -62,6 +64,8 @@ pub fn handle_action(
                 active_tab.buffer.is_modified = false;
                 ui.rebuild_tree();
                 ui.update_git_diff(Some(&path_to_save));
+                ui.update_git_file_blame(Some(&path_to_save));
+                ui.update_git_statuses();
             }
         }
         UiAction::Undo => {
