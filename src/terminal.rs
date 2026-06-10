@@ -53,6 +53,7 @@ pub struct TerminalGrid {
     pub current_fg: [f32; 4],
     pub current_bg: [f32; 4],
     pub bold: bool,
+    pub title: String,
 }
 
 impl TerminalGrid {
@@ -66,6 +67,7 @@ impl TerminalGrid {
             current_fg: DEFAULT_FG,
             current_bg: DEFAULT_BG,
             bold: false,
+            title: "terminal".to_string(),
         }
     }
 
@@ -323,6 +325,17 @@ impl vte::Perform for TerminalGrid {
                 self.cursor_x = self.cursor_x.saturating_sub(count);
             }
             _ => {}
+        }
+    }
+
+    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
+        if params.len() >= 2 {
+            let action = params[0];
+            if action == b"0" || action == b"2" {
+                if let Ok(title) = std::str::from_utf8(params[1]) {
+                    self.title = title.to_string();
+                }
+            }
         }
     }
 }
