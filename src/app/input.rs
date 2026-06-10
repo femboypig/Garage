@@ -3,7 +3,7 @@ use winit::window::Window;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::keyboard::{Key, NamedKey, PhysicalKey};
 use winit::event_loop::EventLoopWindowTarget;
-use crate::renderer::gpu::GpuContext;
+use crate::renderer::wgpu::GpuContext;
 use std::time::Instant;
 use crate::ui::{UiState, UiAction};
 use crate::editor::buffer::Buffer;
