@@ -21,12 +21,13 @@ pub fn handle_action(
     match action {
         UiAction::OpenFile(path) => {
             let path_str = path.to_string_lossy().to_string();
-            if let Some(existing_idx) = state.tabs.iter().position(|t| t.path.as_ref() == Some(&path_str)) {
+            let is_new = if let Some(existing_idx) = state.tabs.iter().position(|t| t.path.as_ref() == Some(&path_str)) {
                 state.tabs[state.active_tab_idx].scroll_x = ui.scroll_x;
                 state.tabs[state.active_tab_idx].scroll_y = ui.scroll_y;
                 state.active_tab_idx = existing_idx;
                 ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
                 ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
+                false
             } else {
                 let mut new_buf = Buffer::new();
                 if let Err(e) = new_buf.load_file(&path_str) {
@@ -44,13 +45,17 @@ pub fn handle_action(
                 state.active_tab_idx = state.tabs.len() - 1;
                 ui.scroll_x = 0;
                 ui.scroll_y = 0;
-            }
+                true
+            };
             if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
                 ui.update_git_diff(Some(active_path));
                 ui.update_git_file_blame(Some(active_path));
                 ui.update_git_statuses();
                 if let Some(ref lsp) = state.lsp_client {
-                    lsp.notify_open(active_path, state.tabs[state.active_tab_idx].buffer.lines().join("\n"));
+                    if is_new {
+                        lsp.notify_open(active_path, state.tabs[state.active_tab_idx].buffer.lines().join("\n"));
+                    }
+                    lsp.notify_active_file(active_path);
                 }
             }
         }
@@ -64,7 +69,7 @@ pub fn handle_action(
             if let Err(e) = active_tab.buffer.save_file(&path_to_save) {
                 log::error!("Failed to save file: {:?}", e);
             } else {
-                active_tab.buffer.is_modified = false;
+                active_tab.buffer.mark_saved();
                 ui.rebuild_tree();
                 ui.update_git_diff(Some(&path_to_save));
                 ui.update_git_file_blame(Some(&path_to_save));
@@ -201,6 +206,13 @@ pub fn handle_action(
             state.active_tab_idx = idx;
             ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
             ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
+            if let Some(ref lsp) = state.lsp_client {
+                if let Some(ref path) = state.tabs[idx].path {
+                    lsp.notify_active_file(path);
+                } else {
+                    lsp.notify_active_file("");
+                }
+            }
         }
         UiAction::CloseTab(idx) => {
             if state.tabs[idx].buffer.is_modified {
@@ -220,6 +232,13 @@ pub fn handle_action(
                 state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
                 ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
                 ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
+                if let Some(ref lsp) = state.lsp_client {
+                    if let Some(ref path) = state.tabs[state.active_tab_idx].path {
+                        lsp.notify_active_file(path);
+                    } else {
+                        lsp.notify_active_file("");
+                    }
+                }
             }
         }
         UiAction::ForceCloseTab(idx) => {
@@ -238,6 +257,13 @@ pub fn handle_action(
             ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
             ui.tab_to_close = None;
             ui.active_modal = None;
+            if let Some(ref lsp) = state.lsp_client {
+                if let Some(ref path) = state.tabs[state.active_tab_idx].path {
+                    lsp.notify_active_file(path);
+                } else {
+                    lsp.notify_active_file("");
+                }
+            }
         }
         UiAction::SaveAndCloseTab(idx) => {
             let tab_to_save = &mut state.tabs[idx];
@@ -249,7 +275,7 @@ pub fn handle_action(
             if let Err(e) = tab_to_save.buffer.save_file(&path_to_save) {
                 log::error!("Failed to save file: {:?}", e);
             } else {
-                tab_to_save.buffer.is_modified = false;
+                tab_to_save.buffer.mark_saved();
             }
             
             state.tabs.remove(idx);
@@ -268,6 +294,13 @@ pub fn handle_action(
             ui.tab_to_close = None;
             ui.active_modal = None;
             ui.rebuild_tree();
+            if let Some(ref lsp) = state.lsp_client {
+                if let Some(ref path) = state.tabs[state.active_tab_idx].path {
+                    lsp.notify_active_file(path);
+                } else {
+                    lsp.notify_active_file("");
+                }
+            }
         }
         UiAction::MinimizeWindow => {
             window.set_minimized(true);
