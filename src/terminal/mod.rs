@@ -386,6 +386,18 @@ impl vte::Perform for TerminalGrid {
                 if let Ok(title) = std::str::from_utf8(params[1]) {
                     self.title = title.to_string();
                 }
+            } else if action == b"7" {
+                if let Ok(url_str) = std::str::from_utf8(params[1]) {
+                    if let Some(path_part) = url_str.strip_prefix("file://") {
+                        if let Some(slash_idx) = path_part.find('/') {
+                            let path = &path_part[slash_idx..];
+                            let path_buf = std::path::Path::new(path);
+                            if let Some(file_name) = path_buf.file_name().and_then(|f| f.to_str()) {
+                                self.title = file_name.to_string();
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -414,6 +426,7 @@ impl TerminalInstance {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
         let mut cmd = CommandBuilder::new(&shell);
         cmd.env("TERM", "xterm-256color");
+        cmd.arg("-l");
         
         if let Ok(current_dir) = std::env::current_dir() {
             cmd.cwd(current_dir);
