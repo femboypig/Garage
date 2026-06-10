@@ -255,17 +255,17 @@ pub fn draw_dock(
     };
     ui.push_quad(vertices, indices, add_btn_x, tab_y, add_btn_w, tab_h, white_uv, add_bg);
     
-    ui.push_str(
+    let plus_icon_sz = 12.0f32;
+    ui.push_icon(
         vertices,
         indices,
         atlas,
         queue,
-        "+",
-        add_btn_x + 10.0,
-        (tab_y + tab_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round(),
+        "plus",
+        (add_btn_x + (add_btn_w - plus_icon_sz) / 2.0).round(),
+        (tab_y + (tab_h - plus_icon_sz) / 2.0).round(),
         ui.config.theme.tab_text,
-        ui.ui_font_size,
-        ui.ui_char_width,
+        plus_icon_sz,
     );
 
     // Draw Close dock button
