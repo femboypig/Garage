@@ -3,7 +3,7 @@ use std::io::Write;
 use winit::{
     event::{ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    keyboard::{Key, NamedKey, KeyCode, PhysicalKey},
+    keyboard::{Key, NamedKey},
     window::WindowBuilder,
 };
 
@@ -1071,108 +1071,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                     if kb_event.state == ElementState::Pressed {
                         let ctrl = modifiers.control_key();
-                        if ctrl {
-                            if let PhysicalKey::Code(keycode) = kb_event.physical_key {
-                                match keycode {
-                                    KeyCode::Equal | KeyCode::NumpadAdd => {
-                                        let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
-                                        ui.update_buffer_font_size(&atlas.font, new_size);
-                                        window.request_redraw();
-                                        return;
-                                    }
-                                    KeyCode::Minus | KeyCode::NumpadSubtract => {
-                                        let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
-                                        ui.update_buffer_font_size(&atlas.font, new_size);
-                                        window.request_redraw();
-                                        return;
-                                    }
-                                    KeyCode::KeyP if modifiers.shift_key() => {
-                                        ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
-                                        ui.command_palette_query.clear();
-                                        ui.command_palette_selected = 0;
-                                        window.request_redraw();
-                                        return;
-                                    }
-                                    KeyCode::KeyS if ui.active_modal.is_none() => {
-                                        handle_action!(UiAction::SaveFile);
-                                        window.request_redraw();
-                                        return;
-                                    }
-                                    KeyCode::KeyA if ui.active_modal.is_none() => {
-                                        let active_tab = &mut tabs[active_tab_idx];
-                                        active_tab.buffer.commit_transaction();
-                                        active_tab.cursor.selection_anchor = Some((0, 0));
-                                        active_tab.cursor.line = active_tab.buffer.len() - 1;
-                                        active_tab.cursor.col = active_tab.buffer.lines()[active_tab.cursor.line].chars().count();
-                                        active_tab.cursor.intended_col = active_tab.cursor.col;
-                                        window.request_redraw();
-                                        return;
-                                    }
-                                    KeyCode::KeyC if ui.active_modal.is_none() => {
-                                        let active_tab = &tabs[active_tab_idx];
-                                        if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                            internal_clipboard = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
-                                        }
-                                        window.request_redraw();
-                                        return;
-                                    }
-                                    KeyCode::KeyX if ui.active_modal.is_none() => {
-                                        let active_tab = &mut tabs[active_tab_idx];
-                                        if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                            internal_clipboard = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
-                                            active_tab.buffer.start_transaction();
-                                            active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                                            active_tab.cursor.line = s_l;
-                                            active_tab.cursor.col = s_c;
-                                            active_tab.cursor.intended_col = s_c;
-                                            active_tab.cursor.clear_selection();
-                                            active_tab.buffer.commit_transaction();
-                                        }
-                                        window.request_redraw();
-                                        return;
-                                    }
-                                    KeyCode::KeyV if ui.active_modal.is_none() => {
-                                        if !internal_clipboard.is_empty() {
-                                            let active_tab = &mut tabs[active_tab_idx];
-                                            active_tab.buffer.start_transaction();
-                                            if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                                active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                                                active_tab.cursor.line = s_l;
-                                                active_tab.cursor.col = s_c;
-                                                active_tab.cursor.clear_selection();
-                                            }
-                                            active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &internal_clipboard);
+                        let shift = modifiers.shift_key();
+                        let alt = modifiers.alt_key();
 
-                                            let parts = internal_clipboard.split('\n').collect::<Vec<&str>>();
-                                            if parts.len() == 1 {
-                                                active_tab.cursor.col += internal_clipboard.chars().count();
-                                            } else {
-                                                active_tab.cursor.line += parts.len() - 1;
-                                                active_tab.cursor.col = parts.last().unwrap().chars().count();
-                                            }
-                                            active_tab.cursor.intended_col = active_tab.cursor.col;
-                                            active_tab.buffer.commit_transaction();
-                                        }
-                                        window.request_redraw();
-                                        return;
-                                    }
-                                    KeyCode::KeyZ if ui.active_modal.is_none() => {
-                                        handle_action!(UiAction::Undo);
-                                        tabs[active_tab_idx].cursor.intended_col = tabs[active_tab_idx].cursor.col;
-                                        window.request_redraw();
-                                        return;
-                                    }
-                                    KeyCode::KeyY if ui.active_modal.is_none() => {
-                                        handle_action!(UiAction::Redo);
-                                        tabs[active_tab_idx].cursor.intended_col = tabs[active_tab_idx].cursor.col;
-                                        window.request_redraw();
-                                        return;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-
+                        // 1. If CommandPalette modal is active, handle it specifically
                         if let Some(crate::ui::ModalType::CommandPalette) = ui.active_modal {
                             match &kb_event.logical_key {
                                 Key::Named(NamedKey::Escape) => {
@@ -1227,6 +1129,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             return;
                         }
 
+                        // 2. If any other modal is active, Escape closes it
                         if ui.active_modal.is_some() {
                             if let Key::Named(NamedKey::Escape) = &kb_event.logical_key {
                                 ui.active_modal = None;
@@ -1235,178 +1138,261 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             return;
                         }
 
-                        let active_tab = &mut tabs[active_tab_idx];
-                        let shift = modifiers.shift_key();
-                        let ctrl = modifiers.control_key();
-
-                        match &kb_event.logical_key {
-                            Key::Named(NamedKey::ArrowLeft) => {
-                                active_tab.buffer.commit_transaction();
-                                if ctrl {
-                                    active_tab.cursor.move_word_left(&active_tab.buffer, shift);
-                                } else {
-                                    active_tab.cursor.move_left(&active_tab.buffer, shift);
+                        // 3. Otherwise map key input to Action
+                        if let Some(action) = crate::keymap::map_key(&kb_event.logical_key, kb_event.physical_key, ctrl, shift, alt) {
+                            match action {
+                                crate::actions::Action::ZoomIn => {
+                                    let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
+                                    ui.update_buffer_font_size(&atlas.font, new_size);
                                 }
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::ArrowRight) => {
-                                active_tab.buffer.commit_transaction();
-                                if ctrl {
-                                    active_tab.cursor.move_word_right(&active_tab.buffer, shift);
-                                } else {
-                                    active_tab.cursor.move_right(&active_tab.buffer, shift);
+                                crate::actions::Action::ZoomOut => {
+                                    let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
+                                    ui.update_buffer_font_size(&atlas.font, new_size);
                                 }
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::ArrowUp) => {
-                                active_tab.buffer.commit_transaction();
-                                active_tab.cursor.move_up(&active_tab.buffer, shift);
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::ArrowDown) => {
-                                active_tab.buffer.commit_transaction();
-                                active_tab.cursor.move_down(&active_tab.buffer, shift);
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::Home) => {
-                                active_tab.buffer.commit_transaction();
-                                active_tab.cursor.move_to_line_start(shift);
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::End) => {
-                                active_tab.buffer.commit_transaction();
-                                active_tab.cursor.move_to_line_end(&active_tab.buffer, shift);
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::Escape) => {
-                                active_tab.buffer.commit_transaction();
-                                active_tab.cursor.clear_selection();
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::Backspace) => {
-                                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                    active_tab.buffer.start_transaction();
-                                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                                    active_tab.cursor.line = s_l;
-                                    active_tab.cursor.col = s_c;
-                                    active_tab.cursor.intended_col = s_c;
-                                    active_tab.cursor.clear_selection();
+                                crate::actions::Action::CommandPalette => {
+                                    ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
+                                    ui.command_palette_query.clear();
+                                    ui.command_palette_selected = 0;
+                                }
+                                crate::actions::Action::SaveFile => {
+                                    handle_action!(UiAction::SaveFile);
+                                }
+                                crate::actions::Action::Escape => {
+                                    let active_tab = &mut tabs[active_tab_idx];
                                     active_tab.buffer.commit_transaction();
-                                } else if active_tab.cursor.col > 0 || active_tab.cursor.line > 0 {
-                                    active_tab.buffer.start_transaction();
-                                    let is_paired = if active_tab.cursor.col > 0 {
-                                        let line_chars: Vec<char> = active_tab.buffer.lines()[active_tab.cursor.line].chars().collect();
-                                        if active_tab.cursor.col < line_chars.len() {
-                                            let left_char = line_chars[active_tab.cursor.col - 1];
-                                            let right_char = line_chars[active_tab.cursor.col];
-                                            match (left_char, right_char) {
-                                                ('(', ')') | ('[', ']') | ('{', '}') | ('"', '"') | ('\'', '\'') => true,
-                                                _ => false,
-                                            }
-                                        } else { false }
-                                    } else { false };
-
-                                    if is_paired {
-                                        active_tab.buffer.delete(active_tab.cursor.line, active_tab.cursor.col - 1, active_tab.cursor.line, active_tab.cursor.col + 1);
-                                        active_tab.cursor.col -= 1;
-                                        active_tab.cursor.intended_col = active_tab.cursor.col;
+                                    active_tab.cursor.clear_selection();
+                                }
+                                crate::actions::Action::MoveLeft { select, word } => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    active_tab.buffer.commit_transaction();
+                                    if word {
+                                        active_tab.cursor.move_word_left(&active_tab.buffer, select);
                                     } else {
-                                        let mut prev_cursor = active_tab.cursor;
-                                        prev_cursor.move_left(&active_tab.buffer, false);
-                                        active_tab.buffer.delete(prev_cursor.line, prev_cursor.col, active_tab.cursor.line, active_tab.cursor.col);
-                                        active_tab.cursor = prev_cursor;
+                                        active_tab.cursor.move_left(&active_tab.buffer, select);
                                     }
-                                    active_tab.buffer.commit_transaction();
                                 }
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::Delete) => {
-                                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                    active_tab.buffer.start_transaction();
-                                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                                    active_tab.cursor.line = s_l;
-                                    active_tab.cursor.col = s_c;
-                                    active_tab.cursor.intended_col = s_c;
-                                    active_tab.cursor.clear_selection();
+                                crate::actions::Action::MoveRight { select, word } => {
+                                    let active_tab = &mut tabs[active_tab_idx];
                                     active_tab.buffer.commit_transaction();
-                                } else {
-                                    let line_len = active_tab.buffer.lines()[active_tab.cursor.line].chars().count();
-                                    if active_tab.cursor.col < line_len || active_tab.cursor.line < active_tab.buffer.len() - 1 {
+                                    if word {
+                                        active_tab.cursor.move_word_right(&active_tab.buffer, select);
+                                    } else {
+                                        active_tab.cursor.move_right(&active_tab.buffer, select);
+                                    }
+                                }
+                                crate::actions::Action::MoveUp { select } => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    active_tab.buffer.commit_transaction();
+                                    active_tab.cursor.move_up(&active_tab.buffer, select);
+                                }
+                                crate::actions::Action::MoveDown { select } => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    active_tab.buffer.commit_transaction();
+                                    active_tab.cursor.move_down(&active_tab.buffer, select);
+                                }
+                                crate::actions::Action::MoveToLineStart { select } => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    active_tab.buffer.commit_transaction();
+                                    active_tab.cursor.move_to_line_start(select);
+                                }
+                                crate::actions::Action::MoveToLineEnd { select } => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    active_tab.buffer.commit_transaction();
+                                    active_tab.cursor.move_to_line_end(&active_tab.buffer, select);
+                                }
+                                crate::actions::Action::SelectAll => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    active_tab.buffer.commit_transaction();
+                                    active_tab.cursor.selection_anchor = Some((0, 0));
+                                    active_tab.cursor.line = active_tab.buffer.len() - 1;
+                                    active_tab.cursor.col = active_tab.buffer.lines()[active_tab.cursor.line].chars().count();
+                                    active_tab.cursor.intended_col = active_tab.cursor.col;
+                                }
+                                crate::actions::Action::Copy => {
+                                    let active_tab = &tabs[active_tab_idx];
+                                    if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                                        internal_clipboard = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
+                                    }
+                                }
+                                crate::actions::Action::Cut => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                                        internal_clipboard = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
                                         active_tab.buffer.start_transaction();
-                                        let mut next_cursor = active_tab.cursor;
-                                        next_cursor.move_right(&active_tab.buffer, false);
-                                        active_tab.buffer.delete(active_tab.cursor.line, active_tab.cursor.col, next_cursor.line, next_cursor.col);
+                                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                                        active_tab.cursor.line = s_l;
+                                        active_tab.cursor.col = s_c;
+                                        active_tab.cursor.intended_col = s_c;
+                                        active_tab.cursor.clear_selection();
                                         active_tab.buffer.commit_transaction();
                                     }
                                 }
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::Space) => {
-                                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                    active_tab.buffer.start_transaction();
-                                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                                    active_tab.cursor.line = s_l;
-                                    active_tab.cursor.col = s_c;
-                                    active_tab.cursor.clear_selection();
+                                crate::actions::Action::Paste => {
+                                    if !internal_clipboard.is_empty() {
+                                        let active_tab = &mut tabs[active_tab_idx];
+                                        active_tab.buffer.start_transaction();
+                                        if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                                            active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                                            active_tab.cursor.line = s_l;
+                                            active_tab.cursor.col = s_c;
+                                            active_tab.cursor.clear_selection();
+                                        }
+                                        active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &internal_clipboard);
+
+                                        let parts = internal_clipboard.split('\n').collect::<Vec<&str>>();
+                                        if parts.len() == 1 {
+                                            active_tab.cursor.col += internal_clipboard.chars().count();
+                                        } else {
+                                            active_tab.cursor.line += parts.len() - 1;
+                                            active_tab.cursor.col = parts.last().unwrap().chars().count();
+                                        }
+                                        active_tab.cursor.intended_col = active_tab.cursor.col;
+                                        active_tab.buffer.commit_transaction();
+                                    }
                                 }
-                                active_tab.buffer.start_transaction();
-                                active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, " ");
-                                active_tab.cursor.col += 1;
-                                active_tab.cursor.intended_col = active_tab.cursor.col;
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::Enter) => {
-                                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                    active_tab.buffer.start_transaction();
-                                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                                    active_tab.cursor.line = s_l;
-                                    active_tab.cursor.col = s_c;
-                                    active_tab.cursor.clear_selection();
+                                crate::actions::Action::Undo => {
+                                    handle_action!(UiAction::Undo);
+                                    tabs[active_tab_idx].cursor.intended_col = tabs[active_tab_idx].cursor.col;
                                 }
-                                active_tab.buffer.start_transaction();
-                                active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, "\n");
-                                active_tab.cursor.line += 1;
-                                active_tab.cursor.col = 0;
-                                active_tab.cursor.intended_col = 0;
-                                active_tab.buffer.commit_transaction();
-                                window.request_redraw();
-                            }
-                            Key::Named(NamedKey::Tab) => {
-                                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                    active_tab.buffer.start_transaction();
-                                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                                    active_tab.cursor.line = s_l;
-                                    active_tab.cursor.col = s_c;
-                                    active_tab.cursor.clear_selection();
+                                crate::actions::Action::Redo => {
+                                    handle_action!(UiAction::Redo);
+                                    tabs[active_tab_idx].cursor.intended_col = tabs[active_tab_idx].cursor.col;
                                 }
-                                active_tab.buffer.start_transaction();
-                                active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, "    ");
-                                active_tab.cursor.col += 4;
-                                active_tab.cursor.intended_col = active_tab.cursor.col;
-                                active_tab.buffer.commit_transaction();
-                                window.request_redraw();
-                            }
-                            Key::Character(text) => {
-                                if !ctrl {
-                                    // Check if text is a single character
-                                    let chars: Vec<char> = text.chars().collect();
-                                    if chars.len() == 1 {
-                                        let c = chars[0];
-                                        // 1. Check if we should step over a closing character
-                                        let step_over = if active_tab.cursor.selection_range().is_none() && (c == ')' || c == ']' || c == '}' || c == '"' || c == '\'') {
+                                crate::actions::Action::DeleteLeft => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                                        active_tab.buffer.start_transaction();
+                                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                                        active_tab.cursor.line = s_l;
+                                        active_tab.cursor.col = s_c;
+                                        active_tab.cursor.intended_col = s_c;
+                                        active_tab.cursor.clear_selection();
+                                        active_tab.buffer.commit_transaction();
+                                    } else if active_tab.cursor.col > 0 || active_tab.cursor.line > 0 {
+                                        active_tab.buffer.start_transaction();
+                                        let is_paired = if active_tab.cursor.col > 0 {
                                             let line_chars: Vec<char> = active_tab.buffer.lines()[active_tab.cursor.line].chars().collect();
-                                            if active_tab.cursor.col < line_chars.len() && line_chars[active_tab.cursor.col] == c {
-                                                // Yes, character immediately to the right is the same as typed!
+                                            if active_tab.cursor.col < line_chars.len() {
+                                                let left_char = line_chars[active_tab.cursor.col - 1];
+                                                let right_char = line_chars[active_tab.cursor.col];
+                                                match (left_char, right_char) {
+                                                    ('(', ')') | ('[', ']') | ('{', '}') | ('"', '"') | ('\'', '\'') => true,
+                                                    _ => false,
+                                                }
+                                            } else { false }
+                                        } else { false };
+
+                                        if is_paired {
+                                            active_tab.buffer.delete(active_tab.cursor.line, active_tab.cursor.col - 1, active_tab.cursor.line, active_tab.cursor.col + 1);
+                                            active_tab.cursor.col -= 1;
+                                            active_tab.cursor.intended_col = active_tab.cursor.col;
+                                        } else {
+                                            let mut prev_cursor = active_tab.cursor;
+                                            prev_cursor.move_left(&active_tab.buffer, false);
+                                            active_tab.buffer.delete(prev_cursor.line, prev_cursor.col, active_tab.cursor.line, active_tab.cursor.col);
+                                            active_tab.cursor = prev_cursor;
+                                        }
+                                        active_tab.buffer.commit_transaction();
+                                    }
+                                }
+                                crate::actions::Action::DeleteRight => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                                        active_tab.buffer.start_transaction();
+                                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                                        active_tab.cursor.line = s_l;
+                                        active_tab.cursor.col = s_c;
+                                        active_tab.cursor.intended_col = s_c;
+                                        active_tab.cursor.clear_selection();
+                                        active_tab.buffer.commit_transaction();
+                                    } else {
+                                        let line_len = active_tab.buffer.lines()[active_tab.cursor.line].chars().count();
+                                        if active_tab.cursor.col < line_len || active_tab.cursor.line < active_tab.buffer.len() - 1 {
+                                            active_tab.buffer.start_transaction();
+                                            let mut next_cursor = active_tab.cursor;
+                                            next_cursor.move_right(&active_tab.buffer, false);
+                                            active_tab.buffer.delete(active_tab.cursor.line, active_tab.cursor.col, next_cursor.line, next_cursor.col);
+                                            active_tab.buffer.commit_transaction();
+                                        }
+                                    }
+                                }
+                                crate::actions::Action::InsertNewLine => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                                        active_tab.buffer.start_transaction();
+                                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                                        active_tab.cursor.line = s_l;
+                                        active_tab.cursor.col = s_c;
+                                        active_tab.cursor.clear_selection();
+                                    }
+                                    active_tab.buffer.start_transaction();
+                                    active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, "\n");
+                                    active_tab.cursor.line += 1;
+                                    active_tab.cursor.col = 0;
+                                    active_tab.cursor.intended_col = 0;
+                                    active_tab.buffer.commit_transaction();
+                                }
+                                crate::actions::Action::InsertTab => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                                        active_tab.buffer.start_transaction();
+                                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                                        active_tab.cursor.line = s_l;
+                                        active_tab.cursor.col = s_c;
+                                        active_tab.cursor.clear_selection();
+                                    }
+                                    active_tab.buffer.start_transaction();
+                                    active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, "    ");
+                                    active_tab.cursor.col += 4;
+                                    active_tab.cursor.intended_col = active_tab.cursor.col;
+                                    active_tab.buffer.commit_transaction();
+                                }
+                                crate::actions::Action::InsertChar(c) => {
+                                    let active_tab = &mut tabs[active_tab_idx];
+                                    let step_over = if active_tab.cursor.selection_range().is_none() && (c == ')' || c == ']' || c == '}' || c == '"' || c == '\'') {
+                                        let line_chars: Vec<char> = active_tab.buffer.lines()[active_tab.cursor.line].chars().collect();
+                                        if active_tab.cursor.col < line_chars.len() && line_chars[active_tab.cursor.col] == c {
+                                            true
+                                        } else { false }
+                                    } else { false };
+
+                                    if step_over {
+                                        active_tab.cursor.col += 1;
+                                        active_tab.cursor.intended_col = active_tab.cursor.col;
+                                    } else {
+                                        let wrapped = if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                                            let matching_close = match c {
+                                                '(' => Some(')'),
+                                                '[' => Some(']'),
+                                                '{' => Some('}'),
+                                                '"' => Some('"'),
+                                                '\'' => Some('\''),
+                                                _ => None,
+                                            };
+
+                                            if let Some(close_char) = matching_close {
+                                                active_tab.buffer.start_transaction();
+                                                active_tab.buffer.insert(s_l, s_c, &c.to_string());
+                                                let adjusted_e_c = if s_l == e_l { e_c + 1 } else { e_c };
+                                                active_tab.buffer.insert(e_l, adjusted_e_c, &close_char.to_string());
+                                                
+                                                if active_tab.cursor.selection_anchor.unwrap().0 == s_l && active_tab.cursor.selection_anchor.unwrap().1 == s_c {
+                                                    active_tab.cursor.selection_anchor = Some((s_l, s_c + 1));
+                                                    active_tab.cursor.line = e_l;
+                                                    active_tab.cursor.col = adjusted_e_c;
+                                                } else {
+                                                    active_tab.cursor.selection_anchor = Some((e_l, adjusted_e_c));
+                                                    active_tab.cursor.line = s_l;
+                                                    active_tab.cursor.col = s_c + 1;
+                                                }
+                                                active_tab.cursor.intended_col = active_tab.cursor.col;
+                                                active_tab.buffer.commit_transaction();
                                                 true
                                             } else { false }
                                         } else { false };
 
-                                        if step_over {
-                                            active_tab.cursor.col += 1;
-                                            active_tab.cursor.intended_col = active_tab.cursor.col;
-                                        } else {
-                                            // 2. Check if we should wrap a selection
-                                            let wrapped = if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                                        if !wrapped {
+                                            let paired = if active_tab.cursor.selection_range().is_none() {
                                                 let matching_close = match c {
                                                     '(' => Some(')'),
                                                     '[' => Some(']'),
@@ -1418,86 +1404,36 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                                                 if let Some(close_char) = matching_close {
                                                     active_tab.buffer.start_transaction();
-                                                    active_tab.buffer.insert(s_l, s_c, &c.to_string());
-                                                    let adjusted_e_c = if s_l == e_l { e_c + 1 } else { e_c };
-                                                    active_tab.buffer.insert(e_l, adjusted_e_c, &close_char.to_string());
-                                                    
-                                                    // Update cursor and selection range to keep selection over the inner text
-                                                    if active_tab.cursor.selection_anchor.unwrap().0 == s_l && active_tab.cursor.selection_anchor.unwrap().1 == s_c {
-                                                        active_tab.cursor.selection_anchor = Some((s_l, s_c + 1));
-                                                        active_tab.cursor.line = e_l;
-                                                        active_tab.cursor.col = adjusted_e_c;
-                                                    } else {
-                                                        active_tab.cursor.selection_anchor = Some((e_l, adjusted_e_c));
-                                                        active_tab.cursor.line = s_l;
-                                                        active_tab.cursor.col = s_c + 1;
-                                                    }
+                                                    let pair_str = format!("{}{}", c, close_char);
+                                                    active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &pair_str);
+                                                    active_tab.cursor.col += 1;
                                                     active_tab.cursor.intended_col = active_tab.cursor.col;
                                                     active_tab.buffer.commit_transaction();
                                                     true
                                                 } else { false }
                                             } else { false };
 
-                                            if !wrapped {
-                                                // 3. Check if we should auto-pair an opening character
-                                                let paired = if active_tab.cursor.selection_range().is_none() {
-                                                    let matching_close = match c {
-                                                        '(' => Some(')'),
-                                                        '[' => Some(']'),
-                                                        '{' => Some('}'),
-                                                        '"' => Some('"'),
-                                                        '\'' => Some('\''),
-                                                        _ => None,
-                                                    };
-
-                                                    if let Some(close_char) = matching_close {
-                                                        active_tab.buffer.start_transaction();
-                                                        let pair_str = format!("{}{}", c, close_char);
-                                                        active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &pair_str);
-                                                        active_tab.cursor.col += 1;
-                                                        active_tab.cursor.intended_col = active_tab.cursor.col;
-                                                        active_tab.buffer.commit_transaction();
-                                                        true
-                                                    } else { false }
-                                                } else { false };
-
-                                                if !paired {
-                                                    // Standard character typing (deletes selection if active)
-                                                    if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                                        active_tab.buffer.start_transaction();
-                                                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                                                        active_tab.cursor.line = s_l;
-                                                        active_tab.cursor.col = s_c;
-                                                        active_tab.cursor.clear_selection();
-                                                    }
+                                            if !paired {
+                                                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                                                     active_tab.buffer.start_transaction();
-                                                    active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, text);
-                                                    active_tab.cursor.col += 1;
-                                                    active_tab.cursor.intended_col = active_tab.cursor.col;
-                                                    active_tab.buffer.commit_transaction();
+                                                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                                                    active_tab.cursor.line = s_l;
+                                                    active_tab.cursor.col = s_c;
+                                                    active_tab.cursor.clear_selection();
                                                 }
+                                                active_tab.buffer.start_transaction();
+                                                active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &c.to_string());
+                                                active_tab.cursor.col += 1;
+                                                active_tab.cursor.intended_col = active_tab.cursor.col;
+                                                active_tab.buffer.commit_transaction();
                                             }
                                         }
-                                    } else {
-                                        // Text with multiple characters (e.g. pasted or fallback)
-                                        if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                            active_tab.buffer.start_transaction();
-                                            active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                                            active_tab.cursor.line = s_l;
-                                            active_tab.cursor.col = s_c;
-                                            active_tab.cursor.clear_selection();
-                                        }
-                                        active_tab.buffer.start_transaction();
-                                        active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, text);
-                                        active_tab.cursor.col += text.chars().count();
-                                        active_tab.cursor.intended_col = active_tab.cursor.col;
-                                        active_tab.buffer.commit_transaction();
                                     }
                                 }
-                                window.request_redraw();
                             }
-                            _ => {}
                         }
+                        
+                        let active_tab = &tabs[active_tab_idx];
                         ui.scroll_to_cursor(&active_tab.cursor, active_tab.buffer.len(), window.inner_size().width as f32, window.inner_size().height as f32);
                         update_cursor_icon(&window, &ui, &active_tab.buffer, mouse_x, mouse_y);
                         window.request_redraw();
