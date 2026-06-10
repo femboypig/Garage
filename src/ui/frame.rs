@@ -355,6 +355,71 @@ impl UiState {
         });
     }
 
+    pub fn update_git_diff(&mut self, file_path: Option<&str>) {
+        let file_path = match file_path {
+            Some(p) => p.to_string(),
+            None => return,
+        };
+        let tx = self.git_diff_tx.clone();
+        std::thread::spawn(move || {
+            let output = std::process::Command::new("git")
+                .args(&["diff", "--no-ext-diff", "-U0", "--", &file_path])
+                .output();
+            
+            if let Ok(out) = output {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let mut hunks = Vec::new();
+                
+                for line in stdout.lines() {
+                    if line.starts_with("@@ ") {
+                        let parts: Vec<&str> = line.split("@@").collect();
+                        if parts.len() >= 2 {
+                            let header = parts[1].trim();
+                            let specs: Vec<&str> = header.split_whitespace().collect();
+                            if specs.len() >= 2 {
+                                let new_spec = specs[1];
+                                if new_spec.starts_with('+') {
+                                    let content = &new_spec[1..];
+                                    let subparts: Vec<&str> = content.split(',').collect();
+                                    if !subparts.is_empty() {
+                                        let line_idx = subparts[0].parse::<usize>().unwrap_or(1).saturating_sub(1);
+                                        let count = if subparts.len() >= 2 {
+                                            subparts[1].parse::<usize>().unwrap_or(1)
+                                        } else {
+                                            1
+                                        };
+                                        
+                                        let old_spec = specs[0];
+                                        let old_count = if old_spec.starts_with('-') {
+                                            let old_content = &old_spec[1..];
+                                            let old_subparts: Vec<&str> = old_content.split(',').collect();
+                                            if old_subparts.len() >= 2 {
+                                                old_subparts[1].parse::<usize>().unwrap_or(1)
+                                            } else {
+                                                1
+                                            }
+                                        } else {
+                                            1
+                                        };
+
+                                        if old_count == 0 {
+                                            hunks.push(crate::ui::types::GitDiffHunk::Added { line: line_idx, count });
+                                        } else if count == 0 {
+                                            hunks.push(crate::ui::types::GitDiffHunk::Deleted { line: line_idx });
+                                        } else {
+                                            hunks.push(crate::ui::types::GitDiffHunk::Modified { line: line_idx, count });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                let _ = tx.send((file_path, hunks));
+            }
+        });
+    }
+
     pub fn get_or_update_blame(&mut self, file_path: Option<&str>, line_idx: usize) -> Option<String> {
         let file_path = file_path?;
         // Check if cached
@@ -543,12 +608,24 @@ impl UiState {
             }
         }
 
-        // Throttled git branch and status check
+        // Drain git diff channel
+        if let Some(ref rx) = self.git_diff_rx {
+            while let Ok((file, hunks)) = rx.try_recv() {
+                self.git_diffs.insert(file, hunks);
+            }
+        }
+
+        // Throttled git branch, status and diff check
         if self.last_branch_check.is_none() || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(5) {
             if self.config.show_git_branch {
                 self.update_git_branch();
             }
             self.update_git_statuses();
+            if active_tab_idx < tab_paths.len() {
+                if let Some(ref file_path) = tab_paths[active_tab_idx] {
+                    self.update_git_diff(Some(file_path));
+                }
+            }
             self.last_branch_check = Some(std::time::Instant::now());
         }
         let main_y = self.titlebar_height;
