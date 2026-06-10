@@ -54,9 +54,18 @@ pub fn draw_dock(
     let mut active_dock_x = 0.0f32;
     let mut active_dock_w = 0.0f32;
     let mut has_active_dock = false;
-    let mut temp_x = ui.sidebar_width + 10.0f32;
+    let mut temp_x = ui.sidebar_width;
     for idx in 0..terminals.len() {
-        let term_name = format!("terminal-{}", idx + 1);
+        let term_name = if terminals[idx].grid.title.is_empty() {
+            format!("terminal-{}", idx + 1)
+        } else {
+            let mut name = terminals[idx].grid.title.clone();
+            if name.chars().count() > 20 {
+                let prefix: String = name.chars().take(17).collect();
+                name = format!("{}...", prefix);
+            }
+            name
+        };
         let term_name_w = term_name.chars().count() as f32 * ui.ui_char_width * 0.9;
         let icon_sz = 12.0f32;
         let close_sz = 10.0f32;
@@ -112,7 +121,7 @@ pub fn draw_dock(
     }
 
     // 3. Draw active/inactive terminal tabs
-    let mut cur_x = ui.sidebar_width + 10.0f32;
+    let mut cur_x = ui.sidebar_width;
     let tab_y = dock_start_y + 1.0;
     let tab_h = dock_tabbar_h - 1.0;
     let tab_font_sz = ui.ui_font_size * 0.9;
@@ -121,7 +130,16 @@ pub fn draw_dock(
 
     for idx in 0..terminals.len() {
         let is_active = idx == ui.active_dock_tab;
-        let term_name = format!("terminal-{}", idx + 1);
+        let term_name = if terminals[idx].grid.title.is_empty() {
+            format!("terminal-{}", idx + 1)
+        } else {
+            let mut name = terminals[idx].grid.title.clone();
+            if name.chars().count() > 20 {
+                let prefix: String = name.chars().take(17).collect();
+                name = format!("{}...", prefix);
+            }
+            name
+        };
         let term_name_w = term_name.chars().count() as f32 * ui.ui_char_width * 0.9;
         let tab_w = 12.0 + icon_sz + 6.0 + term_name_w + 8.0 + close_sz + 10.0;
         
@@ -184,7 +202,7 @@ pub fn draw_dock(
         );
 
         // Draw text
-        let tab_baseline = (tab_y + cur_tab_h_for_calc / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+        let tab_baseline = (tab_y + cur_tab_h_for_calc / 2.0 + (ui.ui_font_ascent * 0.9) / 2.0 - 3.0).round();
         ui.push_str(
             vertices,
             indices,
