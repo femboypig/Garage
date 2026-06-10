@@ -69,7 +69,7 @@ impl TerminalGrid {
             current_fg: DEFAULT_FG,
             current_bg: DEFAULT_BG,
             bold: false,
-            title: "terminal".to_string(),
+            title: String::new(),
             scrollback: Vec::new(),
             scroll_offset: 0,
         }
