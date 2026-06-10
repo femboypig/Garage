@@ -14,10 +14,64 @@ pub enum LspCommand {
     OpenFile { path: String, text: String },
     ChangeFile { path: String, text: String },
     SaveFile { path: String },
+    SetActiveFile { path: String },
 }
 
 pub struct LspClient {
     cmd_tx: Sender<LspCommand>,
+}
+
+struct ServerInstance {
+    stdin: std::process::ChildStdin,
+    cmd_name: String,
+}
+
+fn get_install_instruction(cmd: &str) -> &'static str {
+    match cmd {
+        "rust-analyzer" => "install via 'rustup component add rust-analyzer'",
+        "pyright-langserver" | "pylsp" => "install via 'npm i -g pyright' or 'pip install python-lsp-server'",
+        "gopls" => "install via 'go install golang.org/x/tools/gopls@latest'",
+        "clangd" => "install via 'sudo apt install clangd'",
+        "typescript-language-server" => "install via 'npm i -g typescript-language-server'",
+        _ => "command not found in PATH",
+    }
+}
+
+fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> {
+    let alternatives = match lang_id {
+        "rust" => vec![("rust-analyzer", vec![])],
+        "python" => vec![
+            ("pyright-langserver", vec!["--stdio"]),
+            ("pylsp", vec![]),
+        ],
+        "go" => vec![("gopls", vec![])],
+        "c" | "cpp" => vec![("clangd", vec![])],
+        "typescript" | "javascript" => vec![
+            ("typescript-language-server", vec!["--stdio"]),
+            ("deno", vec!["lsp"]),
+        ],
+        _ => return Err("No configured LSP server for this language".to_string()),
+    };
+
+    let mut last_err = String::new();
+    for (cmd, args) in alternatives {
+        log::info!("LSP: Trying to spawn {} {:?}", cmd, args);
+        match Command::new(cmd)
+            .args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            Ok(child) => {
+                return Ok((child, cmd.to_string()));
+            }
+            Err(e) => {
+                last_err = format!("{} not found ({:?})", cmd, e.kind());
+            }
+        }
+    }
+    Err(last_err)
 }
 
 impl LspClient {
@@ -29,195 +83,13 @@ impl LspClient {
         
         let proxy_init = event_loop_proxy.clone();
         std::thread::spawn(move || {
-            // Attempt to spawn rust-analyzer
-            let mut child = match Command::new("rust-analyzer")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn() 
-            {
-                Ok(c) => c,
-                Err(e) => {
-                    log::warn!("LSP: Failed to spawn rust-analyzer: {:?}", e);
-                    let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                        file_path: "".to_string(),
-                        errors: 9999,
-                        warnings: 0,
-                    });
-                    let _ = proxy_init.send_event(());
-                    return;
-                }
-            };
-
-            let mut stdin = child.stdin.take().expect("Failed to open stdin");
-            let stdout = child.stdout.take().expect("Failed to open stdout");
-            let mut stdout_reader = BufReader::new(stdout);
-
-            // Initialize rust-analyzer
-            let current_dir = std::env::current_dir().unwrap_or_default();
-            let root_uri = format!("file://{}", current_dir.to_string_lossy());
-            
-            let init_msg = serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "processId": std::process::id(),
-                    "rootUri": root_uri,
-                    "capabilities": {
-                        "textDocument": {
-                            "publishDiagnostics": {
-                                "relatedInformation": true
-                            },
-                            "synchronization": {
-                                "didOpen": true,
-                                "didChange": true,
-                                "didSave": true,
-                                "willSave": false,
-                                "willSaveWaitUntil": false
-                            }
-                        }
-                    },
-                    "workspaceFolders": [{
-                        "uri": root_uri,
-                        "name": current_dir.file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("workspace")
-                    }]
-                }
-            });
-
-            log::info!("LSP: Sending initialize request...");
-            if let Err(e) = write_message(&mut stdin, &init_msg.to_string()) {
-                log::warn!("LSP: Failed to write initialize message: {:?}", e);
-                let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                    file_path: "".to_string(),
-                    errors: 9999,
-                    warnings: 0,
-                });
-                let _ = proxy_init.send_event(());
-                return;
-            }
-
-            // Wait for initialize response synchronously (MUST come before initialized notification)
-            log::info!("LSP: Waiting for initialize response...");
-            match read_message(&mut stdout_reader) {
-                Ok(resp_str) => {
-                    if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&resp_str) {
-                        if resp.get("error").is_some() {
-                            log::warn!("LSP: Initialize returned error: {}", resp["error"]);
-                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                                file_path: "".to_string(),
-                                errors: 9999,
-                                warnings: 0,
-                            });
-                            let _ = proxy_init.send_event(());
-                            return;
-                        }
-                        log::info!("LSP: Initialize response received successfully");
-                    }
-                }
-                Err(e) => {
-                    log::warn!("LSP: Failed to read initialize response: {:?}", e);
-                    let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                        file_path: "".to_string(),
-                        errors: 9999,
-                        warnings: 0,
-                    });
-                    let _ = proxy_init.send_event(());
-                    return;
-                }
-            }
-
-            // NOW send initialized notification (per LSP spec, only after receiving response)
-            let initialized_msg = serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "initialized",
-                "params": {}
-            });
-            if let Err(e) = write_message(&mut stdin, &initialized_msg.to_string()) {
-                log::warn!("LSP: Failed to write initialized notification: {:?}", e);
-                let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                    file_path: "".to_string(),
-                    errors: 9999,
-                    warnings: 0,
-                });
-                let _ = proxy_init.send_event(());
-                return;
-            }
-            log::info!("LSP: Handshake complete, starting reader thread");
-
-            // Send notification that we are online
-            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                file_path: "".to_string(),
-                errors: 0,
-                warnings: 0,
-            });
-            let _ = proxy_init.send_event(());
-
-            // Now spawn Reader thread — after handshake is done
-            let diag_tx = diagnostics_tx.clone();
-            let proxy_reader = proxy_init.clone();
-            std::thread::spawn(move || {
-                loop {
-                    match read_message(&mut stdout_reader) {
-                        Ok(msg_str) => {
-                            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&msg_str) {
-                                if msg["method"] == "textDocument/publishDiagnostics" {
-                                    if let Some(params) = msg["params"].as_object() {
-                                        if let (Some(uri), Some(diagnostics)) = (params.get("uri"), params.get("diagnostics")) {
-                                            if let Some(uri_str) = uri.as_str() {
-                                                let file_path = if uri_str.starts_with("file://") {
-                                                    uri_str["file://".len()..].to_string()
-                                                } else {
-                                                    uri_str.to_string()
-                                                };
-                                                
-                                                let mut errors = 0;
-                                                let mut warnings = 0;
-                                                if let Some(diag_array) = diagnostics.as_array() {
-                                                    for diag in diag_array {
-                                                        let severity = diag["severity"].as_i64().unwrap_or(0);
-                                                        if severity == 1 {
-                                                            errors += 1;
-                                                        } else if severity == 2 {
-                                                            warnings += 1;
-                                                        }
-                                                    }
-                                                }
-                                                
-                                                log::info!("LSP: Diagnostics for {}: {} errors, {} warnings", file_path, errors, warnings);
-                                                let _ = diag_tx.send(LspDiagnosticsUpdate {
-                                                    file_path,
-                                                    errors,
-                                                    warnings,
-                                                });
-                                                let _ = proxy_reader.send_event(());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("LSP: Reader thread exit due to error: {:?}", e);
-                            let _ = diag_tx.send(LspDiagnosticsUpdate {
-                                file_path: "".to_string(),
-                                errors: 9999,
-                                warnings: 0,
-                            });
-                            let _ = proxy_reader.send_event(());
-                            break;
-                        }
-                    }
-                }
-            });
-
             let mut document_versions = HashMap::<String, usize>::new();
+            let mut servers = HashMap::<String, ServerInstance>::new();
             let pending_changes = Arc::new(Mutex::new(HashMap::<String, (String, usize, bool)>::new()));
             
             let pending_changes_clone = pending_changes.clone();
             loop {
+                // 1. Flush any pending changes to active servers
                 let mut changes_to_flush = Vec::new();
                 if let Ok(mut pending) = pending_changes_clone.lock() {
                     for (path, (text, version, needs_send)) in pending.iter_mut() {
@@ -229,62 +101,235 @@ impl LspClient {
                 }
 
                 for (path, text, version) in changes_to_flush {
-                    let change_msg = serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "method": "textDocument/didChange",
-                        "params": {
-                            "textDocument": {
-                                "uri": format!("file://{}", path),
-                                "version": version
-                            },
-                            "contentChanges": [
-                                { "text": text }
-                            ]
-                        }
-                    });
-                    let _ = write_message(&mut stdin, &change_msg.to_string());
-                }
-
-                match cmd_rx.recv_timeout(std::time::Duration::from_millis(500)) {
-                    Ok(LspCommand::OpenFile { path, text }) => {
-                        let version = document_versions.entry(path.clone()).or_insert(0);
-                        *version += 1;
-                        // Detect language from file extension
-                        let lang_id = detect_language_id(&path);
-                        let open_msg = serde_json::json!({
+                    let lang_id = detect_language_id(&path);
+                    if let Some(server) = servers.get_mut(lang_id) {
+                        let change_msg = serde_json::json!({
                             "jsonrpc": "2.0",
-                            "method": "textDocument/didOpen",
+                            "method": "textDocument/didChange",
                             "params": {
                                 "textDocument": {
                                     "uri": format!("file://{}", path),
-                                    "languageId": lang_id,
-                                    "version": *version,
-                                    "text": text
-                                }
+                                    "version": version
+                                },
+                                "contentChanges": [
+                                    { "text": text }
+                                ]
                             }
                         });
-                        log::info!("LSP: didOpen {} (lang: {})", path, lang_id);
-                        let _ = write_message(&mut stdin, &open_msg.to_string());
+                        let _ = write_message(&mut server.stdin, &change_msg.to_string());
+                    }
+                }
+
+                // 2. Receive commands with a timeout to allow flushing
+                match cmd_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                    Ok(LspCommand::OpenFile { path, text }) => {
+                        let lang_id = detect_language_id(&path);
+                        if lang_id != "plaintext" {
+                            let mut server_ready = servers.contains_key(lang_id);
+                            
+                            if !server_ready {
+                                match spawn_server(lang_id) {
+                                    Ok((mut child, cmd_name)) => {
+                                        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+                                        let stdout = child.stdout.take().expect("Failed to open stdout");
+                                        let mut stdout_reader = BufReader::new(stdout);
+                                        
+                                        // Handshake
+                                        let current_dir = std::env::current_dir().unwrap_or_default();
+                                        let root_uri = format!("file://{}", current_dir.to_string_lossy());
+                                        let init_msg = serde_json::json!({
+                                            "jsonrpc": "2.0",
+                                            "id": 1,
+                                            "method": "initialize",
+                                            "params": {
+                                                "processId": std::process::id(),
+                                                "rootUri": root_uri,
+                                                "capabilities": {
+                                                    "textDocument": {
+                                                        "publishDiagnostics": {
+                                                            "relatedInformation": true
+                                                        },
+                                                        "synchronization": {
+                                                            "didOpen": true,
+                                                            "didChange": true,
+                                                            "didSave": true,
+                                                            "willSave": false,
+                                                            "willSaveWaitUntil": false
+                                                        }
+                                                    }
+                                                },
+                                                "workspaceFolders": [{
+                                                    "uri": root_uri,
+                                                    "name": current_dir.file_name()
+                                                        .and_then(|n| n.to_str())
+                                                        .unwrap_or("workspace")
+                                                }]
+                                            }
+                                        });
+
+                                        log::info!("LSP: Sending initialize to {}...", cmd_name);
+                                        if write_message(&mut stdin, &init_msg.to_string()).is_ok() {
+                                            if let Ok(_resp_str) = read_message(&mut stdout_reader) {
+                                                log::info!("LSP: Initialize response from {} received", cmd_name);
+                                                let initialized_msg = serde_json::json!({
+                                                    "jsonrpc": "2.0",
+                                                    "method": "initialized",
+                                                    "params": {}
+                                                });
+                                                let _ = write_message(&mut stdin, &initialized_msg.to_string());
+                                                
+                                                let diag_tx = diagnostics_tx.clone();
+                                                let proxy_reader = proxy_init.clone();
+                                                std::thread::spawn(move || {
+                                                    loop {
+                                                        match read_message(&mut stdout_reader) {
+                                                            Ok(resp_str) => {
+                                                                if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&resp_str) {
+                                                                    if resp["method"] == "textDocument/publishDiagnostics" {
+                                                                        if let Some(params) = resp.get("params") {
+                                                                            let uri = params["uri"].as_str().unwrap_or("");
+                                                                            let file_path = uri.trim_start_matches("file://").to_string();
+                                                                            
+                                                                            let mut errors = 0;
+                                                                            let mut warnings = 0;
+                                                                            if let Some(diags) = params["diagnostics"].as_array() {
+                                                                                for d in diags {
+                                                                                    let severity = d["severity"].as_i64().unwrap_or(1);
+                                                                                    if severity == 1 {
+                                                                                        errors += 1;
+                                                                                    } else if severity == 2 {
+                                                                                        warnings += 1;
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                            let _ = diag_tx.send(LspDiagnosticsUpdate {
+                                                                                file_path,
+                                                                                errors,
+                                                                                warnings,
+                                                                            });
+                                                                            let _ = proxy_reader.send_event(());
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                log::warn!("LSP: Reader thread exit: {:?}", e);
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                });
+
+                                                let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                                                    file_path: format!("status:{}", cmd_name),
+                                                    errors: 0,
+                                                    warnings: 0,
+                                                });
+                                                let _ = proxy_init.send_event(());
+                                                
+                                                servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name });
+                                                server_ready = true;
+                                            }
+                                        }
+                                    }
+                                    Err(e_msg) => {
+                                        log::warn!("LSP: Failed to start server for {}: {}", lang_id, e_msg);
+                                        let default_cmd = match lang_id {
+                                            "rust" => "rust-analyzer",
+                                            "python" => "pyright-langserver",
+                                            "go" => "gopls",
+                                            "c" | "cpp" => "clangd",
+                                            "typescript" | "javascript" => "typescript-language-server",
+                                            _ => "lsp",
+                                        };
+                                        let instr = get_install_instruction(default_cmd);
+                                        let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                                            file_path: format!("status:offline ({})", instr),
+                                            errors: 9999,
+                                            warnings: 0,
+                                        });
+                                        let _ = proxy_init.send_event(());
+                                    }
+                                }
+                            }
+
+                            if server_ready {
+                                if let Some(server) = servers.get_mut(lang_id) {
+                                    let version = document_versions.entry(path.clone()).or_insert(0);
+                                    *version += 1;
+                                    let open_msg = serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "method": "textDocument/didOpen",
+                                        "params": {
+                                            "textDocument": {
+                                                "uri": format!("file://{}", path),
+                                                "languageId": lang_id,
+                                                "version": *version,
+                                                "text": text
+                                            }
+                                        }
+                                    });
+                                    let _ = write_message(&mut server.stdin, &open_msg.to_string());
+                                }
+                            }
+                        }
                     }
                     Ok(LspCommand::ChangeFile { path, text }) => {
-                        let version = document_versions.entry(path.clone()).or_insert(0);
-                        *version += 1;
-                        if let Ok(mut pending) = pending_changes_clone.lock() {
-                            pending.insert(path, (text, *version, true));
+                        let lang_id = detect_language_id(&path);
+                        if servers.contains_key(lang_id) {
+                            let version = document_versions.entry(path.clone()).or_insert(0);
+                            *version += 1;
+                            if let Ok(mut pending) = pending_changes_clone.lock() {
+                                pending.insert(path, (text, *version, true));
+                            }
                         }
                     }
                     Ok(LspCommand::SaveFile { path }) => {
-                        let save_msg = serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "method": "textDocument/didSave",
-                            "params": {
-                                "textDocument": {
-                                    "uri": format!("file://{}", path)
+                        let lang_id = detect_language_id(&path);
+                        if let Some(server) = servers.get_mut(lang_id) {
+                            let save_msg = serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "method": "textDocument/didSave",
+                                "params": {
+                                    "textDocument": {
+                                        "uri": format!("file://{}", path)
+                                    }
                                 }
-                            }
-                        });
-                        log::info!("LSP: didSave {}", path);
-                        let _ = write_message(&mut stdin, &save_msg.to_string());
+                            });
+                            let _ = write_message(&mut server.stdin, &save_msg.to_string());
+                        }
+                    }
+                    Ok(LspCommand::SetActiveFile { path }) => {
+                        let lang_id = detect_language_id(&path);
+                        if path.is_empty() || lang_id == "plaintext" {
+                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                                file_path: "status:none".to_string(),
+                                errors: 0,
+                                warnings: 0,
+                            });
+                        } else if let Some(server) = servers.get(lang_id) {
+                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                                file_path: format!("status:{}", server.cmd_name),
+                                errors: 0,
+                                warnings: 0,
+                            });
+                        } else {
+                            let default_cmd = match lang_id {
+                                "rust" => "rust-analyzer",
+                                "python" => "pyright-langserver",
+                                "go" => "gopls",
+                                "c" | "cpp" => "clangd",
+                                "typescript" | "javascript" => "typescript-language-server",
+                                _ => "lsp",
+                            };
+                            let instr = get_install_instruction(default_cmd);
+                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                                file_path: format!("status:offline ({})", instr),
+                                errors: 9999,
+                                warnings: 0,
+                            });
+                        }
+                        let _ = proxy_init.send_event(());
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -307,6 +352,10 @@ impl LspClient {
 
     pub fn notify_save(&self, path: &str) {
         let _ = self.cmd_tx.send(LspCommand::SaveFile { path: path.to_string() });
+    }
+
+    pub fn notify_active_file(&self, path: &str) {
+        let _ = self.cmd_tx.send(LspCommand::SetActiveFile { path: path.to_string() });
     }
 }
 
