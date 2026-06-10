@@ -63,6 +63,10 @@ pub struct UiState {
 
     pub languages: std::collections::HashMap<String, String>,
 
+    pub git_statuses: std::collections::HashMap<PathBuf, String>,
+    pub git_status_rx: Option<std::sync::mpsc::Receiver<std::collections::HashMap<PathBuf, String>>>,
+    pub git_status_tx: std::sync::mpsc::Sender<std::collections::HashMap<PathBuf, String>>,
+
     pub command_palette_query: String,
     pub command_palette_selected: usize,
     pub command_palette_scroll: usize,
@@ -117,6 +121,7 @@ impl UiState {
 
         let (branch_tx, branch_rx) = std::sync::mpsc::channel();
         let (blame_tx, blame_rx) = std::sync::mpsc::channel();
+        let (status_tx, status_rx) = std::sync::mpsc::channel();
 
         let mut languages = std::collections::HashMap::new();
         if let Ok(content) = std::fs::read_to_string("assets/languages.json") {
@@ -166,6 +171,9 @@ impl UiState {
             git_branch_tx: branch_tx,
             git_blame_rx: Some(blame_rx),
             git_blame_tx: blame_tx,
+            git_statuses: std::collections::HashMap::new(),
+            git_status_rx: Some(status_rx),
+            git_status_tx: status_tx,
             languages,
             command_palette_query: String::new(),
             command_palette_selected: 0,
