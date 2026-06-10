@@ -330,5 +330,6 @@ pub fn handle_action(
         UiAction::Exit => {
             elwt.exit();
         }
+        UiAction::None => {}
     }
 }
