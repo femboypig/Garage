@@ -29,6 +29,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
             .with_title("Garage")
             .with_decorations(false)
             .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
+            .with_visible(false)
             .build(&event_loop)?,
     );
 
@@ -45,6 +46,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
     // Initialize wgpu rendering context and pipeline synchronously
     let mut gpu = Some(pollster::block_on(GpuContext::new(window.clone(), initial_backends)));
+    window.set_visible(true);
 
     let actual_backend_str = match gpu.as_ref().unwrap().backend {
         wgpu::Backend::Vulkan => "Vulkan",
