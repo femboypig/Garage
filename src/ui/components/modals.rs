@@ -593,7 +593,7 @@ pub fn draw_modals(
                 );
 
                 // Helper closure to draw button container with borders and label
-                let mut draw_button = |
+                let draw_button = |
                     vertices: &mut Vec<Vertex>,
                     indices: &mut Vec<u16>,
                     atlas: &mut FontAtlas,
