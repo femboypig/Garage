@@ -500,16 +500,32 @@ impl TerminalInstance {
         });
     }
 
-    pub fn get_cwd_title(&self) -> Option<String> {
+    pub fn get_process_name(&self) -> Option<String> {
         #[cfg(target_os = "linux")]
         {
-            // Try to get process ID and read from /proc/PID/cwd
             if let Some(pid) = self.child.process_id() {
-                if let Ok(target) = std::fs::read_link(format!("/proc/{}/cwd", pid)) {
-                    if let Some(dir_name) = target.file_name().and_then(|f| f.to_str()) {
-                        return Some(dir_name.to_string());
-                    } else if target.to_str() == Some("/") {
-                        return Some("/".to_string());
+                if let Ok(stat_content) = std::fs::read_to_string(format!("/proc/{}/stat", pid)) {
+                    if let Some(last_paren) = stat_content.rfind(')') {
+                        let post_paren = &stat_content[last_paren + 1..];
+                        let parts: Vec<&str> = post_paren.split_whitespace().collect();
+                        if parts.len() > 5 {
+                            if let Ok(tpgid) = parts[5].parse::<i32>() {
+                                if tpgid > 0 {
+                                    if let Ok(comm) = std::fs::read_to_string(format!("/proc/{}/comm", tpgid)) {
+                                        let name = comm.trim().to_string();
+                                        if !name.is_empty() {
+                                            return Some(name);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Ok(comm) = std::fs::read_to_string(format!("/proc/{}/comm", pid)) {
+                    let name = comm.trim().to_string();
+                    if !name.is_empty() {
+                        return Some(name);
                     }
                 }
             }
@@ -518,8 +534,8 @@ impl TerminalInstance {
     }
 
     pub fn get_display_name(&self, idx: usize) -> String {
-        let raw_name = if let Some(cwd_title) = self.get_cwd_title() {
-            cwd_title
+        let raw_name = if let Some(proc_name) = self.get_process_name() {
+            proc_name
         } else if self.grid.title.is_empty() {
             format!("terminal-{}", idx + 1)
         } else {
