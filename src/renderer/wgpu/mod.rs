@@ -249,7 +249,23 @@ impl GpuContext {
         }
 
         if creation_result.is_none() {
-            // Try Vulkan first (including non-compliant adapters for older GPUs/drivers)
+            // Try Vulkan first, but only compliant adapters to avoid hangs on older GPUs
+            creation_result = try_create(
+                &window,
+                wgpu::Backends::VULKAN,
+                wgpu::InstanceFlags::default(),
+            ).await;
+        }
+
+        if creation_result.is_none() {
+            log::warn!("Compliant Vulkan not found. Trying OpenGL/GL backend...");
+            // Try GL/GLES next
+            let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
+            creation_result = try_create_gl(&window, flags).await;
+        }
+
+        if creation_result.is_none() {
+            log::warn!("OpenGL failed. Retrying Vulkan with non-compliant adapter support...");
             creation_result = try_create(
                 &window,
                 wgpu::Backends::VULKAN,
@@ -258,14 +274,7 @@ impl GpuContext {
         }
 
         if creation_result.is_none() {
-            log::warn!("Failed to initialize Vulkan. Falling back to OpenGL/GL backend...");
-            // Try GL/GLES next
-            let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
-            creation_result = try_create_gl(&window, flags).await;
-        }
-
-        if creation_result.is_none() {
-            log::warn!("Failed to initialize GL. Trying any available backend...");
+            log::warn!("Failed to initialize GL and Vulkan. Trying any available backend...");
             // Try any backend with fallback allowed
             creation_result = try_create(
                 &window,
