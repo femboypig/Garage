@@ -130,7 +130,6 @@ impl UiState {
         let breadcrumb_height = (ui_line_height * 1.3).round().max(22.0);
 
         let (branch_tx, branch_rx) = std::sync::mpsc::channel();
-        let (blame_tx, blame_rx) = std::sync::mpsc::channel();
         let (status_tx, status_rx) = std::sync::mpsc::channel();
         let (diff_tx, diff_rx) = std::sync::mpsc::channel();
         let (blame_file_tx, blame_file_rx) = std::sync::mpsc::channel();
@@ -181,8 +180,6 @@ impl UiState {
             last_branch_check: None,
             git_branch_rx: Some(branch_rx),
             git_branch_tx: branch_tx,
-            git_blame_rx: Some(blame_rx),
-            git_blame_tx: blame_tx,
             git_file_blames: std::collections::HashMap::new(),
             git_blame_file_rx: Some(blame_file_rx),
             git_blame_file_tx: blame_file_tx,
