@@ -56,16 +56,7 @@ pub fn draw_dock(
     let mut has_active_dock = false;
     let mut temp_x = ui.sidebar_width;
     for idx in 0..terminals.len() {
-        let term_name = if terminals[idx].grid.title.is_empty() {
-            format!("terminal-{}", idx + 1)
-        } else {
-            let mut name = terminals[idx].grid.title.clone();
-            if name.chars().count() > 20 {
-                let prefix: String = name.chars().take(17).collect();
-                name = format!("{}...", prefix);
-            }
-            name
-        };
+        let term_name = terminals[idx].get_display_name(idx);
         let term_name_w = term_name.chars().count() as f32 * ui.ui_char_width * 0.9;
         let icon_sz = 12.0f32;
         let close_sz = 10.0f32;
@@ -130,16 +121,7 @@ pub fn draw_dock(
 
     for idx in 0..terminals.len() {
         let is_active = idx == ui.active_dock_tab;
-        let term_name = if terminals[idx].grid.title.is_empty() {
-            format!("terminal-{}", idx + 1)
-        } else {
-            let mut name = terminals[idx].grid.title.clone();
-            if name.chars().count() > 20 {
-                let prefix: String = name.chars().take(17).collect();
-                name = format!("{}...", prefix);
-            }
-            name
-        };
+        let term_name = terminals[idx].get_display_name(idx);
         let term_name_w = term_name.chars().count() as f32 * ui.ui_char_width * 0.9;
         let tab_w = 12.0 + icon_sz + 6.0 + term_name_w + 8.0 + close_sz + 10.0;
         
