@@ -21,9 +21,13 @@ pub struct LspClient {
 }
 
 impl LspClient {
-    pub fn new(diagnostics_tx: Sender<LspDiagnosticsUpdate>) -> Self {
+    pub fn new(
+        diagnostics_tx: Sender<LspDiagnosticsUpdate>,
+        event_loop_proxy: winit::event_loop::EventLoopProxy<()>,
+    ) -> Self {
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<LspCommand>();
         
+        let proxy_init = event_loop_proxy.clone();
         std::thread::spawn(move || {
             // Attempt to spawn rust-analyzer
             let mut child = match Command::new("rust-analyzer")
@@ -40,6 +44,7 @@ impl LspClient {
                         errors: 9999,
                         warnings: 0,
                     });
+                    let _ = proxy_init.send_event(());
                     return;
                 }
             };
@@ -85,6 +90,12 @@ impl LspClient {
             log::info!("LSP: Sending initialize request...");
             if let Err(e) = write_message(&mut stdin, &init_msg.to_string()) {
                 log::warn!("LSP: Failed to write initialize message: {:?}", e);
+                let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                    file_path: "".to_string(),
+                    errors: 9999,
+                    warnings: 0,
+                });
+                let _ = proxy_init.send_event(());
                 return;
             }
 
@@ -95,6 +106,12 @@ impl LspClient {
                     if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&resp_str) {
                         if resp.get("error").is_some() {
                             log::warn!("LSP: Initialize returned error: {}", resp["error"]);
+                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                                file_path: "".to_string(),
+                                errors: 9999,
+                                warnings: 0,
+                            });
+                            let _ = proxy_init.send_event(());
                             return;
                         }
                         log::info!("LSP: Initialize response received successfully");
@@ -102,6 +119,12 @@ impl LspClient {
                 }
                 Err(e) => {
                     log::warn!("LSP: Failed to read initialize response: {:?}", e);
+                    let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                        file_path: "".to_string(),
+                        errors: 9999,
+                        warnings: 0,
+                    });
+                    let _ = proxy_init.send_event(());
                     return;
                 }
             }
@@ -114,6 +137,12 @@ impl LspClient {
             });
             if let Err(e) = write_message(&mut stdin, &initialized_msg.to_string()) {
                 log::warn!("LSP: Failed to write initialized notification: {:?}", e);
+                let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                    file_path: "".to_string(),
+                    errors: 9999,
+                    warnings: 0,
+                });
+                let _ = proxy_init.send_event(());
                 return;
             }
             log::info!("LSP: Handshake complete, starting reader thread");
@@ -124,9 +153,11 @@ impl LspClient {
                 errors: 0,
                 warnings: 0,
             });
+            let _ = proxy_init.send_event(());
 
             // Now spawn Reader thread — after handshake is done
             let diag_tx = diagnostics_tx.clone();
+            let proxy_reader = proxy_init.clone();
             std::thread::spawn(move || {
                 loop {
                     match read_message(&mut stdout_reader) {
@@ -161,6 +192,7 @@ impl LspClient {
                                                     errors,
                                                     warnings,
                                                 });
+                                                let _ = proxy_reader.send_event(());
                                             }
                                         }
                                     }
@@ -169,6 +201,12 @@ impl LspClient {
                         }
                         Err(e) => {
                             log::warn!("LSP: Reader thread exit due to error: {:?}", e);
+                            let _ = diag_tx.send(LspDiagnosticsUpdate {
+                                file_path: "".to_string(),
+                                errors: 9999,
+                                warnings: 0,
+                            });
+                            let _ = proxy_reader.send_event(());
                             break;
                         }
                     }
