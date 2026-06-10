@@ -55,3 +55,10 @@ pub struct FileNode {
     pub is_dir: bool,
     pub depth: usize,
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GitDiffHunk {
+    Added { line: usize, count: usize },
+    Modified { line: usize, count: usize },
+    Deleted { line: usize },
+}
