@@ -75,17 +75,6 @@ pub fn handle_cursor_moved(
         let target_y = state.mouse_y.clamp(min_y, max_y);
         let new_height = size.height as f32 - ui.status_height - target_y;
         ui.dock_height = new_height;
-        
-        // Resize active terminal PTY
-        if !state.dock_terminals.is_empty() {
-            let width_content = size.width as f32 - ui.sidebar_width - 16.0;
-            let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
-            let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
-            let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
-            let active_term = &mut state.dock_terminals[state.active_terminal_idx];
-            active_term.grid.resize(cols, rows);
-            active_term.resize_pty(cols, rows);
-        }
     } else if state.is_dragging_scroll {
         let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
         let status_y = (size.height as f32 - ui.status_height).round();
