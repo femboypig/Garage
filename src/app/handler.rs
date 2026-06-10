@@ -178,7 +178,7 @@ pub fn handle_action(
                 *atlas = new_atlas;
                 new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
 
-                let mut new_ui = UiState::new(atlas, &new_gpu.queue, new_config);
+                let mut new_ui = UiState::new(atlas, &new_gpu.queue, new_config, ui.event_loop_proxy.clone());
                 new_ui.active_device_name = new_gpu.device_name.clone();
 
                 let old_expanded = ui.expanded_dirs.clone();
@@ -288,7 +288,7 @@ pub fn handle_action(
                 let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
                 
                 if state.dock_terminals.is_empty() {
-                    if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone()) {
+                    if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone(), ui.event_loop_proxy.clone()) {
                         state.dock_terminals.push(term);
                         state.active_terminal_idx = 0;
                     }
@@ -305,7 +305,7 @@ pub fn handle_action(
             let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
             let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
             let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
-            if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone()) {
+            if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone(), ui.event_loop_proxy.clone()) {
                 state.dock_terminals.push(term);
                 state.active_terminal_idx = state.dock_terminals.len() - 1;
             }
@@ -320,7 +320,7 @@ pub fn handle_action(
                     let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
                     let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
                     let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
-                    if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone()) {
+                    if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone(), ui.event_loop_proxy.clone()) {
                         state.dock_terminals.push(term);
                     }
                 }
