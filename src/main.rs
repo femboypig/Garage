@@ -1,6 +1,5 @@
 pub mod editor;
 pub mod renderer;
-pub mod ui;
 pub mod app;
 pub mod terminal;
 
