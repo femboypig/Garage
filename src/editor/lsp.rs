@@ -26,17 +26,6 @@ struct ServerInstance {
     cmd_name: String,
 }
 
-fn get_install_instruction(cmd: &str) -> &'static str {
-    match cmd {
-        "rust-analyzer" => "install via 'rustup component add rust-analyzer'",
-        "pyright-langserver" | "pylsp" => "install via 'npm i -g pyright' or 'pip install python-lsp-server'",
-        "gopls" => "install via 'go install golang.org/x/tools/gopls@latest'",
-        "clangd" => "install via 'sudo apt install clangd'",
-        "typescript-language-server" => "install via 'npm i -g typescript-language-server'",
-        _ => "command not found in PATH",
-    }
-}
-
 fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> {
     let alternatives = match lang_id {
         "rust" => vec![("rust-analyzer", vec![])],
@@ -234,17 +223,8 @@ impl LspClient {
                                     }
                                     Err(e_msg) => {
                                         log::warn!("LSP: Failed to start server for {}: {}", lang_id, e_msg);
-                                        let default_cmd = match lang_id {
-                                            "rust" => "rust-analyzer",
-                                            "python" => "pyright-langserver",
-                                            "go" => "gopls",
-                                            "c" | "cpp" => "clangd",
-                                            "typescript" | "javascript" => "typescript-language-server",
-                                            _ => "lsp",
-                                        };
-                                        let instr = get_install_instruction(default_cmd);
                                         let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                                            file_path: format!("status:offline ({})", instr),
+                                            file_path: "status:offline".to_string(),
                                             errors: 9999,
                                             warnings: 0,
                                         });
@@ -314,17 +294,8 @@ impl LspClient {
                                 warnings: 0,
                             });
                         } else {
-                            let default_cmd = match lang_id {
-                                "rust" => "rust-analyzer",
-                                "python" => "pyright-langserver",
-                                "go" => "gopls",
-                                "c" | "cpp" => "clangd",
-                                "typescript" | "javascript" => "typescript-language-server",
-                                _ => "lsp",
-                            };
-                            let instr = get_install_instruction(default_cmd);
                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                                file_path: format!("status:offline ({})", instr),
+                                file_path: "status:offline".to_string(),
                                 errors: 9999,
                                 warnings: 0,
                             });
@@ -343,19 +314,27 @@ impl LspClient {
     }
 
     pub fn notify_open(&self, path: &str, text: String) {
-        let _ = self.cmd_tx.send(LspCommand::OpenFile { path: path.to_string(), text });
+        let abs_path = get_absolute_path(path);
+        let _ = self.cmd_tx.send(LspCommand::OpenFile { path: abs_path, text });
     }
 
     pub fn notify_change(&self, path: &str, text: String) {
-        let _ = self.cmd_tx.send(LspCommand::ChangeFile { path: path.to_string(), text });
+        let abs_path = get_absolute_path(path);
+        let _ = self.cmd_tx.send(LspCommand::ChangeFile { path: abs_path, text });
     }
 
     pub fn notify_save(&self, path: &str) {
-        let _ = self.cmd_tx.send(LspCommand::SaveFile { path: path.to_string() });
+        let abs_path = get_absolute_path(path);
+        let _ = self.cmd_tx.send(LspCommand::SaveFile { path: abs_path });
     }
 
     pub fn notify_active_file(&self, path: &str) {
-        let _ = self.cmd_tx.send(LspCommand::SetActiveFile { path: path.to_string() });
+        let abs_path = if path.is_empty() {
+            "".to_string()
+        } else {
+            get_absolute_path(path)
+        };
+        let _ = self.cmd_tx.send(LspCommand::SetActiveFile { path: abs_path });
     }
 }
 
@@ -428,4 +407,17 @@ fn detect_language_id(path: &str) -> &'static str {
         "sql" => "sql",
         _ => "plaintext",
     }
+}
+
+fn get_absolute_path(path: &str) -> String {
+    let path_buf = std::path::PathBuf::from(path);
+    let abs_path = if path_buf.is_absolute() {
+        path_buf
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path_buf)
+    };
+    std::fs::canonicalize(&abs_path)
+        .unwrap_or(abs_path)
+        .to_string_lossy()
+        .to_string()
 }
