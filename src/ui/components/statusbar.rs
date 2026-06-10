@@ -85,14 +85,48 @@ pub fn draw_statusbar(
         }
     }
 
-    // 2. Draw Diagnostics Indicators (mocked for clean UI look)
-    let err_color = [0.90, 0.30, 0.30, 1.0];
+    // 2. Draw Diagnostics Indicators
+    let mut err_count = 0;
+    let mut warn_count = 0;
+    if let Some(path) = active_path {
+        let abs_path = if std::path::Path::new(path).is_absolute() {
+            std::path::PathBuf::from(path)
+        } else if let Ok(current_dir) = std::env::current_dir() {
+            current_dir.join(path)
+        } else {
+            std::path::PathBuf::from(path)
+        };
+        
+        let abs_path_str = abs_path.to_string_lossy().to_string();
+        let abs_path_str_canon = std::fs::canonicalize(&abs_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| abs_path_str.clone());
+
+        if let Some((e, w)) = ui.lsp_diagnostics.get(&abs_path_str)
+            .or_else(|| ui.lsp_diagnostics.get(&abs_path_str_canon))
+        {
+            err_count = *e;
+            warn_count = *w;
+        } else {
+            let active_suffix = format!("/{}", path.replace("./", ""));
+            for (key, val) in &ui.lsp_diagnostics {
+                if key.ends_with(&active_suffix) {
+                    err_count = val.0;
+                    warn_count = val.1;
+                    break;
+                }
+            }
+        }
+    }
+
+    let err_str = format!("⊗ {}  ", err_count);
+    let err_color = if err_count > 0 { [0.95, 0.25, 0.25, 1.0] } else { ui.config.theme.statusbar_text };
     pen_x += ui.push_str(
         vertices,
         indices,
         atlas,
         queue,
-        "⊗ 0  ",
+        &err_str,
         pen_x,
         baseline_y,
         err_color,
@@ -100,13 +134,14 @@ pub fn draw_statusbar(
         ui.ui_char_width,
     );
 
-    let warn_color = [0.90, 0.70, 0.20, 1.0];
+    let warn_str = format!("⚠ {}", warn_count);
+    let warn_color = if warn_count > 0 { [0.95, 0.70, 0.15, 1.0] } else { ui.config.theme.statusbar_text };
     pen_x += ui.push_str(
         vertices,
         indices,
         atlas,
         queue,
-        "⚠ 0",
+        &warn_str,
         pen_x,
         baseline_y,
         warn_color,
@@ -146,12 +181,12 @@ pub fn draw_statusbar(
         });
 
     let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
-    let lsp_str = if language == "Rust" { "LSP: rust-analyzer" } else { "LSP: ready" };
+    let lsp_str = format!("LSP: {}", ui.lsp_status);
 
     let right_components = [
         cursor_str.as_str(),
         language.as_str(),
-        lsp_str,
+        lsp_str.as_str(),
         "UTF-8",
         "LF",
     ];
