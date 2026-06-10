@@ -454,16 +454,7 @@ impl UiState {
             let tab_h = dock_tabbar_h - 1.0;
             
             for idx in 0..terminals.len() {
-                let term_name = if terminals[idx].grid.title.is_empty() {
-                    format!("terminal-{}", idx + 1)
-                } else {
-                    let mut name = terminals[idx].grid.title.clone();
-                    if name.chars().count() > 20 {
-                        let prefix: String = name.chars().take(17).collect();
-                        name = format!("{}...", prefix);
-                    }
-                    name
-                };
+                let term_name = terminals[idx].get_display_name(idx);
                 let term_name_w = term_name.chars().count() as f32 * self.ui_char_width * 0.9;
                 let icon_sz = 12.0f32;
                 let close_sz = 10.0f32;
