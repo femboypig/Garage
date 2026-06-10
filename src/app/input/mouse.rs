@@ -245,7 +245,7 @@ pub fn handle_mouse_input(
                         &mut active_tab.cursor,
                         &tab_paths,
                         &tab_modified,
-                        state.dock_terminals.len(),
+                        &state.dock_terminals,
                     )
                 };
                 handle_action(ui, state, action_res, window, elwt, gpu, atlas, font_bytes);
@@ -268,7 +268,7 @@ pub fn handle_mouse_input(
                             &mut active_tab.cursor,
                             &tab_paths,
                             &tab_modified,
-                            state.dock_terminals.len(),
+                            &state.dock_terminals,
                         )
                     };
  
