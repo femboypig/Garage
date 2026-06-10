@@ -49,6 +49,9 @@ pub fn handle_action(
                 ui.update_git_diff(Some(active_path));
                 ui.update_git_file_blame(Some(active_path));
                 ui.update_git_statuses();
+                if let Some(ref lsp) = state.lsp_client {
+                    lsp.notify_open(active_path, state.tabs[state.active_tab_idx].buffer.to_string());
+                }
             }
         }
         UiAction::SaveFile => {
@@ -66,6 +69,9 @@ pub fn handle_action(
                 ui.update_git_diff(Some(&path_to_save));
                 ui.update_git_file_blame(Some(&path_to_save));
                 ui.update_git_statuses();
+                if let Some(ref lsp) = state.lsp_client {
+                    lsp.notify_save(&path_to_save);
+                }
             }
         }
         UiAction::Undo => {
