@@ -570,6 +570,7 @@ impl UiState {
         );
 
         // --- 5. Draw Statusbar ---
+        let active_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
         crate::ui::components::statusbar::draw_statusbar(
             self,
             vertices,
@@ -582,6 +583,7 @@ impl UiState {
             cursor,
             mouse_x,
             mouse_y,
+            active_path,
         );
 
         // --- 6. Draw Context Dropdown Menus & 7. Modal Dialogs ---
