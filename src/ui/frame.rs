@@ -6,6 +6,22 @@ use crate::terminal::TerminalInstance;
 use super::{UiState, UiAction, ModalType};
 
 impl UiState {
+    pub fn get_max_line_len(&mut self, buffer: &Buffer, active_file_path: Option<&str>, cursor_line: usize) -> usize {
+        let mut max_len = 0;
+        for (line_idx, line) in buffer.lines().iter().enumerate() {
+            let mut len = line.chars().count();
+            if self.config.show_git_blame && line_idx == cursor_line {
+                if let Some(blame_str) = self.get_or_update_blame(active_file_path, line_idx) {
+                    len += 4 + blame_str.chars().count();
+                }
+            }
+            if len > max_len {
+                max_len = len;
+            }
+        }
+        max_len
+    }
+
     /// Push a solid rectangle (quad) into the vertex and index vectors
     pub fn push_quad(
         &self,
@@ -495,7 +511,7 @@ impl UiState {
         let dock_start_y = status_y;
 
         // --- 1. Draw Titlebar Menu Headers (Light Theme) ---
-        self::components::titlebar::draw_titlebar(
+        crate::ui::components::titlebar::draw_titlebar(
             self,
             vertices,
             indices,
@@ -507,7 +523,7 @@ impl UiState {
         );
 
         // --- 2. Draw Sidebar Panel (Light Theme) ---
-        self::components::sidebar::draw_sidebar(
+        crate::ui::components::sidebar::draw_sidebar(
             self,
             vertices,
             indices,
@@ -520,7 +536,7 @@ impl UiState {
         );
 
         // --- 3. Draw Editor Tabbar, Breadcrumbs, Text Area, Gutter, Scrollbars & Minimap ---
-        self::components::editor_view::draw_editor_view(
+        crate::ui::components::editor_view::draw_editor_view(
             self,
             vertices,
             indices,
@@ -538,7 +554,7 @@ impl UiState {
         );
 
         // --- 4.5. Draw Bottom Dock ---
-        self::components::dock::draw_dock(
+        crate::ui::components::dock::draw_dock(
             self,
             vertices,
             indices,
@@ -554,7 +570,7 @@ impl UiState {
         );
 
         // --- 5. Draw Statusbar ---
-        self::components::statusbar::draw_statusbar(
+        crate::ui::components::statusbar::draw_statusbar(
             self,
             vertices,
             indices,
@@ -569,7 +585,7 @@ impl UiState {
         );
 
         // --- 6. Draw Context Dropdown Menus & 7. Modal Dialogs ---
-        self::components::modals::draw_modals(
+        crate::ui::components::modals::draw_modals(
             self,
             vertices,
             indices,
