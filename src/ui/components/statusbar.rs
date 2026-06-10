@@ -127,35 +127,23 @@ pub fn draw_statusbar(
         .and_then(|ext| ext.to_str())
         .unwrap_or("");
 
-    let language = match extension {
-        "rs" => "Rust".to_string(),
-        "json" => "JSON".to_string(),
-        "toml" => "TOML".to_string(),
-        "md" => "Markdown".to_string(),
-        "js" => "JavaScript".to_string(),
-        "ts" => "TypeScript".to_string(),
-        "html" => "HTML".to_string(),
-        "css" => "CSS".to_string(),
-        "wgsl" => "WGSL".to_string(),
-        "sh" => "Shell".to_string(),
-        "py" => "Python".to_string(),
-        "go" => "Go".to_string(),
-        "cpp" => "C++".to_string(),
-        "c" => "C".to_string(),
-        "h" => "C Header".to_string(),
-        "" => "Plain Text".to_string(),
-        other => {
-            let mut chars = other.chars();
-            match chars.next() {
-                None => "Plain Text".to_string(),
-                Some(first) => {
-                    let mut s = first.to_uppercase().to_string();
-                    s.push_str(&chars.as_str().to_lowercase());
-                    s
+    let language = ui.languages.get(extension)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            if extension.is_empty() {
+                "Plain Text".to_string()
+            } else {
+                let mut chars = extension.chars();
+                match chars.next() {
+                    None => "Plain Text".to_string(),
+                    Some(first) => {
+                        let mut s = first.to_uppercase().to_string();
+                        s.push_str(&chars.as_str().to_lowercase());
+                        s
+                    }
                 }
             }
-        }
-    };
+        });
 
     let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
     let lsp_str = if language == "Rust" { "LSP: rust-analyzer" } else { "LSP: ready" };
