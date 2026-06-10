@@ -7,9 +7,8 @@ use crate::renderer::gpu::GpuContext;
 use std::time::Instant;
 use crate::ui::{UiState, UiAction};
 use crate::editor::buffer::Buffer;
-use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
-use super::state::{AppState, Tab};
+use super::state::AppState;
 use super::handler::handle_action;
 use std::io::Write;
 
