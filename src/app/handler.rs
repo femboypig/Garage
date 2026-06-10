@@ -266,15 +266,23 @@ pub fn handle_action(
             ui.show_dock = !ui.show_dock;
             if !ui.show_dock {
                 state.terminal_focus = false;
-            } else if !state.dock_terminals.is_empty() {
+            } else {
                 let size = window.inner_size();
                 let width_content = size.width as f32 - ui.sidebar_width - 16.0;
                 let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
                 let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
                 let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
-                let active_term = &mut state.dock_terminals[state.active_terminal_idx];
-                active_term.grid.resize(cols, rows);
-                active_term.resize_pty(cols, rows);
+                
+                if state.dock_terminals.is_empty() {
+                    if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone()) {
+                        state.dock_terminals.push(term);
+                        state.active_terminal_idx = 0;
+                    }
+                } else {
+                    let active_term = &mut state.dock_terminals[state.active_terminal_idx];
+                    active_term.grid.resize(cols, rows);
+                    active_term.resize_pty(cols, rows);
+                }
             }
         }
         UiAction::NewTerminal => {
