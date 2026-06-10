@@ -89,22 +89,9 @@ pub fn draw_statusbar(
     let mut err_count = 0;
     let mut warn_count = 0;
     if let Some(path) = active_path {
-        let abs_path = if std::path::Path::new(path).is_absolute() {
-            std::path::PathBuf::from(path)
-        } else if let Ok(current_dir) = std::env::current_dir() {
-            current_dir.join(path)
-        } else {
-            std::path::PathBuf::from(path)
-        };
-        
-        let abs_path_str = abs_path.to_string_lossy().to_string();
-        let abs_path_str_canon = std::fs::canonicalize(&abs_path)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| abs_path_str.clone());
+        let abs_path_str = crate::editor::lsp::get_absolute_path(path);
 
-        if let Some((e, w)) = ui.lsp_diagnostics.get(&abs_path_str)
-            .or_else(|| ui.lsp_diagnostics.get(&abs_path_str_canon))
-        {
+        if let Some((e, w)) = ui.lsp_diagnostics.get(&abs_path_str) {
             err_count = *e;
             warn_count = *w;
         } else {
