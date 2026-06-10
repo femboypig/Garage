@@ -80,6 +80,16 @@ impl TerminalGrid {
             return;
         }
 
+        // Clear cursor line in old grid to prevent ghost prompt duplicates on resize
+        if self.cursor_y < self.rows {
+            let start_idx = self.cursor_y * self.cols;
+            for x in 0..self.cols {
+                if start_idx + x < self.cells.len() {
+                    self.cells[start_idx + x] = Cell::default();
+                }
+            }
+        }
+
         let mut new_cells = vec![Cell::default(); new_cols * new_rows];
         
         // Calculate vertical shift if the height is shrinking and the cursor would be off-screen
@@ -388,6 +398,7 @@ pub struct TerminalInstance {
     pub grid: TerminalGrid,
     pub pty_pair: PtyPair,
     pub child: Box<dyn Child>,
+    pub parser: vte::Parser,
 }
 
 impl TerminalInstance {
@@ -431,6 +442,7 @@ impl TerminalInstance {
         });
 
         let grid = TerminalGrid::new(cols, rows);
+        let parser = vte::Parser::new();
 
         Ok(Self {
             name: "terminal".to_string(),
@@ -439,6 +451,7 @@ impl TerminalInstance {
             grid,
             pty_pair,
             child,
+            parser,
         })
     }
 
