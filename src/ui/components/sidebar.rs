@@ -12,6 +12,8 @@ pub fn draw_sidebar(
     main_height: f32,
     mouse_x: f32,
     mouse_y: f32,
+    tab_paths: &[Option<String>],
+    tab_modified: &[bool],
 ) {
     if ui.sidebar_width <= 0.0 {
         return;
@@ -183,17 +185,51 @@ pub fn draw_sidebar(
                     }
                 }
             }
+            // Also check open unsaved modified tabs under this directory
+            if !has_modified {
+                for (t_idx, t_path_opt) in tab_paths.iter().enumerate() {
+                    if let Some(t_path) = t_path_opt {
+                        let t_path_buf = std::path::Path::new(t_path);
+                        let t_path_rel = t_path_buf.strip_prefix("./").unwrap_or(t_path_buf);
+                        if t_path_rel.starts_with(relative_path) && tab_modified.get(t_idx).copied().unwrap_or(false) {
+                            has_modified = true;
+                            break;
+                        }
+                    }
+                }
+            }
             if has_modified {
                 file_color = [0.86, 0.49, 0.18, 0.85]; // muted orange
             } else if has_untracked {
                 file_color = [0.18, 0.65, 0.43, 0.85]; // muted green
             }
         } else {
+            let mut is_unsaved_modified = false;
+            for (t_idx, t_path_opt) in tab_paths.iter().enumerate() {
+                if let Some(t_path) = t_path_opt {
+                    let t_path_buf = std::path::Path::new(t_path);
+                    let matches = t_path == relative_path.to_str().unwrap_or("")
+                        || t_path == node.path.to_str().unwrap_or("")
+                        || std::fs::canonicalize(t_path_buf).ok() == std::fs::canonicalize(&node.path).ok();
+                    if matches && tab_modified.get(t_idx).copied().unwrap_or(false) {
+                        is_unsaved_modified = true;
+                        break;
+                    }
+                }
+            }
+
+            let mut is_modified = is_unsaved_modified;
             if let Some(status) = ui.git_statuses.get(relative_path) {
                 if status.contains('M') {
-                    file_color = [0.86, 0.49, 0.18, 1.0]; // orange-yellow
-                    git_badge = Some("M");
-                } else if status.contains('?') || status.contains('A') {
+                    is_modified = true;
+                }
+            }
+
+            if is_modified {
+                file_color = [0.86, 0.49, 0.18, 1.0]; // orange-yellow
+                git_badge = Some("M");
+            } else if let Some(status) = ui.git_statuses.get(relative_path) {
+                if status.contains('?') || status.contains('A') {
                     file_color = [0.18, 0.65, 0.43, 1.0]; // green
                     git_badge = Some(if status.contains('A') { "A" } else { "U" });
                 }
