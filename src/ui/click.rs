@@ -449,7 +449,7 @@ impl UiState {
         }
         let dock_tabbar_h = 28.0f32;
         if self.show_dock && my >= dock_start_y && my < dock_start_y + dock_tabbar_h {
-            let mut cur_x = self.sidebar_width + 10.0f32;
+            let mut cur_x = self.sidebar_width;
             let tab_y = dock_start_y + 1.0;
             let tab_h = dock_tabbar_h - 1.0;
             
