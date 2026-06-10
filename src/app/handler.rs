@@ -2,7 +2,7 @@ use std::sync::Arc;
 use winit::window::{Window, WindowBuilder};
 use winit::event_loop::EventLoopWindowTarget;
 use crate::ui::{UiState, UiAction};
-use crate::renderer::gpu::GpuContext;
+use crate::renderer::wgpu::GpuContext;
 use crate::renderer::atlas::FontAtlas;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
