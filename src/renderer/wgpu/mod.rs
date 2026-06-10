@@ -236,50 +236,45 @@ impl GpuContext {
 
         if let Some(backend) = forced_backend {
             if backend == wgpu::Backends::GL {
+                log::warn!("Trying forced OpenGL/GL backend...");
                 let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
                 creation_result = try_create_gl(&window, flags).await;
-            } else {
-                // Try compliant first even when forced
-                creation_result = try_create(&window, backend, wgpu::InstanceFlags::default()).await;
+            } else if backend == wgpu::Backends::VULKAN {
+                log::warn!("Trying forced compliant Vulkan backend...");
+                creation_result = try_create(&window, wgpu::Backends::VULKAN, wgpu::InstanceFlags::default()).await;
+                if creation_result.is_none() {
+                    log::warn!("Forced compliant Vulkan failed. Trying Vulkan with non-compliant adapter support...");
+                    creation_result = try_create(
+                        &window,
+                        wgpu::Backends::VULKAN,
+                        wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
+                    ).await;
+                }
             }
         }
 
         if creation_result.is_none() {
-            // Try OpenGL/GL first — it never hangs
-            log::warn!("Trying OpenGL/GL backend first...");
-            let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
-            creation_result = try_create_gl(&window, flags).await;
+            let preferred_is_gl = forced_backend == Some(wgpu::Backends::GL);
+            if preferred_is_gl {
+                log::warn!("Forced OpenGL failed. Trying compliant Vulkan fallback...");
+                creation_result = try_create(&window, wgpu::Backends::VULKAN, wgpu::InstanceFlags::default()).await;
+                if creation_result.is_none() {
+                    log::warn!("Compliant Vulkan fallback failed. Trying Vulkan with non-compliant adapter support...");
+                    creation_result = try_create(
+                        &window,
+                        wgpu::Backends::VULKAN,
+                        wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
+                    ).await;
+                }
+            } else {
+                log::warn!("Forced Vulkan failed. Trying OpenGL/GL fallback...");
+                let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
+                creation_result = try_create_gl(&window, flags).await;
+            }
         }
 
         if creation_result.is_none() {
-            // Try compliant Vulkan
-            log::warn!("OpenGL failed. Trying compliant Vulkan...");
-            creation_result = try_create(
-                &window,
-                wgpu::Backends::VULKAN,
-                wgpu::InstanceFlags::default(),
-            ).await;
-        }
-
-        if creation_result.is_none() {
-            log::warn!("Compliant Vulkan not found. Trying OpenGL/GL backend...");
-            // Try GL/GLES next
-            let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
-            creation_result = try_create_gl(&window, flags).await;
-        }
-
-        if creation_result.is_none() {
-            log::warn!("OpenGL failed. Retrying Vulkan with non-compliant adapter support...");
-            creation_result = try_create(
-                &window,
-                wgpu::Backends::VULKAN,
-                wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
-            ).await;
-        }
-
-        if creation_result.is_none() {
-            log::warn!("Failed to initialize GL and Vulkan. Trying any available backend...");
-            // Try any backend with fallback allowed
+            log::warn!("Primary fallbacks failed. Trying any available backend with non-compliant adapter support...");
             creation_result = try_create(
                 &window,
                 wgpu::Backends::all(),
