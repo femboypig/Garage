@@ -73,8 +73,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     // Initialize LSP diagnostics channel
     let (lsp_diag_tx, lsp_diag_rx) = std::sync::mpsc::channel();
 
+    let proxy = event_loop.create_proxy();
+
     // Initialize layout and state
-    let mut ui = UiState::new(&mut atlas, &gpu.as_ref().unwrap().queue, config);
+    let mut ui = UiState::new(&mut atlas, &gpu.as_ref().unwrap().queue, config, proxy.clone());
     ui.active_device_name = gpu.as_ref().unwrap().device_name.clone();
     ui.lsp_diagnostics_rx = Some(lsp_diag_rx);
 
@@ -99,7 +101,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     };
 
     // Spawn rust-analyzer LSP client
-    let lsp_client = Some(crate::editor::lsp::LspClient::new(lsp_diag_tx));
+    let lsp_client = Some(crate::editor::lsp::LspClient::new(lsp_diag_tx, proxy));
     if let Some(ref lsp) = lsp_client {
         if let Some(ref path) = initial_tab.path {
             lsp.notify_open(path, initial_tab.buffer.lines().join("\n"));
@@ -278,6 +280,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 }
                 _ => {}
             },
+            Event::UserEvent(()) => {
+                window.request_redraw();
+            }
             Event::AboutToWait => {
                 if state.terminal_focus {
                     elwt.set_control_flow(ControlFlow::WaitUntil(
