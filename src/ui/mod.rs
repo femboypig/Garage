@@ -11,6 +11,7 @@ pub mod click;
 pub mod frame;
 
 pub use types::{UiAction, MenuType, ModalType, FileNode};
+pub use crate::renderer::gpu::Vertex;
 
 pub struct UiState {
     pub ui_font_size: f32,
