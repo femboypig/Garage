@@ -100,7 +100,7 @@ pub struct UiState {
     pub tab_to_close: Option<usize>,
     pub theme_dropdown_open: bool,
 
-    pub config: crate::config::AppConfig,
+    pub config: crate::editor::config::AppConfig,
     pub active_device_name: String,
 
     pub last_blame_file: Option<String>,
@@ -122,7 +122,7 @@ pub struct UiState {
 }
 
 impl UiState {
-    pub fn new(atlas: &mut FontAtlas, _queue: &wgpu::Queue, config: crate::config::AppConfig) -> Self {
+    pub fn new(atlas: &mut FontAtlas, _queue: &wgpu::Queue, config: crate::editor::config::AppConfig) -> Self {
         let ui_font_size = config.ui_font_size;
         let buffer_font_size = config.buffer_font_size;
 
