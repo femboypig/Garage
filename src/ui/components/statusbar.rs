@@ -12,7 +12,7 @@ pub fn draw_statusbar(
     queue: &wgpu::Queue,
     width: f32,
     height: f32,
-    buffer: &Buffer,
+    _buffer: &Buffer,
     cursor: &Cursor,
     mouse_x: f32,
     mouse_y: f32,
