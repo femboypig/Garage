@@ -455,8 +455,8 @@ pub fn handle_mouse_wheel(
 
     if is_mouse_over_terminal && !state.dock_terminals.is_empty() {
         let scroll_lines = match delta {
-            MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
-            MouseScrollDelta::PixelDelta(pos) => ((pos.y / 15.0) * 3.0) as isize * -1,
+            MouseScrollDelta::LineDelta(_, dy) => dy as isize * 3,
+            MouseScrollDelta::PixelDelta(pos) => ((pos.y / 15.0) * 3.0) as isize,
         };
         let active_term = &mut state.dock_terminals[state.active_terminal_idx];
         let max_scroll = active_term.grid.scrollback.len() as isize;
