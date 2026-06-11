@@ -48,6 +48,7 @@ struct ServerInstance {
     cmd_name: String,
     token_requests: Arc<Mutex<HashMap<u64, String>>>,
     next_req_id: Arc<Mutex<u64>>,
+    _token_types: Arc<Mutex<Vec<String>>>,
 }
 fn get_local_lsp_path(subpath: &str) -> String {
     let current_dir = std::env::current_dir().unwrap_or_default();
@@ -840,8 +841,11 @@ impl LspClient {
 
                                         log::info!("LSP: Sending initialize to {}...", cmd_name);
                                         if write_message(&mut stdin_raw, &init_msg.to_string()).is_ok() {
-                                            if let Ok(_resp_str) = read_message(&mut stdout_reader) {
+                                            if let Ok(resp_str) = read_message(&mut stdout_reader) {
                                                 log::info!("LSP: Initialize response from {} received", cmd_name);
+                                                let server_token_types = parse_legend_token_types(&resp_str);
+                                                let token_types = Arc::new(Mutex::new(server_token_types));
+
                                                 let initialized_msg = serde_json::json!({
                                                     "jsonrpc": "2.0",
                                                     "method": "initialized",
@@ -850,7 +854,7 @@ impl LspClient {
                                                 let _ = write_message(&mut stdin_raw, &initialized_msg.to_string());
                                                 
                                                 let stdin = Arc::new(Mutex::new(stdin_raw));
-                                                start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone());
+                                                start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone(), token_types.clone());
 
                                                 let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                     file_path: format!("status:{}", cmd_name),
@@ -862,7 +866,7 @@ impl LspClient {
                                                 });
                                                 let _ = proxy_init.send_event(());
                                                 
-                                                servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name, token_requests, next_req_id });
+                                                servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types });
                                                 server_ready = true;
                                             }
                                         }
@@ -1165,7 +1169,9 @@ impl LspClient {
 
                                     log::info!("LSP: Sending initialize to {} after auto-install...", cmd_name);
                                     if write_message(&mut stdin_raw, &init_msg.to_string()).is_ok() {
-                                        if let Ok(_resp_str) = read_message(&mut stdout_reader) {
+                                        if let Ok(resp_str) = read_message(&mut stdout_reader) {
+                                            let server_token_types = parse_legend_token_types(&resp_str);
+                                            let token_types = Arc::new(Mutex::new(server_token_types));
                                             log::info!("LSP: Initialize response from {} received", cmd_name);
                                             let initialized_msg = serde_json::json!({
                                                 "jsonrpc": "2.0",
@@ -1175,7 +1181,7 @@ impl LspClient {
                                             let _ = write_message(&mut stdin_raw, &initialized_msg.to_string());
                                             
                                             let stdin = Arc::new(Mutex::new(stdin_raw));
-                                            start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone());
+                                            start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone(), token_types.clone());
 
                                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                 file_path: format!("status:{}", cmd_name),
@@ -1239,7 +1245,7 @@ impl LspClient {
                                                 }
                                             }
                                             
-                                            servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name, token_requests, next_req_id });
+                                            servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types });
                                         }
                                     }
                                 }
@@ -1340,6 +1346,7 @@ fn start_reader_thread(
     proxy: winit::event_loop::EventLoopProxy<()>,
     token_requests: Arc<Mutex<HashMap<u64, String>>>,
     stdin: Arc<Mutex<std::process::ChildStdin>>,
+    token_types: Arc<Mutex<Vec<String>>>,
 ) {
     let cmd_name_for_reader = cmd_name;
     std::thread::spawn(move || {
@@ -1550,6 +1557,7 @@ fn start_reader_thread(
                                             let mut current_start = 0;
 
                                             let mut i = 0;
+                                            let token_types_guard = token_types.lock().unwrap();
                                             while i + 4 < data.len() {
                                                 let delta_line = data[i].as_u64().unwrap_or(0) as usize;
                                                 let delta_start = data[i+1].as_u64().unwrap_or(0) as usize;
@@ -1563,30 +1571,10 @@ fn start_reader_thread(
                                                     current_start += delta_start;
                                                 }
 
-                                                 let token_type = match token_type_idx {
-                                                    0 => "namespace",
-                                                    1 => "type",
-                                                    2 => "class",
-                                                    3 => "enum",
-                                                    4 => "interface",
-                                                    5 => "struct",
-                                                    6 => "typeParameter",
-                                                    7 => "parameter",
-                                                    8 => "variable",
-                                                    9 => "property",
-                                                    10 => "enumMember",
-                                                    11 => "event",
-                                                    12 => "function",
-                                                    13 => "method",
-                                                    14 => "macro",
-                                                    15 => "keyword",
-                                                    16 => "modifier",
-                                                    17 => "comment",
-                                                    18 => "string",
-                                                    19 => "number",
-                                                    20 => "regexp",
-                                                    21 => "operator",
-                                                    _ => "variable",
+                                                let token_type = if token_type_idx < token_types_guard.len() {
+                                                    token_types_guard[token_type_idx].as_str()
+                                                } else {
+                                                    "variable"
                                                 }.to_string();
 
                                                 tokens_list.push(SemanticTokenDetail {
@@ -1757,4 +1745,32 @@ fn hex_to_byte(h: u8, l: u8) -> Option<u8> {
     let h_val = (h as char).to_digit(16)?;
     let l_val = (l as char).to_digit(16)?;
     Some(((h_val << 4) | l_val) as u8)
+}
+
+fn parse_legend_token_types(resp_str: &str) -> Vec<String> {
+    let mut token_types = Vec::new();
+    if let Ok(resp_val) = serde_json::from_str::<serde_json::Value>(resp_str) {
+        if let Some(types) = resp_val.get("result")
+            .and_then(|r| r.get("capabilities"))
+            .and_then(|c| c.get("semanticTokensProvider"))
+            .and_then(|s| s.get("legend"))
+            .and_then(|l| l.get("tokenTypes"))
+            .and_then(|t| t.as_array()) 
+        {
+            for t in types {
+                if let Some(s) = t.as_str() {
+                    token_types.push(s.to_string());
+                }
+            }
+        }
+    }
+    if token_types.is_empty() {
+        token_types = vec![
+            "namespace".to_string(), "type".to_string(), "class".to_string(), "enum".to_string(), "interface".to_string(), "struct".to_string(), "typeParameter".to_string(),
+            "parameter".to_string(), "variable".to_string(), "property".to_string(), "enumMember".to_string(), "event".to_string(), "function".to_string(),
+            "method".to_string(), "macro".to_string(), "keyword".to_string(), "modifier".to_string(), "comment".to_string(), "string".to_string(), "number".to_string(),
+            "regexp".to_string(), "operator".to_string()
+        ];
+    }
+    token_types
 }
