@@ -716,7 +716,7 @@ impl LspClient {
                 if let Ok(mut pending) = pending_changes_clone.lock() {
                     for (path, (text, version, needs_send, last_update)) in pending.iter_mut() {
                         let lang_id = detect_language_id(path);
-                        if *needs_send && servers.contains_key(lang_id) && now.duration_since(*last_update) >= std::time::Duration::from_millis(200) {
+                        if *needs_send && servers.contains_key(lang_id) && now.duration_since(*last_update) >= std::time::Duration::from_millis(50) {
                             changes_to_flush.push((path.clone(), text.clone(), *version));
                             *needs_send = false;
                         }
@@ -770,8 +770,9 @@ impl LspClient {
                 }
 
                 // 2. Receive commands with a timeout to allow flushing
-                match cmd_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                match cmd_rx.recv_timeout(std::time::Duration::from_millis(10)) {
                     Ok(LspCommand::OpenFile { path, text }) => {
+                        let is_already_open = open_documents.contains_key(&path);
                         open_documents.insert(path.clone(), text.clone());
                         let lang_id = detect_language_id(&path);
                         if lang_id != "plaintext" {
@@ -923,20 +924,22 @@ impl LspClient {
                                             *needs_send = false;
                                         }
                                     }
-                                    let open_msg = serde_json::json!({
-                                        "jsonrpc": "2.0",
-                                        "method": "textDocument/didOpen",
-                                        "params": {
-                                            "textDocument": {
-                                                "uri": format!("file://{}", path),
-                                                "languageId": lang_id,
-                                                "version": *version,
-                                                "text": text
+                                    if !is_already_open {
+                                        let open_msg = serde_json::json!({
+                                            "jsonrpc": "2.0",
+                                            "method": "textDocument/didOpen",
+                                            "params": {
+                                                "textDocument": {
+                                                    "uri": format!("file://{}", path),
+                                                    "languageId": lang_id,
+                                                    "version": *version,
+                                                    "text": text
+                                                }
                                             }
+                                        });
+                                        if let Ok(mut writer) = server.stdin.lock() {
+                                            let _ = write_message(&mut *writer, &open_msg.to_string());
                                         }
-                                    });
-                                    if let Ok(mut writer) = server.stdin.lock() {
-                                        let _ = write_message(&mut *writer, &open_msg.to_string());
                                     }
 
                                     // Request semantic tokens immediately
