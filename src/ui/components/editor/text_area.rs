@@ -165,9 +165,9 @@ pub fn draw_text_area(
                                     _ => [0.5, 0.5, 0.5, 0.7],    // Hint: Gray
                                 };
                                 let wave_y = row_y + ui.buffer_line_height - 3.0;
-                                let wave_height = 2.0;
-                                let wave_period = 4.0;
-                                let seg_width = 2.0;
+                                let wave_height = 2.0f32;
+                                let wave_period = 4.0f32;
+                                let seg_width = 2.0f32;
                                 
                                 let mut wx = start_x_clamped;
                                 let mut wave_up = true;
