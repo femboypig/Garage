@@ -18,10 +18,11 @@ use crate::ui::UiState;
 use self::state::{AppState, Tab};
 
 pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize env_logger (warn level by default to not pollute output)
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Warn)
-        .init();
+    let mut builder = env_logger::Builder::from_default_env();
+    if std::env::var("RUST_LOG").is_err() {
+        builder.filter_level(log::LevelFilter::Warn);
+    }
+    builder.init();
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
