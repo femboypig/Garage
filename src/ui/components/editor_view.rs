@@ -41,11 +41,20 @@ pub fn draw_editor_view(
     let total_editor_height = status_y - editor_y;
     let editor_height = total_editor_height - 14.0;
     let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-    let max_scroll = (buffer.len() as isize - visible_lines as isize).max(0) as usize;
+    let virtual_len = if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
+        let mut count = 0;
+        for diags in ui.lsp_diagnostics_details.values() {
+            count += diags.len();
+        }
+        count.max(1)
+    } else {
+        buffer.len()
+    };
+    let max_scroll = (virtual_len as isize - visible_lines as isize).max(0) as usize;
     ui.scroll_y = ui.scroll_y.min(max_scroll);
 
     let start_idx = ui.scroll_y;
-    let end_idx = (start_idx + visible_lines).min(buffer.len());
+    let end_idx = (start_idx + visible_lines).min(virtual_len);
 
     // 1. Draw Tab Bar
     tab_bar::draw_tab_bar(
