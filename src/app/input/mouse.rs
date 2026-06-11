@@ -440,18 +440,19 @@ pub fn handle_mouse_input(
                             };
                             let editor_height = editor_bottom_limit - editor_top - 14.0;
                             
+                            let is_diagnostics = state.tabs[active_tab_idx].path.as_deref().map_or(false, |p| p.starts_with("diagnostics://"));
                             let active_tab_len = state.tabs[active_tab_idx].buffer.len();
                             let max_line_digits = active_tab_len.to_string().len().max(3);
-                            let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
+                            let gutter_width = if is_diagnostics { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
                             let text_area_x = ui.sidebar_width + gutter_width;
                             let scrollbar_width = ui.scrollbar_width();
-                            let minimap_width = ui.minimap_width();
+                            let minimap_width = if is_diagnostics { 0.0 } else { ui.minimap_width() };
                             let sb_x = size.width as f32 - scrollbar_width;
                             let minimap_x = sb_x - minimap_width;
                             let text_viewport_w = (minimap_x - text_area_x).max(10.0);
 
                             // 1. Check if click is on minimap
-                            if state.mouse_x >= minimap_x && state.mouse_x < sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit {
+                            if !is_diagnostics && state.mouse_x >= minimap_x && state.mouse_x < sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit {
                                 state.is_dragging_minimap = true;
                                 let total_editor_height = editor_bottom_limit - editor_top;
                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
