@@ -44,15 +44,32 @@ pub struct LspClient {
 }
 
 struct ServerInstance {
-    stdin: std::process::ChildStdin,
+    stdin: Arc<Mutex<std::process::ChildStdin>>,
     cmd_name: String,
     token_requests: Arc<Mutex<HashMap<u64, String>>>,
     next_req_id: Arc<Mutex<u64>>,
 }
-
 fn get_local_lsp_path(subpath: &str) -> String {
     let current_dir = std::env::current_dir().unwrap_or_default();
     current_dir.join(".lsp").join(subpath).to_string_lossy().to_string()
+}
+
+fn get_node_bin_paths(subpath: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    
+    // 1. Auto-installed .lsp folder
+    paths.push(current_dir.join(".lsp").join("node_modules/.bin").join(subpath).to_string_lossy().to_string());
+    
+    // 2. Current workspace root node_modules
+    paths.push(current_dir.join("node_modules/.bin").join(subpath).to_string_lossy().to_string());
+    
+    // 3. Parent workspace root node_modules (e.g. parent of sub-project)
+    if let Some(parent) = current_dir.parent() {
+        paths.push(parent.join("node_modules/.bin").join(subpath).to_string_lossy().to_string());
+    }
+    
+    paths
 }
 
 fn validate_binary(path: &str) -> bool {
@@ -180,25 +197,49 @@ fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> 
             if validate_binary("typescript-language-server") {
                 list.push(("typescript-language-server".to_string(), vec!["--stdio".to_string()]));
             }
-            list.push((get_local_lsp_path("node_modules/.bin/typescript-language-server"), vec!["--stdio".to_string()]));
+            for path in get_node_bin_paths("typescript-language-server") {
+                list.push((path, vec!["--stdio".to_string()]));
+            }
             list
         }
-        "json" => vec![
-            ("vscode-json-language-server".to_string(), vec!["--stdio".to_string()]),
-            (get_local_lsp_path("node_modules/.bin/vscode-json-language-server"), vec!["--stdio".to_string()]),
-        ],
-        "yaml" => vec![
-            ("yaml-language-server".to_string(), vec!["--stdio".to_string()]),
-            (get_local_lsp_path("node_modules/.bin/yaml-language-server"), vec!["--stdio".to_string()]),
-        ],
-        "html" => vec![
-            ("vscode-html-language-server".to_string(), vec!["--stdio".to_string()]),
-            (get_local_lsp_path("node_modules/.bin/vscode-html-language-server"), vec!["--stdio".to_string()]),
-        ],
-        "css" | "scss" => vec![
-            ("vscode-css-language-server".to_string(), vec!["--stdio".to_string()]),
-            (get_local_lsp_path("node_modules/.bin/vscode-css-language-server"), vec!["--stdio".to_string()]),
-        ],
+        "json" => {
+            let mut list = vec![("vscode-json-language-server".to_string(), vec!["--stdio".to_string()])];
+            for path in get_node_bin_paths("vscode-json-language-server") {
+                list.push((path, vec!["--stdio".to_string()]));
+            }
+            list
+        }
+        "yaml" => {
+            let mut list = vec![("yaml-language-server".to_string(), vec!["--stdio".to_string()])];
+            for path in get_node_bin_paths("yaml-language-server") {
+                list.push((path, vec!["--stdio".to_string()]));
+            }
+            list
+        }
+        "html" => {
+            let mut list = vec![("vscode-html-language-server".to_string(), vec!["--stdio".to_string()])];
+            for path in get_node_bin_paths("vscode-html-language-server") {
+                list.push((path, vec!["--stdio".to_string()]));
+            }
+            list
+        }
+        "css" | "scss" => {
+            let mut list = vec![("vscode-css-language-server".to_string(), vec!["--stdio".to_string()])];
+            for path in get_node_bin_paths("vscode-css-language-server") {
+                list.push((path, vec!["--stdio".to_string()]));
+            }
+            list
+        }
+        "toml" => {
+            let mut list = vec![
+                ("taplo".to_string(), vec!["lsp".to_string(), "stdio".to_string()]),
+                (get_local_lsp_path("taplo"), vec!["lsp".to_string(), "stdio".to_string()]),
+            ];
+            for path in get_node_bin_paths("taplo") {
+                list.push((path, vec!["lsp".to_string(), "stdio".to_string()]));
+            }
+            list
+        }
         "markdown" => vec![
             ("marksman".to_string(), vec!["server".to_string()]),
             (get_local_lsp_path("marksman"), vec!["server".to_string()]),
@@ -207,18 +248,45 @@ fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> 
     };
 
     let mut last_err = String::new();
+    let lsp_dir = std::env::current_dir().unwrap_or_default().join(".lsp");
+    let node_bin_dir = lsp_dir.join("node").join("bin");
+    let new_path = if node_bin_dir.exists() {
+        if let Ok(current_path) = std::env::var("PATH") {
+            format!("{}:{}", node_bin_dir.to_string_lossy(), current_path)
+        } else {
+            node_bin_dir.to_string_lossy().to_string()
+        }
+    } else {
+        std::env::var("PATH").unwrap_or_default()
+    };
+
     for (cmd, args) in alternatives {
         if cmd.contains('/') && !std::path::Path::new(&cmd).exists() {
             continue;
         }
+        let lsp_dir = std::env::current_dir().unwrap_or_default().join(".lsp");
+        let _ = std::fs::create_dir_all(&lsp_dir);
+        let stderr_file = if let Ok(f) = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(lsp_dir.join(format!("{}.stderr.log", lang_id)))
+        {
+            Stdio::from(f)
+        } else {
+            Stdio::null()
+        };
+
         log::info!("LSP: Trying to spawn {} {:?}", cmd, args);
-        match Command::new(&cmd)
-            .args(&args)
+        let mut command = Command::new(&cmd);
+        command.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-        {
+            .stderr(stderr_file);
+        if !new_path.is_empty() {
+            command.env("PATH", &new_path);
+        }
+        match command.spawn() {
             Ok(child) => {
                 let cmd_name = std::path::Path::new(&cmd)
                     .file_name()
@@ -317,6 +385,10 @@ fn attempt_auto_install(
     std::thread::spawn(move || {
         let lsp_dir = std::env::current_dir().unwrap_or_default().join(".lsp");
         let _ = std::fs::create_dir_all(&lsp_dir);
+        let package_json_path = lsp_dir.join("package.json");
+        if !package_json_path.exists() {
+            let _ = std::fs::write(&package_json_path, "{}");
+        }
 
         let install_result = match lang_id {
             "rust" => {
@@ -502,6 +574,48 @@ fn attempt_auto_install(
                     Err("Failed to install yaml-language-server".to_string())
                 }
             }
+            "toml" => {
+                let arch = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86_64" };
+                let os = if cfg!(target_os = "macos") {
+                    "darwin"
+                } else if cfg!(target_os = "windows") {
+                    "windows"
+                } else {
+                    "linux"
+                };
+                let filename = format!("taplo-{}-{}.gz", os, arch);
+                let url = format!("https://github.com/tamasfe/taplo/releases/latest/download/{}", filename);
+                let dest_gz = lsp_dir.join(if cfg!(target_os = "windows") { "taplo.exe.gz" } else { "taplo.gz" });
+                let dest_bin = lsp_dir.join(if cfg!(target_os = "windows") { "taplo.exe" } else { "taplo" });
+
+                log::info!("LSP Auto-Install: Downloading taplo from {}", url);
+                let curl_status = std::process::Command::new("curl")
+                    .args(&["-L", "-o", dest_gz.to_str().unwrap(), &url])
+                    .status();
+
+                if curl_status.map(|s| s.success()).unwrap_or(false) {
+                    let gunzip_status = std::process::Command::new("gunzip")
+                        .args(&["-f", dest_gz.to_str().unwrap()])
+                        .status();
+
+                    if gunzip_status.map(|s| s.success()).unwrap_or(false) {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if let Ok(metadata) = std::fs::metadata(&dest_bin) {
+                                let mut perms = metadata.permissions();
+                                perms.set_mode(0o755);
+                                let _ = std::fs::set_permissions(&dest_bin, perms);
+                            }
+                        }
+                        Ok(())
+                    } else {
+                        Err("Failed to decompress taplo".to_string())
+                    }
+                } else {
+                    Err("Failed to download taplo".to_string())
+                }
+            }
             "markdown" => {
                 let os = if cfg!(target_os = "macos") {
                     "macos"
@@ -556,6 +670,7 @@ fn attempt_auto_install(
                     "typescript" | "javascript" => "typescript-language-server",
                     "json" => "json-language-server",
                     "yaml" => "yaml-language-server",
+                    "toml" => "taplo",
                     "html" => "html-language-server",
                     "css" | "scss" => "css-language-server",
                     "markdown" => "marksman",
@@ -599,7 +714,8 @@ impl LspClient {
                 let now = std::time::Instant::now();
                 if let Ok(mut pending) = pending_changes_clone.lock() {
                     for (path, (text, version, needs_send, last_update)) in pending.iter_mut() {
-                        if *needs_send && now.duration_since(*last_update) >= std::time::Duration::from_millis(200) {
+                        let lang_id = detect_language_id(path);
+                        if *needs_send && servers.contains_key(lang_id) && now.duration_since(*last_update) >= std::time::Duration::from_millis(200) {
                             changes_to_flush.push((path.clone(), text.clone(), *version));
                             *needs_send = false;
                         }
@@ -622,7 +738,9 @@ impl LspClient {
                                 ]
                             }
                         });
-                        let _ = write_message(&mut server.stdin, &change_msg.to_string());
+                        if let Ok(mut writer) = server.stdin.lock() {
+                            let _ = write_message(&mut *writer, &change_msg.to_string());
+                        }
 
                         // Request semantic tokens immediately after didChange
                         let req_id = {
@@ -644,7 +762,9 @@ impl LspClient {
                                 }
                             }
                         });
-                        let _ = write_message(&mut server.stdin, &tokens_msg.to_string());
+                        if let Ok(mut writer) = server.stdin.lock() {
+                            let _ = write_message(&mut *writer, &tokens_msg.to_string());
+                        }
                     }
                 }
 
@@ -659,12 +779,12 @@ impl LspClient {
                             if !server_ready {
                                 match spawn_server(lang_id) {
                                     Ok((mut child, cmd_name)) => {
-                                        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+                                        let mut stdin_raw = child.stdin.take().expect("Failed to open stdin");
                                         let stdout = child.stdout.take().expect("Failed to open stdout");
                                         let mut stdout_reader = BufReader::new(stdout);
                                         
                                         let token_requests = Arc::new(Mutex::new(HashMap::<u64, String>::new()));
-                                        let next_req_id = Arc::new(Mutex::new(0u64));
+                                        let next_req_id = Arc::new(Mutex::new(1000u64));
                                         
                                         // Handshake
                                         let current_dir = std::env::current_dir().unwrap_or_default();
@@ -687,6 +807,22 @@ impl LspClient {
                                                             "didSave": true,
                                                             "willSave": false,
                                                             "willSaveWaitUntil": false
+                                                        },
+                                                        "semanticTokens": {
+                                                            "requests": {
+                                                                "full": true
+                                                            },
+                                                            "tokenTypes": [
+                                                                "namespace", "type", "class", "enum", "interface", "struct", "typeParameter",
+                                                                "parameter", "variable", "property", "enumMember", "event", "function",
+                                                                "method", "macro", "keyword", "modifier", "comment", "string", "number",
+                                                                "regexp", "operator"
+                                                            ],
+                                                            "tokenModifiers": [
+                                                                "declaration", "definition", "readonly", "static", "deprecated",
+                                                                "abstract", "async", "modification", "documentation", "defaultLibrary"
+                                                            ],
+                                                            "formats": ["relative"]
                                                         }
                                                     },
                                                     "window": {
@@ -703,7 +839,7 @@ impl LspClient {
                                         });
 
                                         log::info!("LSP: Sending initialize to {}...", cmd_name);
-                                        if write_message(&mut stdin, &init_msg.to_string()).is_ok() {
+                                        if write_message(&mut stdin_raw, &init_msg.to_string()).is_ok() {
                                             if let Ok(_resp_str) = read_message(&mut stdout_reader) {
                                                 log::info!("LSP: Initialize response from {} received", cmd_name);
                                                 let initialized_msg = serde_json::json!({
@@ -711,9 +847,10 @@ impl LspClient {
                                                     "method": "initialized",
                                                     "params": {}
                                                 });
-                                                let _ = write_message(&mut stdin, &initialized_msg.to_string());
+                                                let _ = write_message(&mut stdin_raw, &initialized_msg.to_string());
                                                 
-                                                start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone());
+                                                let stdin = Arc::new(Mutex::new(stdin_raw));
+                                                start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone());
 
                                                 let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                     file_path: format!("status:{}", cmd_name),
@@ -732,7 +869,7 @@ impl LspClient {
                                     }
                                     Err(e_msg) => {
                                         log::warn!("LSP: Failed to start server for {}: {}", lang_id, e_msg);
-                                         if !installing_servers.contains(&lang_id.to_string()) && (lang_id == "rust" || lang_id == "python" || lang_id == "go" || lang_id == "c" || lang_id == "cpp" || lang_id == "typescript" || lang_id == "javascript" || lang_id == "json" || lang_id == "yaml" || lang_id == "html" || lang_id == "css" || lang_id == "scss" || lang_id == "markdown") {
+                                         if !installing_servers.contains(&lang_id.to_string()) && (lang_id == "rust" || lang_id == "python" || lang_id == "go" || lang_id == "c" || lang_id == "cpp" || lang_id == "typescript" || lang_id == "javascript" || lang_id == "json" || lang_id == "yaml" || lang_id == "toml" || lang_id == "html" || lang_id == "css" || lang_id == "scss" || lang_id == "markdown") {
                                              installing_servers.push(lang_id.to_string());
                                              let display_name = match lang_id {
                                                  "rust" => "rust-analyzer",
@@ -742,6 +879,7 @@ impl LspClient {
                                                  "typescript" | "javascript" => "typescript-language-server",
                                                  "json" => "json-language-server",
                                                  "yaml" => "yaml-language-server",
+                                                 "toml" => "taplo",
                                                  "html" => "html-language-server",
                                                  "css" | "scss" => "css-language-server",
                                                  "markdown" => "marksman",
@@ -776,6 +914,11 @@ impl LspClient {
                                 if let Some(server) = servers.get_mut(lang_id) {
                                     let version = document_versions.entry(path.clone()).or_insert(0);
                                     *version += 1;
+                                    if let Ok(mut pending) = pending_changes.lock() {
+                                        if let Some((_, _, needs_send, _)) = pending.get_mut(&path) {
+                                            *needs_send = false;
+                                        }
+                                    }
                                     let open_msg = serde_json::json!({
                                         "jsonrpc": "2.0",
                                         "method": "textDocument/didOpen",
@@ -788,7 +931,9 @@ impl LspClient {
                                             }
                                         }
                                     });
-                                    let _ = write_message(&mut server.stdin, &open_msg.to_string());
+                                    if let Ok(mut writer) = server.stdin.lock() {
+                                        let _ = write_message(&mut *writer, &open_msg.to_string());
+                                    }
 
                                     // Request semantic tokens immediately
                                     let req_id = {
@@ -810,7 +955,9 @@ impl LspClient {
                                             }
                                         }
                                     });
-                                    let _ = write_message(&mut server.stdin, &tokens_msg.to_string());
+                                    if let Ok(mut writer) = server.stdin.lock() {
+                                        let _ = write_message(&mut *writer, &tokens_msg.to_string());
+                                    }
                                 }
                             }
                         }
@@ -818,7 +965,7 @@ impl LspClient {
                     Ok(LspCommand::ChangeFile { path, text }) => {
                         open_documents.insert(path.clone(), text.clone());
                         let lang_id = detect_language_id(&path);
-                        if servers.contains_key(lang_id) {
+                        if lang_id != "plaintext" {
                             let version = document_versions.entry(path.clone()).or_insert(0);
                             *version += 1;
                             if let Ok(mut pending) = pending_changes_clone.lock() {
@@ -827,19 +974,19 @@ impl LspClient {
                         }
                     }
                     Ok(LspCommand::SaveFile { path }) => {
-                        let mut text_to_flush = None;
-                        let mut version_to_flush = 0;
-                        if let Ok(mut pending) = pending_changes_clone.lock() {
-                            if let Some((text, version, needs_send, _)) = pending.get_mut(&path) {
-                                if *needs_send {
-                                    text_to_flush = Some(text.clone());
-                                    version_to_flush = *version;
-                                    *needs_send = false;
-                                }
-                            }
-                        }
                         let lang_id = detect_language_id(&path);
                         if let Some(server) = servers.get_mut(lang_id) {
+                            let mut text_to_flush = None;
+                            let mut version_to_flush = 0;
+                            if let Ok(mut pending) = pending_changes_clone.lock() {
+                                if let Some((text, version, needs_send, _)) = pending.get_mut(&path) {
+                                    if *needs_send {
+                                        text_to_flush = Some(text.clone());
+                                        version_to_flush = *version;
+                                        *needs_send = false;
+                                    }
+                                }
+                            }
                             if let Some(text) = text_to_flush {
                                 let change_msg = serde_json::json!({
                                     "jsonrpc": "2.0",
@@ -854,7 +1001,9 @@ impl LspClient {
                                         ]
                                     }
                                 });
-                                let _ = write_message(&mut server.stdin, &change_msg.to_string());
+                                if let Ok(mut writer) = server.stdin.lock() {
+                                    let _ = write_message(&mut *writer, &change_msg.to_string());
+                                }
 
                                 // Request semantic tokens immediately
                                 let req_id = {
@@ -876,7 +1025,9 @@ impl LspClient {
                                         }
                                     }
                                 });
-                                let _ = write_message(&mut server.stdin, &tokens_msg.to_string());
+                                if let Ok(mut writer) = server.stdin.lock() {
+                                    let _ = write_message(&mut *writer, &tokens_msg.to_string());
+                                }
                             }
 
                             let save_msg = serde_json::json!({
@@ -888,7 +1039,9 @@ impl LspClient {
                                     }
                                 }
                             });
-                            let _ = write_message(&mut server.stdin, &save_msg.to_string());
+                            if let Ok(mut writer) = server.stdin.lock() {
+                                let _ = write_message(&mut *writer, &save_msg.to_string());
+                            }
                         }
                     }
                     Ok(LspCommand::SetActiveFile { path }) => {
@@ -920,6 +1073,7 @@ impl LspClient {
                                 "typescript" | "javascript" => "typescript-language-server",
                                 "json" => "json-language-server",
                                 "yaml" => "yaml-language-server",
+                                "toml" => "taplo",
                                 "html" => "html-language-server",
                                 "css" | "scss" => "css-language-server",
                                 "markdown" => "marksman",
@@ -950,12 +1104,12 @@ impl LspClient {
                         if !servers.contains_key(&lang_id) {
                             match spawn_server(&lang_id) {
                                 Ok((mut child, cmd_name)) => {
-                                    let mut stdin = child.stdin.take().expect("Failed to open stdin");
+                                    let mut stdin_raw = child.stdin.take().expect("Failed to open stdin");
                                     let stdout = child.stdout.take().expect("Failed to open stdout");
                                     let mut stdout_reader = BufReader::new(stdout);
                                     
                                     let token_requests = Arc::new(Mutex::new(HashMap::<u64, String>::new()));
-                                    let next_req_id = Arc::new(Mutex::new(0u64));
+                                    let next_req_id = Arc::new(Mutex::new(1000u64));
                                     
                                     // Handshake
                                     let current_dir = std::env::current_dir().unwrap_or_default();
@@ -978,6 +1132,22 @@ impl LspClient {
                                                         "didSave": true,
                                                         "willSave": false,
                                                         "willSaveWaitUntil": false
+                                                    },
+                                                    "semanticTokens": {
+                                                        "requests": {
+                                                            "full": true
+                                                        },
+                                                        "tokenTypes": [
+                                                            "namespace", "type", "class", "enum", "interface", "struct", "typeParameter",
+                                                            "parameter", "variable", "property", "enumMember", "event", "function",
+                                                            "method", "macro", "keyword", "modifier", "comment", "string", "number",
+                                                            "regexp", "operator"
+                                                        ],
+                                                        "tokenModifiers": [
+                                                            "declaration", "definition", "readonly", "static", "deprecated",
+                                                            "abstract", "async", "modification", "documentation", "defaultLibrary"
+                                                        ],
+                                                        "formats": ["relative"]
                                                     }
                                                 },
                                                 "window": {
@@ -994,7 +1164,7 @@ impl LspClient {
                                     });
 
                                     log::info!("LSP: Sending initialize to {} after auto-install...", cmd_name);
-                                    if write_message(&mut stdin, &init_msg.to_string()).is_ok() {
+                                    if write_message(&mut stdin_raw, &init_msg.to_string()).is_ok() {
                                         if let Ok(_resp_str) = read_message(&mut stdout_reader) {
                                             log::info!("LSP: Initialize response from {} received", cmd_name);
                                             let initialized_msg = serde_json::json!({
@@ -1002,9 +1172,10 @@ impl LspClient {
                                                 "method": "initialized",
                                                 "params": {}
                                             });
-                                            let _ = write_message(&mut stdin, &initialized_msg.to_string());
+                                            let _ = write_message(&mut stdin_raw, &initialized_msg.to_string());
                                             
-                                            start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone());
+                                            let stdin = Arc::new(Mutex::new(stdin_raw));
+                                            start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone());
 
                                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                 file_path: format!("status:{}", cmd_name),
@@ -1021,6 +1192,11 @@ impl LspClient {
                                                 if detect_language_id(path) == lang_id {
                                                     let version = document_versions.entry(path.clone()).or_insert(0);
                                                     *version += 1;
+                                                    if let Ok(mut pending) = pending_changes.lock() {
+                                                        if let Some((_, _, needs_send, _)) = pending.get_mut(path) {
+                                                            *needs_send = false;
+                                                        }
+                                                    }
                                                     let open_msg = serde_json::json!({
                                                         "jsonrpc": "2.0",
                                                         "method": "textDocument/didOpen",
@@ -1033,7 +1209,9 @@ impl LspClient {
                                                             }
                                                         }
                                                     });
-                                                    let _ = write_message(&mut stdin, &open_msg.to_string());
+                                                    if let Ok(mut writer) = stdin.lock() {
+                                                        let _ = write_message(&mut *writer, &open_msg.to_string());
+                                                    }
 
                                                     // Request semantic tokens immediately
                                                     let req_id = {
@@ -1055,7 +1233,9 @@ impl LspClient {
                                                             }
                                                         }
                                                     });
-                                                    let _ = write_message(&mut stdin, &tokens_msg.to_string());
+                                                    if let Ok(mut writer) = stdin.lock() {
+                                                        let _ = write_message(&mut *writer, &tokens_msg.to_string());
+                                                    }
                                                 }
                                             }
                                             
@@ -1146,6 +1326,7 @@ fn read_message<R: Read>(reader: &mut R) -> Result<String, Box<dyn std::error::E
 }
 
 fn write_message<W: Write>(writer: &mut W, msg: &str) -> Result<(), Box<dyn std::error::Error>> {
+    log::debug!("LSP: Sending message: {}", msg);
     let content = format!("Content-Length: {}\r\n\r\n{}", msg.len(), msg);
     writer.write_all(content.as_bytes())?;
     writer.flush()?;
@@ -1158,6 +1339,7 @@ fn start_reader_thread(
     diag_tx: Sender<LspDiagnosticsUpdate>,
     proxy: winit::event_loop::EventLoopProxy<()>,
     token_requests: Arc<Mutex<HashMap<u64, String>>>,
+    stdin: Arc<Mutex<std::process::ChildStdin>>,
 ) {
     let cmd_name_for_reader = cmd_name;
     std::thread::spawn(move || {
@@ -1167,10 +1349,55 @@ fn start_reader_thread(
             match read_message(&mut stdout_reader) {
                 Ok(resp_str) => {
                     if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&resp_str) {
+                        log::debug!("LSP: Received raw message: {}", resp_str);
+                        log::debug!("LSP: Received message method/id: {:?}", resp.get("method").or_else(|| resp.get("id")));
+                        
+                        // Check if this is a request from the server to the client
+                        if let Some(id_val) = resp.get("id") {
+                            if let Some(method_val) = resp.get("method") {
+                                let method = method_val.as_str().unwrap_or("");
+                                if method == "window/workDoneProgress/create" {
+                                    let response = serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id_val,
+                                        "result": serde_json::Value::Null
+                                    });
+                                    if let Ok(mut writer) = stdin.lock() {
+                                        let _ = write_message(&mut *writer, &response.to_string());
+                                    }
+                                } else if method == "workspace/configuration" {
+                                    let items_len = resp.get("params")
+                                        .and_then(|p| p.get("items"))
+                                        .and_then(|i| i.as_array())
+                                        .map(|a| a.len())
+                                        .unwrap_or(1);
+                                    let result_array = vec![serde_json::Value::Null; items_len];
+                                    let response = serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id_val,
+                                        "result": result_array
+                                    });
+                                    if let Ok(mut writer) = stdin.lock() {
+                                        let _ = write_message(&mut *writer, &response.to_string());
+                                    }
+                                } else {
+                                    let response = serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id_val,
+                                        "result": serde_json::Value::Null
+                                    });
+                                    if let Ok(mut writer) = stdin.lock() {
+                                        let _ = write_message(&mut *writer, &response.to_string());
+                                    }
+                                }
+                            }
+                        }
+
                         if resp["method"] == "textDocument/publishDiagnostics" {
+                            log::debug!("LSP: publishDiagnostics: {:?}", resp);
                             if let Some(params) = resp.get("params") {
                                 let uri = params["uri"].as_str().unwrap_or("");
-                                let file_path = uri.trim_start_matches("file://").to_string();
+                                let file_path = uri_to_file_path(uri);
                                 
                                 let mut errors = 0;
                                 let mut warnings = 0;
@@ -1308,71 +1535,81 @@ fn start_reader_thread(
                                         _ => {}
                                     }
                                 }
-                            } else if let Some(result) = resp.get("result") {
-                                if let Some(data) = result["data"].as_array() {
-                                    if let Some(id_val) = resp.get("id") {
-                                        if let Some(id) = id_val.as_u64() {
-                                            let file_path_opt = {
-                                                let mut req_map = token_requests.lock().unwrap();
-                                                req_map.remove(&id)
-                                            };
-                                            if let Some(file_path) = file_path_opt {
-                                                let mut tokens_list = Vec::new();
-                                                let mut current_line = 0;
-                                                let mut current_start = 0;
+                            }
+                        } else if let Some(result) = resp.get("result") {
+                            if let Some(data) = result["data"].as_array() {
+                                if let Some(id_val) = resp.get("id") {
+                                    if let Some(id) = id_val.as_u64() {
+                                        let file_path_opt = {
+                                            let mut req_map = token_requests.lock().unwrap();
+                                            req_map.remove(&id)
+                                        };
+                                        if let Some(file_path) = file_path_opt {
+                                            let mut tokens_list = Vec::new();
+                                            let mut current_line = 0;
+                                            let mut current_start = 0;
 
-                                                let mut i = 0;
-                                                while i + 4 < data.len() {
-                                                    let delta_line = data[i].as_u64().unwrap_or(0) as usize;
-                                                    let delta_start = data[i+1].as_u64().unwrap_or(0) as usize;
-                                                    let length = data[i+2].as_u64().unwrap_or(0) as usize;
-                                                    let token_type_idx = data[i+3].as_u64().unwrap_or(0) as usize;
+                                            let mut i = 0;
+                                            while i + 4 < data.len() {
+                                                let delta_line = data[i].as_u64().unwrap_or(0) as usize;
+                                                let delta_start = data[i+1].as_u64().unwrap_or(0) as usize;
+                                                let length = data[i+2].as_u64().unwrap_or(0) as usize;
+                                                let token_type_idx = data[i+3].as_u64().unwrap_or(0) as usize;
 
-                                                    if delta_line > 0 {
-                                                        current_line += delta_line;
-                                                        current_start = delta_start;
-                                                    } else {
-                                                        current_start += delta_start;
-                                                    }
-
-                                                    let token_type = match token_type_idx {
-                                                        0 => "type",
-                                                        1 => "class",
-                                                        2 => "struct",
-                                                        3 => "interface",
-                                                        4 => "parameter",
-                                                        5 => "variable",
-                                                        6 => "property",
-                                                        7 => "function",
-                                                        8 => "method",
-                                                        9 => "keyword",
-                                                        10 => "comment",
-                                                        11 => "string",
-                                                        12 => "number",
-                                                        13 => "operator",
-                                                        _ => "variable",
-                                                    }.to_string();
-
-                                                    tokens_list.push(SemanticTokenDetail {
-                                                        line: current_line,
-                                                        start_col: current_start,
-                                                        length,
-                                                        token_type,
-                                                    });
-
-                                                    i += 5;
+                                                if delta_line > 0 {
+                                                    current_line += delta_line;
+                                                    current_start = delta_start;
+                                                } else {
+                                                    current_start += delta_start;
                                                 }
 
-                                                let _ = diag_tx.send(LspDiagnosticsUpdate {
-                                                    file_path,
-                                                    errors: 0,
-                                                    warnings: 0,
-                                                    diagnostics: vec![],
-                                                    tokens: tokens_list,
-                                                    is_tokens_update: true,
+                                                 let token_type = match token_type_idx {
+                                                    0 => "namespace",
+                                                    1 => "type",
+                                                    2 => "class",
+                                                    3 => "enum",
+                                                    4 => "interface",
+                                                    5 => "struct",
+                                                    6 => "typeParameter",
+                                                    7 => "parameter",
+                                                    8 => "variable",
+                                                    9 => "property",
+                                                    10 => "enumMember",
+                                                    11 => "event",
+                                                    12 => "function",
+                                                    13 => "method",
+                                                    14 => "macro",
+                                                    15 => "keyword",
+                                                    16 => "modifier",
+                                                    17 => "comment",
+                                                    18 => "string",
+                                                    19 => "number",
+                                                    20 => "regexp",
+                                                    21 => "operator",
+                                                    _ => "variable",
+                                                }.to_string();
+
+                                                tokens_list.push(SemanticTokenDetail {
+                                                    line: current_line,
+                                                    start_col: current_start,
+                                                    length,
+                                                    token_type,
                                                 });
-                                                let _ = proxy.send_event(());
+
+                                                i += 5;
                                             }
+
+                                            log::debug!("LSP: Parsed {} semantic tokens for {}", tokens_list.len(), file_path);
+
+                                            let _ = diag_tx.send(LspDiagnosticsUpdate {
+                                                file_path,
+                                                errors: 0,
+                                                warnings: 0,
+                                                diagnostics: vec![],
+                                                tokens: tokens_list,
+                                                is_tokens_update: true,
+                                            });
+                                            let _ = proxy.send_event(());
                                         }
                                     }
                                 }
@@ -1466,4 +1703,58 @@ pub fn get_absolute_path(path: &str) -> String {
     normalize_path(&abs_path)
         .to_string_lossy()
         .to_string()
+}
+
+pub fn uri_to_file_path(uri: &str) -> String {
+    let mut raw_path = if uri.starts_with("file://") {
+        let path_part = &uri["file://".len()..];
+        if path_part.starts_with('/') {
+            path_part.to_string()
+        } else {
+            if let Some(slash_idx) = path_part.find('/') {
+                path_part[slash_idx..].to_string()
+            } else {
+                path_part.to_string()
+            }
+        }
+    } else {
+        uri.to_string()
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        if raw_path.starts_with('/') && raw_path.chars().nth(2) == Some(':') {
+            raw_path = raw_path[1..].to_string();
+        }
+        raw_path = raw_path.replace('/', "\\");
+    }
+
+    if let Ok(decoded) = percent_decode(&raw_path) {
+        raw_path = decoded;
+    }
+
+    get_absolute_path(&raw_path)
+}
+
+pub fn percent_decode(s: &str) -> Result<String, std::string::FromUtf8Error> {
+    let mut bytes = Vec::new();
+    let mut chars = s.as_bytes().iter().peekable();
+    while let Some(&b) = chars.next() {
+        if b == b'%' {
+            if let (Some(&h), Some(&l)) = (chars.next(), chars.next()) {
+                if let Some(hex) = hex_to_byte(h, l) {
+                    bytes.push(hex);
+                    continue;
+                }
+            }
+        }
+        bytes.push(b);
+    }
+    String::from_utf8(bytes)
+}
+
+fn hex_to_byte(h: u8, l: u8) -> Option<u8> {
+    let h_val = (h as char).to_digit(16)?;
+    let l_val = (l as char).to_digit(16)?;
+    Some(((h_val << 4) | l_val) as u8)
 }
