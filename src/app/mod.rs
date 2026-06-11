@@ -226,6 +226,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     // Render to swapchain
                     if let Err(e) = gpu.as_mut().unwrap().render(&vertices, &indices) {
                         log::error!("Rendering error: {:?}", e);
+                    } else {
+                        first_frame_rendered = true;
                     }
                 }
 
@@ -294,7 +296,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
             Event::AboutToWait => {
                 if !first_frame_rendered {
                     window.request_redraw();
-                    first_frame_rendered = true;
                 }
                 if state.terminal_focus {
                     elwt.set_control_flow(ControlFlow::WaitUntil(
