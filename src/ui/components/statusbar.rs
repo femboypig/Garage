@@ -88,22 +88,9 @@ pub fn draw_statusbar(
     // 2. Draw Diagnostics Indicators
     let mut err_count = 0;
     let mut warn_count = 0;
-    if let Some(path) = active_path {
-        let abs_path_str = crate::editor::lsp::get_absolute_path(path);
-
-        if let Some((e, w)) = ui.lsp_diagnostics.get(&abs_path_str) {
-            err_count = *e;
-            warn_count = *w;
-        } else {
-            let active_suffix = format!("/{}", path.replace("./", ""));
-            for (key, val) in &ui.lsp_diagnostics {
-                if key.ends_with(&active_suffix) {
-                    err_count = val.0;
-                    warn_count = val.1;
-                    break;
-                }
-            }
-        }
+    for (e, w) in ui.lsp_diagnostics.values() {
+        err_count += *e;
+        warn_count += *w;
     }
 
     let err_str = format!("⊗ {}  ", err_count);
