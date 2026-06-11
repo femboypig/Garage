@@ -32,12 +32,91 @@ fn get_local_lsp_path(subpath: &str) -> String {
     current_dir.join(".lsp").join(subpath).to_string_lossy().to_string()
 }
 
+fn validate_binary(path: &str) -> bool {
+    if path.contains('/') && !std::path::Path::new(path).exists() {
+        return false;
+    }
+    match Command::new(path)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(mut child) => {
+            let _ = child.wait();
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn get_rustup_rust_analyzer() -> Option<String> {
+    for file_name in &["rust-toolchain.toml", "rust-toolchain"] {
+        if std::path::Path::new(file_name).exists() {
+            if let Ok(output) = Command::new("rustup")
+                .args(&["which", "rust-analyzer"])
+                .output()
+            {
+                if output.status.success() {
+                    let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path_str.is_empty() {
+                        return Some(path_str);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+enum LibcType {
+    Gnu,
+    Musl,
+}
+
+#[cfg(target_os = "linux")]
+fn determine_libc_type() -> LibcType {
+    if let Ok(output) = Command::new("ldd").arg("--version").output() {
+        let ldd_version = String::from_utf8_lossy(&output.stdout);
+        if ldd_version.contains("GNU libc") || ldd_version.contains("GLIBC") {
+            return LibcType::Gnu;
+        } else if ldd_version.contains("musl") {
+            return LibcType::Musl;
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir("/lib") {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let name_str = file_name.to_string_lossy();
+            if name_str.starts_with("ld-musl-") {
+                return LibcType::Musl;
+            } else if name_str.starts_with("ld-linux-") {
+                return LibcType::Gnu;
+            }
+        }
+    }
+
+    LibcType::Gnu
+}
+
 fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> {
     let alternatives = match lang_id {
-        "rust" => vec![
-            ("rust-analyzer".to_string(), vec![]),
-            (get_local_lsp_path("rust-analyzer"), vec![]),
-        ],
+        "rust" => {
+            let mut list = Vec::new();
+            if let Some(path) = get_rustup_rust_analyzer() {
+                if validate_binary(&path) {
+                    list.push((path, vec![]));
+                }
+            }
+            if validate_binary("rust-analyzer") {
+                list.push(("rust-analyzer".to_string(), vec![]));
+            }
+            list.push((get_local_lsp_path("rust-analyzer"), vec![]));
+            list
+        }
         "python" => vec![
             ("pyright-langserver".to_string(), vec!["--stdio".to_string()]),
             (get_local_lsp_path("node_modules/.bin/pyright-langserver"), vec!["--stdio".to_string()]),
@@ -101,7 +180,21 @@ fn attempt_auto_install(
         let install_result = match lang_id {
             "rust" => {
                 let arch = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86_64" };
-                let os = if cfg!(target_os = "macos") { "apple-darwin" } else { "unknown-linux-gnu" };
+                let os = if cfg!(target_os = "macos") {
+                    "apple-darwin".to_string()
+                } else if cfg!(target_os = "windows") {
+                    "pc-windows-msvc".to_string()
+                } else {
+                    #[cfg(target_os = "linux")]
+                    {
+                        match determine_libc_type() {
+                            LibcType::Musl => "unknown-linux-musl".to_string(),
+                            LibcType::Gnu => "unknown-linux-gnu".to_string(),
+                        }
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    "unknown-linux-gnu".to_string()
+                };
                 let url = format!("https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-{}-{}.gz", arch, os);
                 let dest_gz = lsp_dir.join("rust-analyzer.gz");
                 let dest_bin = lsp_dir.join("rust-analyzer");
