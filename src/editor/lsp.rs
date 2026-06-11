@@ -206,6 +206,58 @@ fn get_latest_github_tag(repo: &str) -> Option<String> {
     None
 }
 
+fn ensure_node_runtime() -> Result<(String, String), String> {
+    if validate_binary("node") && validate_binary("npm") {
+        return Ok(("node".to_string(), "npm".to_string()));
+    }
+
+    let lsp_dir = std::env::current_dir().unwrap_or_default().join(".lsp");
+    let node_dir = lsp_dir.join("node");
+    let local_node = node_dir.join("bin").join("node");
+    let local_npm = node_dir.join("bin").join("npm");
+
+    if local_node.exists() && local_npm.exists() {
+        return Ok((local_node.to_string_lossy().to_string(), local_npm.to_string_lossy().to_string()));
+    }
+
+    let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "x64" };
+    let os = if cfg!(target_os = "macos") { "darwin" } else { "linux" };
+    let version = "v20.11.0";
+    let ext = if cfg!(target_os = "macos") { "tar.gz" } else { "tar.xz" };
+    let folder_name = format!("node-{}-{}-{}", version, os, arch);
+    let url = format!("https://nodejs.org/dist/{}/{}.{}", version, folder_name, ext);
+    let dest_archive = lsp_dir.join(format!("node.{}", ext));
+
+    log::info!("LSP Auto-Install: Downloading Node.js from {}", url);
+    let curl_status = std::process::Command::new("curl")
+        .args(&["-L", "-o", dest_archive.to_str().unwrap(), &url])
+        .status();
+
+    if curl_status.map(|s| s.success()).unwrap_or(false) {
+        let tar_status = std::process::Command::new("tar")
+            .args(&["-xf", dest_archive.to_str().unwrap(), "-C", lsp_dir.to_str().unwrap()])
+            .status();
+
+        if tar_status.map(|s| s.success()).unwrap_or(false) {
+            let _ = std::fs::remove_file(&dest_archive);
+            let extracted_dir = lsp_dir.join(folder_name);
+            if extracted_dir.exists() {
+                let _ = std::fs::remove_dir_all(&node_dir);
+                if std::fs::rename(&extracted_dir, &node_dir).is_ok() {
+                    if local_node.exists() && local_npm.exists() {
+                        return Ok((local_node.to_string_lossy().to_string(), local_npm.to_string_lossy().to_string()));
+                    }
+                }
+            }
+            Err("Failed to setup Node.js directory".to_string())
+        } else {
+            Err("Failed to extract Node.js archive".to_string())
+        }
+    } else {
+        Err("Failed to download Node.js".to_string())
+    }
+}
+
 fn attempt_auto_install(
     lang_id: &'static str,
     cmd_tx: Sender<LspCommand>,
@@ -271,7 +323,10 @@ fn attempt_auto_install(
             }
             "python" => {
                 log::info!("LSP Auto-Install: Installing pyright via npm");
-                let npm_status = std::process::Command::new("npm")
+                let (node_bin, npm_bin) = ensure_node_runtime().unwrap_or(("node".to_string(), "npm".to_string()));
+                let node_dir = std::path::Path::new(&node_bin).parent().map(|p| p.parent().unwrap_or(p)).map(|p| p.to_path_buf()).unwrap_or_default();
+                let npm_status = std::process::Command::new(&npm_bin)
+                    .env("PATH", format!("{}:{}", node_dir.join("bin").to_str().unwrap(), std::env::var("PATH").unwrap_or_default()))
                     .args(&["install", "--prefix", lsp_dir.to_str().unwrap(), "pyright"])
                     .status();
                 
@@ -360,13 +415,44 @@ fn attempt_auto_install(
             }
             "typescript" | "javascript" => {
                 log::info!("LSP Auto-Install: Installing typescript-language-server and typescript via npm");
-                let npm_status = std::process::Command::new("npm")
+                let (node_bin, npm_bin) = ensure_node_runtime().unwrap_or(("node".to_string(), "npm".to_string()));
+                let node_dir = std::path::Path::new(&node_bin).parent().map(|p| p.parent().unwrap_or(p)).map(|p| p.to_path_buf()).unwrap_or_default();
+                let npm_status = std::process::Command::new(&npm_bin)
+                    .env("PATH", format!("{}:{}", node_dir.join("bin").to_str().unwrap(), std::env::var("PATH").unwrap_or_default()))
                     .args(&["install", "--prefix", lsp_dir.to_str().unwrap(), "typescript-language-server", "typescript"])
                     .status();
                 if npm_status.map(|s| s.success()).unwrap_or(false) {
                     Ok(())
                 } else {
                     Err("Failed to install typescript-language-server via npm".to_string())
+                }
+            }
+            "json" | "html" | "css" | "scss" => {
+                log::info!("LSP Auto-Install: Installing vscode-langservers-extracted via npm");
+                let (node_bin, npm_bin) = ensure_node_runtime().unwrap_or(("node".to_string(), "npm".to_string()));
+                let node_dir = std::path::Path::new(&node_bin).parent().map(|p| p.parent().unwrap_or(p)).map(|p| p.to_path_buf()).unwrap_or_default();
+                let npm_status = std::process::Command::new(&npm_bin)
+                    .env("PATH", format!("{}:{}", node_dir.join("bin").to_str().unwrap(), std::env::var("PATH").unwrap_or_default()))
+                    .args(&["install", "--prefix", lsp_dir.to_str().unwrap(), "vscode-langservers-extracted"])
+                    .status();
+                if npm_status.map(|s| s.success()).unwrap_or(false) {
+                    Ok(())
+                } else {
+                    Err("Failed to install vscode-langservers-extracted".to_string())
+                }
+            }
+            "yaml" => {
+                log::info!("LSP Auto-Install: Installing yaml-language-server via npm");
+                let (node_bin, npm_bin) = ensure_node_runtime().unwrap_or(("node".to_string(), "npm".to_string()));
+                let node_dir = std::path::Path::new(&node_bin).parent().map(|p| p.parent().unwrap_or(p)).map(|p| p.to_path_buf()).unwrap_or_default();
+                let npm_status = std::process::Command::new(&npm_bin)
+                    .env("PATH", format!("{}:{}", node_dir.join("bin").to_str().unwrap(), std::env::var("PATH").unwrap_or_default()))
+                    .args(&["install", "--prefix", lsp_dir.to_str().unwrap(), "yaml-language-server"])
+                    .status();
+                if npm_status.map(|s| s.success()).unwrap_or(false) {
+                    Ok(())
+                } else {
+                    Err("Failed to install yaml-language-server".to_string())
                 }
             }
             _ => Err(format!("Unsupported language {}", lang_id)),
@@ -385,6 +471,10 @@ fn attempt_auto_install(
                     "go" => "gopls",
                     "c" | "cpp" => "clangd",
                     "typescript" | "javascript" => "typescript-language-server",
+                    "json" => "json-language-server",
+                    "yaml" => "yaml-language-server",
+                    "html" => "html-language-server",
+                    "css" | "scss" => "css-language-server",
                     _ => lang_id,
                 };
                 let _ = diag_tx.send(LspDiagnosticsUpdate {
@@ -562,7 +652,7 @@ impl LspClient {
                                     }
                                     Err(e_msg) => {
                                         log::warn!("LSP: Failed to start server for {}: {}", lang_id, e_msg);
-                                        if !installing_servers.contains(&lang_id.to_string()) && (lang_id == "rust" || lang_id == "python" || lang_id == "go" || lang_id == "c" || lang_id == "cpp" || lang_id == "typescript" || lang_id == "javascript") {
+                                        if !installing_servers.contains(&lang_id.to_string()) && (lang_id == "rust" || lang_id == "python" || lang_id == "go" || lang_id == "c" || lang_id == "cpp" || lang_id == "typescript" || lang_id == "javascript" || lang_id == "json" || lang_id == "yaml" || lang_id == "html" || lang_id == "css" || lang_id == "scss") {
                                             installing_servers.push(lang_id.to_string());
                                             let display_name = match lang_id {
                                                 "rust" => "rust-analyzer",
@@ -570,6 +660,10 @@ impl LspClient {
                                                 "go" => "gopls",
                                                 "c" | "cpp" => "clangd",
                                                 "typescript" | "javascript" => "typescript-language-server",
+                                                "json" => "json-language-server",
+                                                "yaml" => "yaml-language-server",
+                                                "html" => "html-language-server",
+                                                "css" | "scss" => "css-language-server",
                                                 _ => lang_id,
                                             };
                                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
@@ -659,6 +753,10 @@ impl LspClient {
                                 "go" => "gopls",
                                 "c" | "cpp" => "clangd",
                                 "typescript" | "javascript" => "typescript-language-server",
+                                "json" => "json-language-server",
+                                "yaml" => "yaml-language-server",
+                                "html" => "html-language-server",
+                                "css" | "scss" => "css-language-server",
                                 _ => lang_id,
                             };
                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
