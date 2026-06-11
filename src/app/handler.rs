@@ -48,12 +48,18 @@ pub fn handle_action(
                 true
             };
             if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
-                ui.update_git_diff(Some(active_path));
-                ui.update_git_file_blame(Some(active_path));
-                ui.update_git_statuses();
-                if let Some(ref lsp) = state.lsp_client {
-                    lsp.notify_open(active_path, state.tabs[state.active_tab_idx].buffer.lines().join("\n"));
-                    lsp.notify_active_file(active_path);
+                if !active_path.starts_with("diagnostics://") {
+                    ui.update_git_diff(Some(active_path));
+                    ui.update_git_file_blame(Some(active_path));
+                    ui.update_git_statuses();
+                    if let Some(ref lsp) = state.lsp_client {
+                        lsp.notify_open(active_path, state.tabs[state.active_tab_idx].buffer.lines().join("\n"));
+                        lsp.notify_active_file(active_path);
+                    }
+                } else {
+                    if let Some(ref lsp) = state.lsp_client {
+                        lsp.notify_active_file("");
+                    }
                 }
             }
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
@@ -216,8 +222,12 @@ pub fn handle_action(
             ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
             if let Some(ref lsp) = state.lsp_client {
                 if let Some(ref path) = state.tabs[idx].path {
-                    lsp.notify_open(path, state.tabs[idx].buffer.lines().join("\n"));
-                    lsp.notify_active_file(path);
+                    if !path.starts_with("diagnostics://") {
+                        lsp.notify_open(path, state.tabs[idx].buffer.lines().join("\n"));
+                        lsp.notify_active_file(path);
+                    } else {
+                        lsp.notify_active_file("");
+                    }
                 } else {
                     lsp.notify_active_file("");
                 }
