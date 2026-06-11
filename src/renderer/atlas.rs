@@ -149,6 +149,36 @@ impl FontAtlas {
         })
     }
 
+    pub fn clear(&mut self, queue: &wgpu::Queue) {
+        self.glyphs.clear();
+        self.icons.clear();
+        self.current_x = 4;
+        self.current_y = 0;
+        self.max_row_height = 4;
+
+        // Rewrite the 2x2 solid white pixel block at (0, 0)
+        let white_pixels = [255u8, 255u8, 255u8, 255u8];
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &white_pixels,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(2),
+                rows_per_image: Some(2),
+            },
+            wgpu::Extent3d {
+                width: 2,
+                height: 2,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
     /// Retrieve the UV coordinate of the solid white pixel.
     pub fn white_pixel_uv(&self) -> [f32; 2] {
         // Point to the center of the first pixel at (0,0)
@@ -201,8 +231,8 @@ impl FontAtlas {
         }
 
         if self.current_y + h + self.padding > self.atlas_height {
-            log::warn!("Font atlas is completely full! Characters might render incorrectly.");
-            return None;
+            log::warn!("Font atlas overflowed! Clearing cache.");
+            self.clear(queue);
         }
 
         // Upload the new glyph to the GPU texture
@@ -330,8 +360,8 @@ impl FontAtlas {
         }
 
         if self.current_y + h + self.padding > self.atlas_height {
-            log::warn!("Font atlas is completely full! Icons might render incorrectly.");
-            return None;
+            log::warn!("Font atlas overflowed during icon rendering! Clearing cache.");
+            self.clear(queue);
         }
 
         // Upload the new icon to the GPU texture
