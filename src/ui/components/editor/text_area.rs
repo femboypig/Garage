@@ -22,6 +22,214 @@ pub fn draw_text_area(
 ) {
     let white_uv = atlas.white_pixel_uv();
     
+    if active_file_path == Some("diagnostics://project") {
+        // Clear click targets
+        if start_idx == ui.scroll_y {
+            ui.diagnostics_click_targets.clear();
+        }
+
+        // Draw background
+        ui.push_quad(
+            vertices,
+            indices,
+            text_area_x,
+            editor_y,
+            text_viewport_w,
+            editor_height,
+            white_uv,
+            ui.config.theme.editor_bg,
+        );
+
+        // Gather all diagnostics
+        let mut all_diags = Vec::new();
+        for (file_path, diags) in &ui.lsp_diagnostics_details {
+            for d in diags {
+                all_diags.push((file_path.clone(), d.clone()));
+            }
+        }
+        // Sort by severity (1=error, 2=warning, etc.), then file path, then line
+        all_diags.sort_by(|a, b| {
+            a.1.severity.cmp(&b.1.severity)
+                .then_with(|| a.0.cmp(&b.0))
+                .then_with(|| a.1.line.cmp(&b.1.line))
+        });
+
+        if all_diags.is_empty() {
+            // Draw "No problems found" message in the center
+            let msg = "No problems found in the workspace";
+            let msg_w = msg.chars().count() as f32 * ui.buffer_char_width;
+            let msg_x = (text_area_x + (text_viewport_w - msg_w) / 2.0).round();
+            let msg_y = (editor_y + editor_height / 2.0).round();
+            
+            let mut pen_x = msg_x;
+            for c in msg.chars() {
+                pen_x += ui.push_char(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    c,
+                    pen_x,
+                    msg_y,
+                    ui.config.theme.syntax_comment,
+                    ui.buffer_font_size,
+                    ui.buffer_char_width,
+                );
+            }
+            return;
+        }
+
+        // Render visible items
+        let card_height = ui.buffer_line_height * 3.0; // each item is 3 lines tall (aligns with scrolling)
+        let padding = 12.0f32;
+        let card_w = text_viewport_w - padding * 2.0;
+        
+        for item_idx in start_idx..end_idx {
+            if item_idx >= all_diags.len() {
+                break;
+            }
+            let (file_path, diag) = &all_diags[item_idx];
+            let relative_y = (item_idx - start_idx) as f32 * card_height;
+            let card_y = editor_y + relative_y + 8.0;
+            
+            // Check if card fits in editor height bounds
+            if card_y + card_height - 8.0 > editor_y + editor_height {
+                break;
+            }
+            
+            let card_x = text_area_x + padding;
+            
+            // Bounding box for clicks:
+            ui.diagnostics_click_targets.push((
+                card_x,
+                card_y,
+                card_x + card_w,
+                card_y + card_height - 8.0,
+                file_path.clone(),
+                diag.line,
+                diag.col,
+            ));
+
+            // Set colors based on severity
+            let (bg_color, border_color, icon_name, icon_color, label) = match diag.severity {
+                1 => (
+                    [0.95, 0.25, 0.25, 0.08], // transparent red
+                    [0.95, 0.25, 0.25, 1.0],  // solid red
+                    "error",
+                    [0.95, 0.25, 0.25, 1.0],
+                    "Error",
+                ),
+                2 => (
+                    [0.95, 0.6, 0.1, 0.08],  // transparent orange
+                    [0.95, 0.6, 0.1, 1.0],   // solid orange
+                    "circle",
+                    [0.95, 0.6, 0.1, 1.0],
+                    "Warning",
+                ),
+                _ => (
+                    [0.2, 0.6, 0.9, 0.08],   // transparent blue
+                    [0.2, 0.6, 0.9, 1.0],    // solid blue
+                    "circle",
+                    [0.2, 0.6, 0.9, 1.0],
+                    "Info",
+                ),
+            };
+
+            // Draw Card Background
+            ui.push_quad(
+                vertices,
+                indices,
+                card_x,
+                card_y,
+                card_w,
+                card_height - 8.0,
+                white_uv,
+                bg_color,
+            );
+
+            // Draw Left Border stripe
+            ui.push_quad(
+                vertices,
+                indices,
+                card_x,
+                card_y,
+                3.0,
+                card_height - 8.0,
+                white_uv,
+                border_color,
+            );
+
+            // Draw Severity Icon
+            let icon_sz = (ui.buffer_font_size * 0.85).round().max(10.0);
+            let icon_x = card_x + 12.0;
+            let icon_y = (card_y + 8.0 + (ui.buffer_line_height - icon_sz) / 2.0).round();
+            ui.push_icon(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                icon_name,
+                icon_x,
+                icon_y,
+                icon_color,
+                icon_sz,
+            );
+
+            // Get relative path from workspace root
+            let current_dir = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
+            let display_path = if file_path.starts_with(&current_dir) {
+                file_path[current_dir.len()..].trim_start_matches('/').to_string()
+            } else {
+                file_path.clone()
+            };
+            
+            // Draw File Path & Location Header: e.g. "src/editor/lsp.rs:125"
+            let header_text = format!("{} in {}:{}:{}", label, display_path, diag.line + 1, diag.col + 1);
+            let mut pen_x = icon_x + icon_sz + 8.0;
+            let header_y = (card_y + 8.0 + ui.buffer_font_ascent).round();
+            for c in header_text.chars() {
+                if pen_x + ui.buffer_char_width > card_x + card_w - 12.0 {
+                    break;
+                }
+                pen_x += ui.push_char(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    c,
+                    pen_x,
+                    header_y,
+                    ui.config.theme.syntax_type,
+                    ui.buffer_font_size * 0.9,
+                    ui.buffer_char_width,
+                );
+            }
+
+            // Draw Diagnostic Message below
+            let msg_y = (card_y + 8.0 + ui.buffer_line_height + ui.buffer_font_ascent).round();
+            let mut msg_pen_x = card_x + 12.0;
+            for c in diag.message.chars() {
+                if msg_pen_x + ui.buffer_char_width > card_x + card_w - 12.0 {
+                    break;
+                }
+                msg_pen_x += ui.push_char(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    c,
+                    msg_pen_x,
+                    msg_y,
+                    ui.config.theme.syntax_default,
+                    ui.buffer_font_size,
+                    ui.buffer_char_width,
+                );
+            }
+        }
+
+        return;
+    }
+
     // Draw main editor background area
     ui.push_quad(
         vertices,
@@ -294,6 +502,141 @@ pub fn draw_text_area(
                 white_uv,
                 ui.config.theme.cursor_color,
             );
+        }
+    }
+
+    // Draw hover diagnostic popup overlay
+    if let Some(diag) = &ui.hovered_diagnostic {
+        if let Some((line_idx, col_idx)) = ui.hover_pos {
+            // Snapped coordinates of the hovered character
+            let char_x = text_area_x + (col_idx as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
+            let char_y = editor_y + (line_idx as isize - ui.scroll_y as isize) as f32 * ui.buffer_line_height;
+            
+            // Background box colors based on severity
+            let (bg_color, border_color, text_color, label) = match diag.severity {
+                1 => (
+                    [0.98, 0.88, 0.88, 0.97], // soft pink-red
+                    [0.85, 0.25, 0.25, 1.0],  // red
+                    [0.60, 0.10, 0.10, 1.0],  // dark red text
+                    "Syntax Error",
+                ),
+                2 => (
+                    [0.99, 0.94, 0.85, 0.97], // soft yellow-orange
+                    [0.85, 0.55, 0.10, 1.0],  // orange
+                    [0.60, 0.35, 0.05, 1.0],  // dark orange/brown text
+                    "Warning",
+                ),
+                _ => (
+                    [0.88, 0.94, 0.98, 0.97], // soft blue
+                    [0.25, 0.60, 0.85, 1.0],  // blue
+                    [0.10, 0.35, 0.60, 1.0],  // dark blue text
+                    "Info",
+                ),
+            };
+
+            // Parse lines with word wrapping
+            let max_w = 400.0f32;
+            let max_chars_per_line = (max_w / ui.ui_char_width).floor() as usize;
+            let full_message = if diag.message.is_empty() {
+                label.to_string()
+            } else {
+                format!("{}: {}", label, diag.message)
+            };
+            
+            let mut lines = Vec::new();
+            let words: Vec<&str> = full_message.split_whitespace().collect();
+            let mut current_line = String::new();
+            for word in words {
+                if current_line.is_empty() {
+                    current_line = word.to_string();
+                } else if (current_line.chars().count() + 1 + word.chars().count()) <= max_chars_per_line {
+                    current_line.push(' ');
+                    current_line.push_str(word);
+                } else {
+                    lines.push(current_line);
+                    current_line = word.to_string();
+                }
+            }
+            if !current_line.is_empty() {
+                lines.push(current_line);
+            }
+
+            let line_count = lines.len();
+            let popup_w = (lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f32 * ui.ui_char_width + 24.0 + 20.0).max(120.0);
+            let popup_h = line_count as f32 * ui.ui_line_height + 16.0;
+
+            // Clamping coordinates
+            let mut popup_x = char_x.round();
+            let mut popup_y = (char_y + ui.buffer_line_height + 4.0).round();
+            
+            // Check overflow right
+            if popup_x + popup_w > minimap_x {
+                popup_x = (minimap_x - popup_w - 10.0).max(text_area_x + 10.0);
+            }
+            // Check overflow bottom
+            if popup_y + popup_h > editor_y + editor_height {
+                popup_y = (char_y - popup_h - 4.0).max(editor_y + 4.0);
+            }
+
+            // Draw shadow box (offset by 2.0)
+            ui.push_quad(
+                vertices,
+                indices,
+                popup_x + 2.0,
+                popup_y + 2.0,
+                popup_w,
+                popup_h,
+                white_uv,
+                [0.0, 0.0, 0.0, 0.15],
+            );
+
+            // Draw Background Box
+            ui.push_quad(
+                vertices,
+                indices,
+                popup_x,
+                popup_y,
+                popup_w,
+                popup_h,
+                white_uv,
+                bg_color,
+            );
+
+            // Draw Border Box (using thin quads)
+            let border_thickness = 1.0f32;
+            ui.push_quad(vertices, indices, popup_x, popup_y, popup_w, border_thickness, white_uv, border_color); // top
+            ui.push_quad(vertices, indices, popup_x, popup_y + popup_h - border_thickness, popup_w, border_thickness, white_uv, border_color); // bottom
+            ui.push_quad(vertices, indices, popup_x, popup_y, border_thickness, popup_h, white_uv, border_color); // left
+            ui.push_quad(vertices, indices, popup_x + popup_w - border_thickness, popup_y, border_thickness, popup_h, white_uv, border_color); // right
+
+            // Draw Text Lines
+            for (i, line_text) in lines.iter().enumerate() {
+                let text_y = (popup_y + 8.0 + i as f32 * ui.ui_line_height + ui.ui_font_ascent).round();
+                ui.push_str(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    line_text,
+                    popup_x + 12.0,
+                    text_y,
+                    text_color,
+                    ui.ui_font_size,
+                    ui.ui_char_width,
+                );
+            }
+
+            // Draw copy icon (overlapping squares)
+            let copy_x = (popup_x + popup_w - 24.0).round();
+            let copy_y = (popup_y + (popup_h - 11.0) / 2.0).round();
+            
+            // Back square
+            ui.push_quad(vertices, indices, copy_x, copy_y, 8.0, 8.0, white_uv, border_color);
+            ui.push_quad(vertices, indices, copy_x + 1.0, copy_y + 1.0, 6.0, 6.0, white_uv, bg_color);
+            
+            // Front square
+            ui.push_quad(vertices, indices, copy_x + 3.0, copy_y + 3.0, 8.0, 8.0, white_uv, border_color);
+            ui.push_quad(vertices, indices, copy_x + 4.0, copy_y + 4.0, 6.0, 6.0, white_uv, bg_color);
         }
     }
 }
