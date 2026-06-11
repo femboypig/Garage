@@ -63,6 +63,47 @@ pub fn handle_cursor_moved(
     state.mouse_y = position_y;
  
     let size = window.inner_size();
+
+    // Update diagnostic hover detection
+    let mut hover_reset = true;
+    if !state.tabs.is_empty() && state.active_tab_idx < state.tabs.len() {
+        let active_tab = &state.tabs[state.active_tab_idx];
+        if let Some(ref active_path) = active_tab.path {
+            if !active_path.starts_with("diagnostics://") {
+                let main_y = ui.titlebar_height;
+                let editor_top = main_y + ui.tabbar_height + ui.breadcrumb_height;
+                let status_y = (size.height as f32 - ui.status_height).round();
+                let editor_bottom_limit = status_y;
+                
+                let max_line_digits = active_tab.buffer.len().to_string().len().max(3);
+                let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
+                let text_area_x = ui.sidebar_width + gutter_width;
+                
+                let scrollbar_width = ui.scrollbar_width();
+                let minimap_width = ui.minimap_width();
+                let sb_x = size.width as f32 - scrollbar_width;
+                let minimap_x = sb_x - minimap_width;
+                
+                if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit - 14.0 {
+                    let line_idx = (((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y).min(active_tab.buffer.len().saturating_sub(1));
+                    let col_idx = (((state.mouse_x - text_area_x) / ui.buffer_char_width).floor() as usize + ui.scroll_x).min(active_tab.buffer.lines()[line_idx].chars().count());
+                    
+                    let new_pos = (line_idx, col_idx);
+                    if ui.hover_pos != Some(new_pos) {
+                        ui.hover_pos = Some(new_pos);
+                        ui.hover_start = Some(std::time::Instant::now());
+                        ui.hovered_diagnostic = None;
+                    }
+                    hover_reset = false;
+                }
+            }
+        }
+    }
+    if hover_reset {
+        ui.hover_pos = None;
+        ui.hover_start = None;
+        ui.hovered_diagnostic = None;
+    }
  
     if state.is_dragging_sidebar {
         let new_width = if state.mouse_x < 30.0 { 0.0 } else { state.mouse_x.clamp(50.0, 600.0) };
