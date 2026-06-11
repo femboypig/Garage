@@ -52,9 +52,18 @@ pub fn draw_scrollbars(
     );
 
     let track_h = editor_height;
-    let ratio = visible_lines as f32 / buffer.len() as f32;
+    let virtual_len = if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
+        let mut count = 0;
+        for diags in ui.lsp_diagnostics_details.values() {
+            count += diags.len();
+        }
+        count.max(1)
+    } else {
+        buffer.len()
+    };
+    let ratio = visible_lines as f32 / virtual_len as f32;
     let thumb_h = (track_h * ratio).clamp(20.0, track_h);
-    let max_scroll_f = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
+    let max_scroll_f = (virtual_len as isize - visible_lines as isize).max(0) as f32;
     let scroll_ratio = if max_scroll_f > 0.0 { ui.scroll_y as f32 / max_scroll_f } else { 0.0 };
     let thumb_y = editor_y + scroll_ratio * (track_h - thumb_h);
 
