@@ -88,6 +88,9 @@ pub struct UiState {
     pub active_dock_tab: usize,
     pub hovered_dock_tab_close: Option<usize>,
     pub event_loop_proxy: winit::event_loop::EventLoopProxy<()>,
+
+    pub tree_rx: Option<std::sync::mpsc::Receiver<Vec<FileNode>>>,
+    pub tree_tx: std::sync::mpsc::Sender<Vec<FileNode>>,
 }
 
 impl UiState {
@@ -139,6 +142,7 @@ impl UiState {
         let (status_tx, status_rx) = std::sync::mpsc::channel();
         let (diff_tx, diff_rx) = std::sync::mpsc::channel();
         let (blame_file_tx, blame_file_rx) = std::sync::mpsc::channel();
+        let (tree_tx, tree_rx) = std::sync::mpsc::channel();
 
         let mut languages = std::collections::HashMap::new();
         if let Ok(content) = std::fs::read_to_string("assets/languages.json") {
@@ -195,6 +199,8 @@ impl UiState {
             git_diffs: std::collections::HashMap::new(),
             git_diff_rx: Some(diff_rx),
             git_diff_tx: diff_tx,
+            tree_rx: Some(tree_rx),
+            tree_tx,
             languages,
             lsp_diagnostics: std::collections::HashMap::new(),
             lsp_diagnostics_rx: None,
