@@ -91,6 +91,9 @@ pub struct UiState {
     pub hovered_dock_tab_close: Option<usize>,
     pub event_loop_proxy: winit::event_loop::EventLoopProxy<()>,
 
+    pub tab_scroll_x: f32,
+    pub tab_scroll_is_dragging: bool,
+
     pub tree_rx: Option<std::sync::mpsc::Receiver<Vec<FileNode>>>,
     pub tree_tx: std::sync::mpsc::Sender<Vec<FileNode>>,
 }
@@ -170,6 +173,8 @@ impl UiState {
             buffer_font_ascent,
             scroll_y: 0,
             scroll_x: 0,
+            tab_scroll_x: 0.0,
+            tab_scroll_is_dragging: false,
             titlebar_height,
             status_height,
             sidebar_width: config.sidebar_width,
@@ -262,6 +267,49 @@ impl UiState {
         std::env::var("I3SOCK").is_ok()
             || std::env::var("SWAYSOCK").is_ok()
             || std::env::var("XDG_CURRENT_DESKTOP").map(|s| s.to_lowercase().contains("i3") || s.to_lowercase().contains("sway")).unwrap_or(false)
+    }
+
+    pub fn scroll_to_tab(&mut self, active_idx: usize, tab_paths: &[Option<String>], width: f32) {
+        if tab_paths.is_empty() || active_idx >= tab_paths.len() {
+            return;
+        }
+        let tabbar_start_x = self.sidebar_width;
+        let visible_width = width - tabbar_start_x;
+        
+        let tab_close_icon_sz = (self.ui_font_size * 0.8).round().max(10.0);
+        let close_reserved = 8.0f32 + tab_close_icon_sz;
+        let dot_reserved = 18.0f32;
+
+        let mut total_tabs_width = 0.0f32;
+        let mut target_tab_x = 0.0f32;
+        let mut target_tab_w = 0.0f32;
+
+        for idx in 0..tab_paths.len() {
+            let path_opt = &tab_paths[idx];
+            let file_name = path_opt.as_ref()
+                .and_then(|p| std::path::Path::new(p).file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "untitled.txt".to_string());
+            let name_w = file_name.chars().count() as f32 * self.ui_char_width;
+            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+            
+            if idx == active_idx {
+                target_tab_x = total_tabs_width;
+                target_tab_w = tab_w;
+            }
+            total_tabs_width += tab_w;
+        }
+
+        let max_scroll_x = (total_tabs_width - visible_width).max(0.0);
+        let plus_margin = 40.0f32;
+
+        if target_tab_x < self.tab_scroll_x {
+            self.tab_scroll_x = target_tab_x;
+        } else if target_tab_x + target_tab_w + plus_margin > self.tab_scroll_x + visible_width {
+            self.tab_scroll_x = target_tab_x + target_tab_w + plus_margin - visible_width;
+        }
+
+        self.tab_scroll_x = self.tab_scroll_x.clamp(0.0, max_scroll_x);
     }
 
     pub fn scroll_to_cursor(&mut self, cursor: &Cursor, buffer_len: usize, width: f32, height: f32) {
