@@ -170,6 +170,13 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         }
                     }
 
+                    // Drain Tree scan channel
+                    if let Some(ref rx) = ui.tree_rx {
+                        while let Ok(nodes) = rx.try_recv() {
+                            ui.visible_nodes = nodes;
+                        }
+                    }
+
                     // Read data from PTY channels for all terminals and parse ANSI sequences using persistent parser
                     for term in &mut state.dock_terminals {
                         while let Ok(bytes) = term.rx.try_recv() {
