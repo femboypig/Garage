@@ -38,10 +38,16 @@ pub fn draw_tab_bar(
     let mut total_tabs_width = 0.0f32;
     for idx in 0..tab_paths.len() {
         let path_opt = &tab_paths[idx];
-        let file_name = path_opt.as_ref()
-            .and_then(|p| Path::new(p).file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "untitled.txt".to_string());
+        let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
+        let file_name = if is_diagnostics {
+            let err_count: usize = ui.lsp_diagnostics.values().map(|(e, _)| *e).sum();
+            format!("   {}", err_count)
+        } else {
+            path_opt.as_ref()
+                .and_then(|p| Path::new(p).file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "untitled.txt".to_string())
+        };
         let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
         let dot_reserved = 18.0f32;
         let close_reserved = 8.0f32 + tab_close_icon_sz;
@@ -61,10 +67,16 @@ pub fn draw_tab_bar(
     let mut temp_x = tabbar_start_x;
     for idx in 0..tab_paths.len() {
         let path_opt = &tab_paths[idx];
-        let file_name = path_opt.as_ref()
-            .and_then(|p| Path::new(p).file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "untitled.txt".to_string());
+        let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
+        let file_name = if is_diagnostics {
+            let err_count: usize = ui.lsp_diagnostics.values().map(|(e, _)| *e).sum();
+            format!("   {}", err_count)
+        } else {
+            path_opt.as_ref()
+                .and_then(|p| Path::new(p).file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "untitled.txt".to_string())
+        };
         let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
         let dot_reserved = 18.0f32;
         let close_reserved = 8.0f32 + tab_close_icon_sz;
@@ -129,10 +141,16 @@ pub fn draw_tab_bar(
         let is_active = idx == active_tab_idx;
         let is_modified = tab_modified.get(idx).copied().unwrap_or(false);
 
-        let file_name = path_opt.as_ref()
-            .and_then(|p| Path::new(p).file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "untitled.txt".to_string());
+        let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
+        let file_name = if is_diagnostics {
+            let err_count: usize = ui.lsp_diagnostics.values().map(|(e, _)| *e).sum();
+            format!("   {}", err_count)
+        } else {
+            path_opt.as_ref()
+                .and_then(|p| Path::new(p).file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "untitled.txt".to_string())
+        };
 
         // Compute tab width
         let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
@@ -198,7 +216,7 @@ pub fn draw_tab_bar(
             }
 
             // Draw unsaved circle icon if modified
-            if is_modified {
+            if is_modified && !is_diagnostics {
                 let dot_size = (ui.ui_font_size * 0.55).round().max(7.0);
                 let dot_x = (draw_x + 10.0).round();
                 let dot_y = (main_y + ui.tabbar_height / 2.0 - dot_size / 2.0).round();
@@ -228,23 +246,55 @@ pub fn draw_tab_bar(
             };
             
             let mut cur_char_x = label_x;
-            for c in file_name.chars() {
+            for (char_idx, c) in file_name.chars().enumerate() {
                 if cur_char_x + ui.ui_char_width > clip_right - 18.0 {
                     break;
                 }
                 if cur_char_x >= tabbar_start_x {
-                    ui.push_char(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        c,
-                        cur_char_x,
-                        tab_baseline,
-                        label_color,
-                        ui.ui_font_size,
-                        ui.ui_char_width,
-                    );
+                    if is_diagnostics && char_idx == 0 {
+                        // Draw blue dot
+                        let dot_size = (ui.ui_font_size * 0.55).round().max(7.0);
+                        let dot_y = (main_y + ui.tabbar_height / 2.0 - dot_size / 2.0).round();
+                        ui.push_icon(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            "circle",
+                            cur_char_x,
+                            dot_y,
+                            [0.38, 0.69, 0.94, 1.0], // Blue dot
+                            dot_size,
+                        );
+                    } else if is_diagnostics && char_idx == 1 {
+                        // Draw error icon
+                        let icon_sz = (ui.ui_font_size * 0.85).round().max(12.0);
+                        let icon_y = (main_y + ui.tabbar_height / 2.0 - icon_sz / 2.0).round();
+                        ui.push_icon(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            "error",
+                            cur_char_x,
+                            icon_y,
+                            [0.95, 0.25, 0.25, 1.0], // Red error icon
+                            icon_sz,
+                        );
+                    } else {
+                        ui.push_char(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            c,
+                            cur_char_x,
+                            tab_baseline,
+                            label_color,
+                            ui.ui_font_size,
+                            ui.ui_char_width,
+                        );
+                    }
                 }
                 cur_char_x += ui.ui_char_width;
             }
