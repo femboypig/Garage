@@ -205,8 +205,9 @@ pub fn draw_sidebar(
             }
         } else {
             let mut is_unsaved_modified = false;
-            for (t_idx, t_path_opt) in tab_paths.iter().enumerate() {
-                if let Some(t_path) = t_path_opt {
+            let relative_path = node.path.strip_prefix(".").unwrap_or(&node.path);
+            for (t_idx, t_path) in tab_paths.iter().flatten().enumerate() {
+                if !t_path.is_empty() {
                     let t_path_buf = std::path::Path::new(t_path);
                     let matches = t_path == relative_path.to_str().unwrap_or("")
                         || t_path == node.path.to_str().unwrap_or("")
@@ -220,20 +221,15 @@ pub fn draw_sidebar(
 
             if is_unsaved_modified {
                 file_color = [0.95, 0.45, 0.1, 1.0]; // bright unsaved orange
-                git_badge = Some("•");
             }
 
             if let Some(status) = ui.git_statuses.get(relative_path) {
                 if status.contains('M') {
                     file_color = if is_unsaved_modified { [0.95, 0.45, 0.1, 1.0] } else { [0.86, 0.49, 0.18, 0.85] };
-                    git_badge = if is_unsaved_modified { Some("M•") } else { Some("M") };
+                    git_badge = Some("M");
                 } else if status.contains('?') || status.contains('A') {
                     file_color = if is_unsaved_modified { [0.95, 0.45, 0.1, 1.0] } else { [0.18, 0.65, 0.43, 0.85] };
-                    git_badge = if is_unsaved_modified {
-                        Some("U•")
-                    } else {
-                        Some(if status.contains('A') { "A" } else { "U" })
-                    };
+                    git_badge = Some(if status.contains('A') { "A" } else { "U" });
                 }
             }
         }
