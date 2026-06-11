@@ -58,6 +58,9 @@ pub fn handle_action(
                     lsp.notify_active_file(active_path);
                 }
             }
+            let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+            let size = window.inner_size();
+            ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
         }
         UiAction::SaveFile => {
             let active_tab = &mut state.tabs[state.active_tab_idx];
@@ -210,6 +213,9 @@ pub fn handle_action(
             state.active_tab_idx = idx;
             ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
             ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
+            let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+            let size = window.inner_size();
+            ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
             if let Some(ref lsp) = state.lsp_client {
                 if let Some(ref path) = state.tabs[idx].path {
                     lsp.notify_active_file(path);
@@ -236,6 +242,9 @@ pub fn handle_action(
                 state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
                 ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
                 ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
+                let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+                let size = window.inner_size();
+                ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
                 if let Some(ref lsp) = state.lsp_client {
                     if let Some(ref path) = state.tabs[state.active_tab_idx].path {
                         lsp.notify_active_file(path);
@@ -261,6 +270,9 @@ pub fn handle_action(
             ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
             ui.tab_to_close = None;
             ui.active_modal = None;
+            let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+            let size = window.inner_size();
+            ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
             if let Some(ref lsp) = state.lsp_client {
                 if let Some(ref path) = state.tabs[state.active_tab_idx].path {
                     lsp.notify_active_file(path);
@@ -298,6 +310,9 @@ pub fn handle_action(
             ui.tab_to_close = None;
             ui.active_modal = None;
             ui.rebuild_tree();
+            let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+            let size = window.inner_size();
+            ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
             if let Some(ref lsp) = state.lsp_client {
                 if let Some(ref path) = state.tabs[state.active_tab_idx].path {
                     lsp.notify_active_file(path);
