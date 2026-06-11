@@ -38,6 +38,7 @@ pub enum LspCommand {
     SetActiveFile { path: String },
     RetrySpawn { lang_id: String },
     RequestActiveTokens { lang_id: String },
+    RequestTokensForFile { path: String },
 }
 
 pub struct LspClient {
@@ -1113,6 +1114,12 @@ impl LspClient {
                             }
                         }
                     }
+                    Ok(LspCommand::RequestTokensForFile { path }) => {
+                        let lang_id = detect_language_id(&path);
+                        if let Some(server) = servers.get(lang_id) {
+                            request_semantic_tokens(server, &path);
+                        }
+                    }
                     Ok(LspCommand::RetrySpawn { lang_id }) => {
                         installing_servers.retain(|x| x != &lang_id);
                         if !servers.contains_key(&lang_id) {
@@ -1400,13 +1407,14 @@ fn start_reader_thread(
                                     }
                                 }
                                 let _ = diag_tx.send(LspDiagnosticsUpdate {
-                                    file_path,
+                                    file_path: file_path.clone(),
                                     errors,
                                     warnings,
                                     diagnostics: diagnostics_list,
                                     tokens: vec![],
                                     is_tokens_update: false,
                                 });
+                                let _ = cmd_tx.send(LspCommand::RequestTokensForFile { path: file_path });
                                 let _ = proxy.send_event(());
                             }
                         } else if resp["method"] == "$/progress" {
