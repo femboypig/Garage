@@ -68,6 +68,42 @@ pub fn handle_cursor_moved(
         let new_width = if state.mouse_x < 30.0 { 0.0 } else { state.mouse_x.clamp(50.0, 600.0) };
         ui.sidebar_width = new_width;
         ui.target_sidebar_width = new_width;
+    } else if ui.tab_scroll_is_dragging {
+        let tabbar_start_x = ui.sidebar_width;
+        let visible_width = size.width as f32 - tabbar_start_x;
+        
+        let mut total_tabs_width = 0.0f32;
+        let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+        let close_reserved = 8.0f32 + tab_close_icon_sz;
+        let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
+        for idx in 0..tab_paths.len() {
+            let path_opt = &tab_paths[idx];
+            let file_name = path_opt.as_ref()
+                .and_then(|p| std::path::Path::new(p).file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "untitled.txt".to_string());
+            let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+            let dot_reserved = 18.0f32;
+            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+            total_tabs_width += tab_w;
+        }
+
+        let ratio = visible_width / total_tabs_width;
+        let thumb_w = (visible_width * ratio).clamp(20.0, visible_width);
+        let max_scroll_x = (total_tabs_width - visible_width).max(0.0);
+
+        if max_scroll_x > 0.0 {
+            let target_thumb_x = state.mouse_x - state.scroll_drag_offset_x;
+            let scroll_range = visible_width - thumb_w;
+            let scroll_ratio = if scroll_range > 0.0 {
+                ((target_thumb_x - tabbar_start_x) / scroll_range).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            ui.tab_scroll_x = scroll_ratio * max_scroll_x;
+        } else {
+            ui.tab_scroll_x = 0.0;
+        }
     } else if state.is_dragging_dock_border {
         let main_y = ui.titlebar_height;
         let max_y = size.height as f32 - ui.status_height - 50.0;
@@ -171,7 +207,8 @@ pub fn handle_cursor_moved(
         || state.is_dragging_scroll
         || state.is_dragging_horizontal_scroll
         || state.is_dragging_minimap
-        || state.is_dragging;
+        || state.is_dragging
+        || ui.tab_scroll_is_dragging;
 
     if any_dragging {
         window.request_redraw();
@@ -194,6 +231,60 @@ pub fn handle_mouse_input(
     if button == MouseButton::Left {
         let size = window.inner_size();
         if input_state == ElementState::Pressed {
+            // Check if click is on tab scrollbar
+            let tabbar_start_x = ui.sidebar_width;
+            let visible_width = size.width as f32 - tabbar_start_x;
+            
+            // Calculate total width of all tabs
+            let mut total_tabs_width = 0.0f32;
+            let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+            let close_reserved = 8.0f32 + tab_close_icon_sz;
+            let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
+            for idx in 0..tab_paths.len() {
+                let path_opt = &tab_paths[idx];
+                let file_name = path_opt.as_ref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "untitled.txt".to_string());
+                let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+                let dot_reserved = 18.0f32;
+                let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+                total_tabs_width += tab_w;
+            }
+
+            if total_tabs_width > visible_width {
+                let main_y = ui.titlebar_height;
+                let is_on_scrollbar = state.mouse_y >= main_y + ui.tabbar_height - 6.0
+                    && state.mouse_y < main_y + ui.tabbar_height
+                    && state.mouse_x >= tabbar_start_x
+                    && state.mouse_x < size.width as f32;
+
+                if is_on_scrollbar {
+                    let ratio = visible_width / total_tabs_width;
+                    let thumb_w = (visible_width * ratio).clamp(20.0, visible_width);
+                    let max_scroll_x = total_tabs_width - visible_width;
+                    let scroll_ratio_x = if max_scroll_x > 0.0 { ui.tab_scroll_x / max_scroll_x } else { 0.0 };
+                    let thumb_x = tabbar_start_x + scroll_ratio_x * (visible_width - thumb_w);
+
+                    ui.tab_scroll_is_dragging = true;
+                    let is_on_thumb = state.mouse_x >= thumb_x && state.mouse_x < thumb_x + thumb_w;
+                    if is_on_thumb {
+                        state.scroll_drag_offset_x = state.mouse_x - thumb_x;
+                    } else {
+                        state.scroll_drag_offset_x = thumb_w / 2.0;
+                        let target_thumb_x = state.mouse_x - state.scroll_drag_offset_x;
+                        let target_ratio = if visible_width - thumb_w > 0.0 {
+                            (target_thumb_x - tabbar_start_x) / (visible_width - thumb_w)
+                        } else {
+                            0.0
+                        };
+                        ui.tab_scroll_x = (target_ratio * max_scroll_x).clamp(0.0, max_scroll_x);
+                    }
+                    window.request_redraw();
+                    return;
+                }
+            }
+
             // Check if click is on custom titlebar drag zone (CSD)
             let menu_items = ["Garage", "File", "Edit", "Selection", "View"];
             let mut menu_width = 0.0f32;
@@ -423,6 +514,8 @@ pub fn handle_mouse_input(
                 }
             }
         } else {
+            // Button Released
+            ui.tab_scroll_is_dragging = false;
             let was_dragging_sidebar = state.is_dragging_sidebar;
             state.is_dragging = false;
             state.is_dragging_scroll = false;
@@ -468,8 +561,51 @@ pub fn handle_mouse_wheel(
         return;
     }
  
-    // Handle Terminal Dock Scroll
     let size = window.inner_size();
+
+    // Handle Tab Bar Scroll
+    let tabbar_start_x = ui.sidebar_width;
+    if state.mouse_y >= ui.titlebar_height 
+        && state.mouse_y < ui.titlebar_height + ui.tabbar_height
+        && state.mouse_x >= tabbar_start_x
+        && state.mouse_x < size.width as f32 
+    {
+        let mut total_tabs_width = 0.0f32;
+        let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+        let close_reserved = 8.0f32 + tab_close_icon_sz;
+        let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
+        for idx in 0..tab_paths.len() {
+            let path_opt = &tab_paths[idx];
+            let file_name = path_opt.as_ref()
+                .and_then(|p| std::path::Path::new(p).file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "untitled.txt".to_string());
+            let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+            let dot_reserved = 18.0f32;
+            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+            total_tabs_width += tab_w;
+        }
+
+        let visible_width = size.width as f32 - tabbar_start_x;
+        let max_scroll_x = (total_tabs_width - visible_width).max(0.0);
+
+        let scroll_amount = match delta {
+            MouseScrollDelta::LineDelta(dx, dy) => {
+                let val = if dx.abs() > dy.abs() { dx } else { -dy };
+                val * 24.0
+            }
+            MouseScrollDelta::PixelDelta(pos) => {
+                let val = if pos.x.abs() > pos.y.abs() { pos.x } else { -pos.y };
+                val as f32
+            }
+        };
+
+        ui.tab_scroll_x = (ui.tab_scroll_x + scroll_amount).clamp(0.0, max_scroll_x);
+        window.request_redraw();
+        return;
+    }
+
+    // Handle Terminal Dock Scroll
     let main_y = ui.titlebar_height;
     let mut dock_start_y = size.height as f32 - ui.status_height;
     if ui.show_dock {
