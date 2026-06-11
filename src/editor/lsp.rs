@@ -37,6 +37,7 @@ pub enum LspCommand {
     SaveFile { path: String },
     SetActiveFile { path: String },
     RetrySpawn { lang_id: String },
+    RequestActiveTokens { lang_id: String },
 }
 
 pub struct LspClient {
@@ -49,6 +50,61 @@ struct ServerInstance {
     token_requests: Arc<Mutex<HashMap<u64, String>>>,
     next_req_id: Arc<Mutex<u64>>,
     _token_types: Arc<Mutex<Vec<String>>>,
+}
+
+fn request_semantic_tokens(server: &ServerInstance, path: &str) {
+    let req_id = {
+        let mut id_lock = server.next_req_id.lock().unwrap();
+        *id_lock += 1;
+        *id_lock
+    };
+    {
+        let mut req_map = server.token_requests.lock().unwrap();
+        req_map.insert(req_id, path.to_string());
+    }
+    let tokens_msg = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "method": "textDocument/semanticTokens/full",
+        "params": {
+            "textDocument": {
+                "uri": format!("file://{}", path)
+            }
+        }
+    });
+    if let Ok(mut writer) = server.stdin.lock() {
+        let _ = write_message(&mut *writer, &tokens_msg.to_string());
+    }
+}
+
+fn open_all_documents_for_server(
+    server: &ServerInstance,
+    lang_id: &str,
+    open_documents: &HashMap<String, String>,
+    document_versions: &mut HashMap<String, usize>,
+) {
+    for (path, text) in open_documents {
+        if detect_language_id(path) == lang_id {
+            let version = document_versions.entry(path.clone()).or_insert(0);
+            *version += 1;
+            let open_msg = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": format!("file://{}", path),
+                        "languageId": lang_id,
+                        "version": *version,
+                        "text": text
+                    }
+                }
+            });
+            if let Ok(mut writer) = server.stdin.lock() {
+                let _ = write_message(&mut *writer, &open_msg.to_string());
+            }
+            request_semantic_tokens(server, path);
+        }
+    }
 }
 fn get_local_lsp_path(subpath: &str) -> String {
     let current_dir = std::env::current_dir().unwrap_or_default();
@@ -705,6 +761,7 @@ impl LspClient {
             let mut open_documents = HashMap::<String, String>::new();
             let mut servers = HashMap::<String, ServerInstance>::new();
             let mut installing_servers = Vec::<String>::new();
+            let mut active_file: Option<String> = None;
             // Store: (text, version, needs_send, last_update_time)
             let pending_changes = Arc::new(Mutex::new(HashMap::<String, (String, usize, bool, std::time::Instant)>::new()));
             
@@ -744,28 +801,7 @@ impl LspClient {
                         }
 
                         // Request semantic tokens immediately after didChange
-                        let req_id = {
-                            let mut id_lock = server.next_req_id.lock().unwrap();
-                            *id_lock += 1;
-                            *id_lock
-                        };
-                        {
-                            let mut req_map = server.token_requests.lock().unwrap();
-                            req_map.insert(req_id, path.clone());
-                        }
-                        let tokens_msg = serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": req_id,
-                            "method": "textDocument/semanticTokens/full",
-                            "params": {
-                                "textDocument": {
-                                    "uri": format!("file://{}", path)
-                                }
-                            }
-                        });
-                        if let Ok(mut writer) = server.stdin.lock() {
-                            let _ = write_message(&mut *writer, &tokens_msg.to_string());
-                        }
+                        request_semantic_tokens(server, &path);
                     }
                 }
 
@@ -855,7 +891,7 @@ impl LspClient {
                                                 let _ = write_message(&mut stdin_raw, &initialized_msg.to_string());
                                                 
                                                 let stdin = Arc::new(Mutex::new(stdin_raw));
-                                                start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone(), token_types.clone());
+                                                start_reader_thread(stdout_reader, lang_id.to_string(), cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone(), token_types.clone(), cmd_tx_clone.clone());
 
                                                 let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                     file_path: format!("status:{}", cmd_name),
@@ -867,7 +903,9 @@ impl LspClient {
                                                 });
                                                 let _ = proxy_init.send_event(());
                                                 
-                                                servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types });
+                                                let server_instance = ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types };
+                                                open_all_documents_for_server(&server_instance, lang_id, &open_documents, &mut document_versions);
+                                                servers.insert(lang_id.to_string(), server_instance);
                                                 server_ready = true;
                                             }
                                         }
@@ -943,28 +981,7 @@ impl LspClient {
                                     }
 
                                     // Request semantic tokens immediately
-                                    let req_id = {
-                                        let mut id_lock = server.next_req_id.lock().unwrap();
-                                        *id_lock += 1;
-                                        *id_lock
-                                    };
-                                    {
-                                        let mut req_map = server.token_requests.lock().unwrap();
-                                        req_map.insert(req_id, path.clone());
-                                    }
-                                    let tokens_msg = serde_json::json!({
-                                        "jsonrpc": "2.0",
-                                        "id": req_id,
-                                        "method": "textDocument/semanticTokens/full",
-                                        "params": {
-                                            "textDocument": {
-                                                "uri": format!("file://{}", path)
-                                            }
-                                        }
-                                    });
-                                    if let Ok(mut writer) = server.stdin.lock() {
-                                        let _ = write_message(&mut *writer, &tokens_msg.to_string());
-                                    }
+                                    request_semantic_tokens(server, &path);
                                 }
                             }
                         }
@@ -1013,28 +1030,7 @@ impl LspClient {
                                 }
 
                                 // Request semantic tokens immediately
-                                let req_id = {
-                                    let mut id_lock = server.next_req_id.lock().unwrap();
-                                    *id_lock += 1;
-                                    *id_lock
-                                };
-                                {
-                                    let mut req_map = server.token_requests.lock().unwrap();
-                                    req_map.insert(req_id, path.clone());
-                                }
-                                let tokens_msg = serde_json::json!({
-                                    "jsonrpc": "2.0",
-                                    "id": req_id,
-                                    "method": "textDocument/semanticTokens/full",
-                                    "params": {
-                                        "textDocument": {
-                                            "uri": format!("file://{}", path)
-                                        }
-                                    }
-                                });
-                                if let Ok(mut writer) = server.stdin.lock() {
-                                    let _ = write_message(&mut *writer, &tokens_msg.to_string());
-                                }
+                                request_semantic_tokens(server, &path);
                             }
 
                             let save_msg = serde_json::json!({
@@ -1052,6 +1048,7 @@ impl LspClient {
                         }
                     }
                     Ok(LspCommand::SetActiveFile { path }) => {
+                        active_file = Some(path.clone());
                         let lang_id = detect_language_id(&path);
                         if path.is_empty() || lang_id == "plaintext" {
                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
@@ -1071,6 +1068,7 @@ impl LspClient {
                                 tokens: vec![],
                                 is_tokens_update: false,
                             });
+                            request_semantic_tokens(server, &path);
                         } else if installing_servers.contains(&lang_id.to_string()) {
                             let display_name = match lang_id {
                                 "rust" => "rust-analyzer",
@@ -1105,6 +1103,15 @@ impl LspClient {
                             });
                         }
                         let _ = proxy_init.send_event(());
+                    }
+                    Ok(LspCommand::RequestActiveTokens { lang_id }) => {
+                        if let Some(ref path) = active_file {
+                            if detect_language_id(path) == lang_id {
+                                if let Some(server) = servers.get(&lang_id) {
+                                    request_semantic_tokens(server, path);
+                                }
+                            }
+                        }
                     }
                     Ok(LspCommand::RetrySpawn { lang_id }) => {
                         installing_servers.retain(|x| x != &lang_id);
@@ -1184,7 +1191,7 @@ impl LspClient {
                                             let _ = write_message(&mut stdin_raw, &initialized_msg.to_string());
                                             
                                             let stdin = Arc::new(Mutex::new(stdin_raw));
-                                            start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone(), token_types.clone());
+                                            start_reader_thread(stdout_reader, lang_id.to_string(), cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone(), token_types.clone(), cmd_tx_clone.clone());
 
                                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                 file_path: format!("status:{}", cmd_name),
@@ -1197,58 +1204,9 @@ impl LspClient {
                                             let _ = proxy_init.send_event(());
                                             
                                             // Open all files that belong to this language
-                                            for (path, text) in &open_documents {
-                                                if detect_language_id(path) == lang_id {
-                                                    let version = document_versions.entry(path.clone()).or_insert(0);
-                                                    *version += 1;
-                                                    if let Ok(mut pending) = pending_changes.lock() {
-                                                        if let Some((_, _, needs_send, _)) = pending.get_mut(path) {
-                                                            *needs_send = false;
-                                                        }
-                                                    }
-                                                    let open_msg = serde_json::json!({
-                                                        "jsonrpc": "2.0",
-                                                        "method": "textDocument/didOpen",
-                                                        "params": {
-                                                            "textDocument": {
-                                                                "uri": format!("file://{}", path),
-                                                                "languageId": lang_id,
-                                                                "version": *version,
-                                                                "text": text
-                                                            }
-                                                        }
-                                                    });
-                                                    if let Ok(mut writer) = stdin.lock() {
-                                                        let _ = write_message(&mut *writer, &open_msg.to_string());
-                                                    }
-
-                                                    // Request semantic tokens immediately
-                                                    let req_id = {
-                                                        let mut id_lock = next_req_id.lock().unwrap();
-                                                        *id_lock += 1;
-                                                        *id_lock
-                                                    };
-                                                    {
-                                                        let mut req_map = token_requests.lock().unwrap();
-                                                        req_map.insert(req_id, path.clone());
-                                                    }
-                                                    let tokens_msg = serde_json::json!({
-                                                        "jsonrpc": "2.0",
-                                                        "id": req_id,
-                                                        "method": "textDocument/semanticTokens/full",
-                                                        "params": {
-                                                            "textDocument": {
-                                                                "uri": format!("file://{}", path)
-                                                            }
-                                                        }
-                                                    });
-                                                    if let Ok(mut writer) = stdin.lock() {
-                                                        let _ = write_message(&mut *writer, &tokens_msg.to_string());
-                                                    }
-                                                }
-                                            }
-                                            
-                                            servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types });
+                                            let server_instance = ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types };
+                                            open_all_documents_for_server(&server_instance, &lang_id, &open_documents, &mut document_versions);
+                                            servers.insert(lang_id.to_string(), server_instance);
                                         }
                                     }
                                 }
@@ -1344,12 +1302,14 @@ fn write_message<W: Write>(writer: &mut W, msg: &str) -> Result<(), Box<dyn std:
 
 fn start_reader_thread(
     stdout_reader: BufReader<std::process::ChildStdout>,
+    lang_id: String,
     cmd_name: String,
     diag_tx: Sender<LspDiagnosticsUpdate>,
     proxy: winit::event_loop::EventLoopProxy<()>,
     token_requests: Arc<Mutex<HashMap<u64, String>>>,
     stdin: Arc<Mutex<std::process::ChildStdin>>,
     token_types: Arc<Mutex<Vec<String>>>,
+    cmd_tx: Sender<LspCommand>,
 ) {
     let cmd_name_for_reader = cmd_name;
     std::thread::spawn(move || {
@@ -1541,6 +1501,9 @@ fn start_reader_thread(
                                                 is_tokens_update: false,
                                             });
                                             let _ = proxy.send_event(());
+
+                                            // Request active tokens as indexing is now complete
+                                            let _ = cmd_tx.send(LspCommand::RequestActiveTokens { lang_id: lang_id.clone() });
                                         }
                                         _ => {}
                                     }
