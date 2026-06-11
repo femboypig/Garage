@@ -507,8 +507,34 @@ impl UiState {
             let sb_btn_w = 26.0f32;
             let term_btn_x = width - 10.0 - sb_btn_w;
 
+            // Check if clicked the terminal toggle button
             if mx >= term_btn_x && mx < term_btn_x + sb_btn_w {
                 return UiAction::ToggleDock;
+            }
+
+            // Check if clicked the diagnostics indicator
+            let mut pen_x = 10.0;
+            if self.config.show_git_branch {
+                if let Some(ref branch) = self.git_branch {
+                    let icon_sz = (self.ui_font_size * 0.9).round().max(12.0);
+                    pen_x += icon_sz + 4.0;
+                    let branch_len = branch.chars().count() as f32;
+                    pen_x += branch_len * self.ui_char_width;
+                    pen_x += 15.0;
+                }
+            }
+            let mut err_count = 0;
+            let mut warn_count = 0;
+            for (e, w) in self.lsp_diagnostics.values() {
+                err_count += *e;
+                warn_count += *w;
+            }
+            let err_str = format!("⊗ {}  ", err_count);
+            let warn_str = format!("⚠ {}", warn_count);
+            let diag_w = (err_str.chars().count() + warn_str.chars().count()) as f32 * self.ui_char_width;
+
+            if mx >= pen_x && mx <= pen_x + diag_w {
+                return UiAction::OpenFile("diagnostics://project".into());
             }
         }
 
