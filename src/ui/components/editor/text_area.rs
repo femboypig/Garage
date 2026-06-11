@@ -194,32 +194,84 @@ pub fn draw_text_area(
             }
         }
 
-        // Draw Git Blame inline annotation at the end of the active line
-        if ui.config.show_git_blame && line_idx == cursor.line {
-            if let Some(blame_str) = ui.get_or_update_blame(active_file_path, line_idx) {
-                if blame_str != "Loading blame..." && !blame_str.is_empty() {
-                    let line_len = line_text.chars().count();
-                    for (c_idx, c) in blame_str.chars().enumerate() {
-                        let v_idx = line_len + 4 + c_idx;
-                        if v_idx < ui.scroll_x {
-                            continue;
-                        }
-                        let blame_char_x = text_area_x + (v_idx - ui.scroll_x) as f32 * ui.buffer_char_width;
-                        if blame_char_x + ui.buffer_char_width > minimap_x {
-                            break;
-                        }
-                        ui.push_char(
+        // 1. Draw LSP inline diagnostic annotation if present
+        let mut inline_diag_w = 0.0f32;
+        if let Some(diags) = ui.lsp_diagnostics_details.get(&abs_path) {
+            let mut line_diagnostic: Option<&crate::editor::lsp::DiagnosticDetail> = None;
+            for d in diags {
+                if line_idx >= d.line && line_idx <= d.end_line {
+                    if line_diagnostic.is_none() || d.severity < line_diagnostic.as_ref().unwrap().severity {
+                        line_diagnostic = Some(d);
+                    }
+                }
+            }
+            if let Some(diag) = line_diagnostic {
+                let msg = diag.message.split('\n').next().unwrap_or("").trim();
+                let display_msg = format!("• {}", msg);
+                let diag_color = match diag.severity {
+                    1 => [0.95, 0.3, 0.3, 0.65],  // Error: Red
+                    2 => [0.95, 0.6, 0.15, 0.65], // Warning: Orange
+                    3 => [0.3, 0.6, 0.9, 0.55],   // Info: Blue
+                    _ => [0.6, 0.6, 0.6, 0.55],   // Hint: Gray
+                };
+                let diag_x = pen_x + 30.0;
+                if diag_x < minimap_x {
+                    let max_w = (minimap_x - diag_x - 10.0).max(0.0);
+                    let available_chars = (max_w / ui.buffer_char_width).floor() as usize;
+                    if available_chars > 3 {
+                        let final_msg = if display_msg.chars().count() > available_chars {
+                            format!("{}...", &display_msg.chars().take(available_chars - 3).collect::<String>())
+                        } else {
+                            display_msg
+                        };
+                        ui.push_str(
                             vertices,
                             indices,
                             atlas,
                             queue,
-                            c,
-                            blame_char_x,
+                            &final_msg,
+                            diag_x,
                             baseline_y,
-                            ui.config.theme.syntax_comment,
+                            diag_color,
                             ui.buffer_font_size,
                             ui.buffer_char_width,
                         );
+                        inline_diag_w = final_msg.chars().count() as f32 * ui.buffer_char_width + 20.0;
+                    }
+                }
+            }
+        }
+
+        // 2. Draw Git Blame inline annotation at the end of the active line
+        if ui.config.show_git_blame && line_idx == cursor.line {
+            if let Some(blame_str) = ui.get_or_update_blame(active_file_path, line_idx) {
+                if blame_str != "Loading blame..." && !blame_str.is_empty() {
+                    let annotation_x = pen_x + 30.0 + inline_diag_w;
+                    if annotation_x < minimap_x {
+                        let max_w = (minimap_x - annotation_x - 10.0).max(0.0);
+                        let available_chars = (max_w / ui.buffer_char_width).floor() as usize;
+                        if available_chars > 3 {
+                            let final_blame = if blame_str.chars().count() > available_chars {
+                                format!("{}...", &blame_str.chars().take(available_chars - 3).collect::<String>())
+                            } else {
+                                blame_str
+                            };
+                            let mut annotation_color = ui.config.theme.syntax_comment;
+                            annotation_color[3] *= 0.5; // Make it extra faint
+                            
+                            ui.push_str(
+                                vertices,
+                                indices,
+                                atlas,
+                                queue,
+                                &final_blame,
+                                annotation_x,
+                                baseline_y,
+                                annotation_color,
+                                ui.buffer_font_size,
+                                ui.buffer_char_width,
+                            );
+                        }
                     }
                 }
             }
