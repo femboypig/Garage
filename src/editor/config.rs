@@ -51,6 +51,13 @@ pub struct Theme {
     pub syntax_string: [f32; 4],
     pub syntax_comment: [f32; 4],
     pub syntax_attribute: [f32; 4],
+    pub syntax_namespace: [f32; 4],
+    pub syntax_enum_member: [f32; 4],
+    pub syntax_parameter: [f32; 4],
+    pub syntax_variable: [f32; 4],
+    pub syntax_property: [f32; 4],
+    pub syntax_macro: [f32; 4],
+    pub syntax_operator: [f32; 4],
     
     // Scrollbar
     pub scrollbar_track: [f32; 4],
