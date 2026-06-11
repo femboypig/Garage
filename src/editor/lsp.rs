@@ -127,11 +127,35 @@ fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> 
             ("gopls".to_string(), vec![]),
             (get_local_lsp_path("go/gopls"), vec![]),
         ],
-        "c" | "cpp" => vec![("clangd".to_string(), vec![])],
-        "typescript" | "javascript" => vec![
-            ("typescript-language-server".to_string(), vec!["--stdio".to_string()]),
-            ("deno".to_string(), vec!["lsp".to_string()]),
-        ],
+        "c" | "cpp" => {
+            let mut list = Vec::new();
+            if validate_binary("clangd") {
+                list.push(("clangd".to_string(), vec![]));
+            }
+            if let Ok(entries) = std::fs::read_dir(get_local_lsp_path("")) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if entry.file_name().to_string_lossy().starts_with("clangd") {
+                        let bin = path.join("bin").join("clangd");
+                        if bin.exists() {
+                            list.push((bin.to_string_lossy().to_string(), vec![]));
+                        }
+                    }
+                }
+            }
+            list
+        }
+        "typescript" | "javascript" => {
+            let mut list = Vec::new();
+            if validate_binary("typescript-language-server") {
+                list.push(("typescript-language-server".to_string(), vec!["--stdio".to_string()]));
+            }
+            list.push((get_local_lsp_path("node_modules/.bin/typescript-language-server"), vec!["--stdio".to_string()]));
+            if validate_binary("deno") {
+                list.push(("deno".to_string(), vec!["lsp".to_string()]));
+            }
+            list
+        }
         _ => return Err("No configured LSP server for this language".to_string()),
     };
 
@@ -162,6 +186,24 @@ fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> 
         }
     }
     Err(last_err)
+}
+
+fn get_latest_github_tag(repo: &str) -> Option<String> {
+    let output = Command::new("curl")
+        .args(&["-sI", &format!("https://github.com/{}/releases/latest", repo)])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let headers = String::from_utf8_lossy(&output.stdout);
+        for line in headers.lines() {
+            if line.to_lowercase().starts_with("location:") {
+                if let Some(tag) = line.split("/tag/").nth(1) {
+                    return Some(tag.trim().to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 fn attempt_auto_install(
@@ -269,6 +311,64 @@ fn attempt_auto_install(
                     Err("Failed to install gopls via go install".to_string())
                 }
             }
+            "c" | "cpp" => {
+                if let Some(tag) = get_latest_github_tag("clangd/clangd") {
+                    let os_suffix = if cfg!(target_os = "macos") {
+                        "mac"
+                    } else if cfg!(target_os = "windows") {
+                        "windows"
+                    } else {
+                        "linux"
+                    };
+                    let asset_name = format!("clangd-{}-{}.zip", os_suffix, tag);
+                    let url = format!("https://github.com/clangd/clangd/releases/download/{}/{}", tag, asset_name);
+                    let dest_zip = lsp_dir.join("clangd.zip");
+
+                    log::info!("LSP Auto-Install: Downloading clangd from {}", url);
+                    let curl_status = std::process::Command::new("curl")
+                        .args(&["-L", "-o", dest_zip.to_str().unwrap(), &url])
+                        .status();
+
+                    if curl_status.map(|s| s.success()).unwrap_or(false) {
+                        let unzip_status = std::process::Command::new("unzip")
+                            .args(&["-o", dest_zip.to_str().unwrap(), "-d", lsp_dir.to_str().unwrap()])
+                            .status();
+
+                        if unzip_status.map(|s| s.success()).unwrap_or(false) {
+                            let _ = std::fs::remove_file(&dest_zip);
+                            let clangd_folder = lsp_dir.join(format!("clangd_{}", tag));
+                            let dest_bin = clangd_folder.join("bin").join("clangd");
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                if let Ok(metadata) = std::fs::metadata(&dest_bin) {
+                                    let mut perms = metadata.permissions();
+                                    perms.set_mode(0o755);
+                                    let _ = std::fs::set_permissions(&dest_bin, perms);
+                                }
+                            }
+                            Ok(())
+                        } else {
+                            Err("Failed to unzip clangd".to_string())
+                        }
+                    } else {
+                        Err("Failed to download clangd".to_string())
+                    }
+                } else {
+                    Err("Failed to resolve latest clangd version tag".to_string())
+                }
+            }
+            "typescript" | "javascript" => {
+                log::info!("LSP Auto-Install: Installing typescript-language-server and typescript via npm");
+                let npm_status = std::process::Command::new("npm")
+                    .args(&["install", "--prefix", lsp_dir.to_str().unwrap(), "typescript-language-server", "typescript"])
+                    .status();
+                if npm_status.map(|s| s.success()).unwrap_or(false) {
+                    Ok(())
+                } else {
+                    Err("Failed to install typescript-language-server via npm".to_string())
+                }
+            }
             _ => Err(format!("Unsupported language {}", lang_id)),
         };
 
@@ -283,6 +383,8 @@ fn attempt_auto_install(
                     "rust" => "rust-analyzer",
                     "python" => "pyright/pylsp",
                     "go" => "gopls",
+                    "c" | "cpp" => "clangd",
+                    "typescript" | "javascript" => "typescript-language-server",
                     _ => lang_id,
                 };
                 let _ = diag_tx.send(LspDiagnosticsUpdate {
@@ -460,12 +562,14 @@ impl LspClient {
                                     }
                                     Err(e_msg) => {
                                         log::warn!("LSP: Failed to start server for {}: {}", lang_id, e_msg);
-                                        if !installing_servers.contains(&lang_id.to_string()) && (lang_id == "rust" || lang_id == "python" || lang_id == "go") {
+                                        if !installing_servers.contains(&lang_id.to_string()) && (lang_id == "rust" || lang_id == "python" || lang_id == "go" || lang_id == "c" || lang_id == "cpp" || lang_id == "typescript" || lang_id == "javascript") {
                                             installing_servers.push(lang_id.to_string());
                                             let display_name = match lang_id {
                                                 "rust" => "rust-analyzer",
                                                 "python" => "python-lsp-server",
                                                 "go" => "gopls",
+                                                "c" | "cpp" => "clangd",
+                                                "typescript" | "javascript" => "typescript-language-server",
                                                 _ => lang_id,
                                             };
                                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
@@ -553,6 +657,8 @@ impl LspClient {
                                 "rust" => "rust-analyzer",
                                 "python" => "python-lsp-server",
                                 "go" => "gopls",
+                                "c" | "cpp" => "clangd",
+                                "typescript" | "javascript" => "typescript-language-server",
                                 _ => lang_id,
                             };
                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
