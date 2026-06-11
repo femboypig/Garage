@@ -87,6 +87,10 @@ pub fn draw_scrollbars(
     );
 
     // --- 2. Draw Horizontal Scrollbar ---
+    if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
+        return;
+    }
+    
     let max_line_len = ui.get_max_line_len(buffer, active_file_path, cursor.line);
     let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
     
