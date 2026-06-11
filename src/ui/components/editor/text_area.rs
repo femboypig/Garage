@@ -85,10 +85,40 @@ pub fn draw_text_area(
             }
         }
 
-        // Draw source code text characters (with custom Rust syntax highlighting)
+        // Draw source code text characters (using LSP semantic tokens or custom fallback highlighting)
         let line_text = &buffer.lines()[line_idx];
         let mut pen_x = text_area_x;
-        let char_colors = ui.get_line_char_colors(line_text);
+        
+        let abs_path = crate::editor::lsp::get_absolute_path(active_file_path.unwrap_or(""));
+        let tokens_opt = ui.lsp_semantic_tokens.get(&abs_path);
+        let default_color = ui.config.theme.syntax_default;
+        let char_count = line_text.chars().count();
+        let mut char_colors = vec![default_color; char_count];
+
+        if let Some(tokens) = tokens_opt {
+            for token in tokens {
+                if token.line == line_idx {
+                    let start = token.start_col;
+                    let end = (token.start_col + token.length).min(char_count);
+                    
+                    let token_color = match token.token_type.as_str() {
+                        "keyword" => ui.config.theme.syntax_keyword,
+                        "string" => ui.config.theme.syntax_string,
+                        "comment" => ui.config.theme.syntax_comment,
+                        "number" => ui.config.theme.syntax_number,
+                        "type" | "class" | "struct" | "interface" => ui.config.theme.syntax_type,
+                        "function" | "method" => ui.config.theme.syntax_attribute,
+                        _ => default_color,
+                    };
+                    
+                    for c_idx in start..end {
+                        char_colors[c_idx] = token_color;
+                    }
+                }
+            }
+        } else {
+            char_colors = ui.get_line_char_colors(line_text);
+        }
         
         for (char_idx, c) in line_text.chars().enumerate() {
             if char_idx < ui.scroll_x {
@@ -100,6 +130,50 @@ pub fn draw_text_area(
             }
             let char_color = char_colors.get(char_idx).copied().unwrap_or(ui.config.theme.syntax_default);
             pen_x += ui.push_char(vertices, indices, atlas, queue, c, pen_x, baseline_y, char_color, ui.buffer_font_size, ui.buffer_char_width);
+        }
+
+        // Draw LSP compilation warnings/errors underlines under characters
+        if let Some(diags) = ui.lsp_diagnostics_details.get(&abs_path) {
+            for d in diags {
+                if line_idx >= d.line && line_idx <= d.end_line {
+                    let start_char = if d.line == line_idx { d.col } else { 0 };
+                    let end_char = if d.end_line == line_idx { d.end_col } else { char_count };
+                    
+                    if start_char < end_char && start_char < char_count {
+                        let start_col_clamped = start_char.max(ui.scroll_x);
+                        let end_col_clamped = end_char.min(char_count);
+                        
+                        if start_col_clamped < end_col_clamped {
+                            let start_x = text_area_x + (start_col_clamped as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
+                            let end_x = text_area_x + (end_col_clamped as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
+                            
+                            let start_x_clamped = start_x.max(text_area_x);
+                            let end_x_clamped = end_x.min(minimap_x);
+                            
+                            if start_x_clamped < end_x_clamped {
+                                let color = match d.severity {
+                                    1 => [0.95, 0.25, 0.25, 0.8], // Error: Red
+                                    2 => [0.95, 0.6, 0.1, 0.8],   // Warning: Yellow/Orange
+                                    _ => [0.2, 0.6, 0.9, 0.8],    // Info/Hint: Blue
+                                };
+                                let underline_y = row_y + ui.buffer_line_height - 2.0;
+                                let underline_w = end_x_clamped - start_x_clamped;
+                                
+                                ui.push_quad(
+                                    vertices,
+                                    indices,
+                                    start_x_clamped,
+                                    underline_y,
+                                    underline_w,
+                                    1.5,
+                                    white_uv,
+                                    color,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Draw Git Blame inline annotation at the end of the active line

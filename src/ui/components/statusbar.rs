@@ -136,6 +136,68 @@ pub fn draw_statusbar(
         ui.ui_char_width,
     );
 
+    // Draw Active Line Diagnostic details if any
+    let mut line_diag_msg = String::new();
+    let mut line_diag_color = [0.0, 0.0, 0.0, 0.0];
+    if let Some(path) = active_path {
+        let abs_path_str = crate::editor::lsp::get_absolute_path(path);
+        if let Some(diags) = ui.lsp_diagnostics_details.get(&abs_path_str) {
+            for d in diags {
+                if cursor.line >= d.line && cursor.line <= d.end_line {
+                    line_diag_msg = d.message.clone();
+                    line_diag_color = match d.severity {
+                        1 => [0.95, 0.25, 0.25, 1.0], // Red
+                        2 => [0.95, 0.70, 0.15, 1.0], // Yellow
+                        _ => [0.2, 0.6, 0.9, 1.0],   // Blue
+                    };
+                    break;
+                }
+            }
+        }
+    }
+
+    if !line_diag_msg.is_empty() {
+        pen_x += 15.0;
+        let prefix = "● ";
+        pen_x += ui.push_str(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            prefix,
+            pen_x,
+            baseline_y,
+            line_diag_color,
+            ui.ui_font_size,
+            ui.ui_char_width,
+        );
+        
+        let right_limit = width - 350.0;
+        let available_w = (right_limit - pen_x).max(100.0);
+        let max_chars = (available_w / ui.ui_char_width).floor() as usize;
+        
+        let display_msg = if line_diag_msg.chars().count() > max_chars && max_chars > 3 {
+            let mut s: String = line_diag_msg.chars().take(max_chars - 3).collect();
+            s.push_str("...");
+            s
+        } else {
+            line_diag_msg
+        };
+        
+        pen_x += ui.push_str(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            &display_msg,
+            pen_x,
+            baseline_y,
+            ui.config.theme.statusbar_text,
+            ui.ui_font_size,
+            ui.ui_char_width,
+        );
+    }
+
     // 3. Right Side Components (drawn from right to left)
     let sb_btn_w = 26.0f32;
     let sb_btn_h = ui.status_height - 1.0;

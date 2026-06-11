@@ -164,8 +164,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 } else {
                                     ui.lsp_status = "rust-analyzer".to_string();
                                 }
+                            } else if update.is_tokens_update {
+                                ui.lsp_semantic_tokens.insert(update.file_path, update.tokens);
                             } else {
-                                ui.lsp_diagnostics.insert(update.file_path, (update.errors, update.warnings));
+                                ui.lsp_diagnostics.insert(update.file_path.clone(), (update.errors, update.warnings));
+                                ui.lsp_diagnostics_details.insert(update.file_path, update.diagnostics);
                             }
                         }
                     }

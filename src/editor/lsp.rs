@@ -4,10 +4,31 @@ use std::sync::{Arc, Mutex, mpsc::Sender};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
+pub struct DiagnosticDetail {
+    pub line: usize,
+    pub col: usize,
+    pub end_line: usize,
+    pub end_col: usize,
+    pub severity: u32,
+    pub message: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticTokenDetail {
+    pub line: usize,
+    pub start_col: usize,
+    pub length: usize,
+    pub token_type: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct LspDiagnosticsUpdate {
     pub file_path: String,
     pub errors: usize,
     pub warnings: usize,
+    pub diagnostics: Vec<DiagnosticDetail>,
+    pub tokens: Vec<SemanticTokenDetail>,
+    pub is_tokens_update: bool,
 }
 
 pub enum LspCommand {
@@ -25,6 +46,8 @@ pub struct LspClient {
 struct ServerInstance {
     stdin: std::process::ChildStdin,
     cmd_name: String,
+    token_requests: Arc<Mutex<HashMap<u64, String>>>,
+    next_req_id: Arc<Mutex<u64>>,
 }
 
 fn get_local_lsp_path(subpath: &str) -> String {
@@ -542,6 +565,9 @@ fn attempt_auto_install(
                     file_path: format!("status:offline (install failed for {})", display_name),
                     errors: 9999,
                     warnings: 0,
+                    diagnostics: vec![],
+                    tokens: vec![],
+                    is_tokens_update: false,
                 });
                 let _ = proxy.send_event(());
             }
@@ -563,15 +589,17 @@ impl LspClient {
             let mut open_documents = HashMap::<String, String>::new();
             let mut servers = HashMap::<String, ServerInstance>::new();
             let mut installing_servers = Vec::<String>::new();
-            let pending_changes = Arc::new(Mutex::new(HashMap::<String, (String, usize, bool)>::new()));
+            // Store: (text, version, needs_send, last_update_time)
+            let pending_changes = Arc::new(Mutex::new(HashMap::<String, (String, usize, bool, std::time::Instant)>::new()));
             
             let pending_changes_clone = pending_changes.clone();
             loop {
-                // 1. Flush any pending changes to active servers
+                // 1. Flush any pending changes to active servers if debounced (200ms pause)
                 let mut changes_to_flush = Vec::new();
+                let now = std::time::Instant::now();
                 if let Ok(mut pending) = pending_changes_clone.lock() {
-                    for (path, (text, version, needs_send)) in pending.iter_mut() {
-                        if *needs_send {
+                    for (path, (text, version, needs_send, last_update)) in pending.iter_mut() {
+                        if *needs_send && now.duration_since(*last_update) >= std::time::Duration::from_millis(200) {
                             changes_to_flush.push((path.clone(), text.clone(), *version));
                             *needs_send = false;
                         }
@@ -595,6 +623,28 @@ impl LspClient {
                             }
                         });
                         let _ = write_message(&mut server.stdin, &change_msg.to_string());
+
+                        // Request semantic tokens immediately after didChange
+                        let req_id = {
+                            let mut id_lock = server.next_req_id.lock().unwrap();
+                            *id_lock += 1;
+                            *id_lock
+                        };
+                        {
+                            let mut req_map = server.token_requests.lock().unwrap();
+                            req_map.insert(req_id, path.clone());
+                        }
+                        let tokens_msg = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "method": "textDocument/semanticTokens/full",
+                            "params": {
+                                "textDocument": {
+                                    "uri": format!("file://{}", path)
+                                }
+                            }
+                        });
+                        let _ = write_message(&mut server.stdin, &tokens_msg.to_string());
                     }
                 }
 
@@ -612,6 +662,9 @@ impl LspClient {
                                         let mut stdin = child.stdin.take().expect("Failed to open stdin");
                                         let stdout = child.stdout.take().expect("Failed to open stdout");
                                         let mut stdout_reader = BufReader::new(stdout);
+                                        
+                                        let token_requests = Arc::new(Mutex::new(HashMap::<u64, String>::new()));
+                                        let next_req_id = Arc::new(Mutex::new(0u64));
                                         
                                         // Handshake
                                         let current_dir = std::env::current_dir().unwrap_or_default();
@@ -660,16 +713,19 @@ impl LspClient {
                                                 });
                                                 let _ = write_message(&mut stdin, &initialized_msg.to_string());
                                                 
-                                                start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone());
+                                                start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone());
 
                                                 let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                     file_path: format!("status:{}", cmd_name),
                                                     errors: 0,
                                                     warnings: 0,
+                                                    diagnostics: vec![],
+                                                    tokens: vec![],
+                                                    is_tokens_update: false,
                                                 });
                                                 let _ = proxy_init.send_event(());
                                                 
-                                                servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name });
+                                                servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name, token_requests, next_req_id });
                                                 server_ready = true;
                                             }
                                         }
@@ -695,6 +751,9 @@ impl LspClient {
                                                 file_path: format!("status:installing {}...", display_name),
                                                 errors: 0,
                                                 warnings: 0,
+                                                diagnostics: vec![],
+                                                tokens: vec![],
+                                                is_tokens_update: false,
                                             });
                                             let _ = proxy_init.send_event(());
                                             attempt_auto_install(lang_id, cmd_tx_clone.clone(), diagnostics_tx.clone(), proxy_init.clone());
@@ -703,6 +762,9 @@ impl LspClient {
                                                 file_path: "status:offline".to_string(),
                                                 errors: 9999,
                                                 warnings: 0,
+                                                diagnostics: vec![],
+                                                tokens: vec![],
+                                                is_tokens_update: false,
                                             });
                                             let _ = proxy_init.send_event(());
                                         }
@@ -727,6 +789,28 @@ impl LspClient {
                                         }
                                     });
                                     let _ = write_message(&mut server.stdin, &open_msg.to_string());
+
+                                    // Request semantic tokens immediately
+                                    let req_id = {
+                                        let mut id_lock = server.next_req_id.lock().unwrap();
+                                        *id_lock += 1;
+                                        *id_lock
+                                    };
+                                    {
+                                        let mut req_map = server.token_requests.lock().unwrap();
+                                        req_map.insert(req_id, path.clone());
+                                    }
+                                    let tokens_msg = serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "id": req_id,
+                                        "method": "textDocument/semanticTokens/full",
+                                        "params": {
+                                            "textDocument": {
+                                                "uri": format!("file://{}", path)
+                                            }
+                                        }
+                                    });
+                                    let _ = write_message(&mut server.stdin, &tokens_msg.to_string());
                                 }
                             }
                         }
@@ -738,13 +822,63 @@ impl LspClient {
                             let version = document_versions.entry(path.clone()).or_insert(0);
                             *version += 1;
                             if let Ok(mut pending) = pending_changes_clone.lock() {
-                                pending.insert(path, (text, *version, true));
+                                pending.insert(path, (text, *version, true, std::time::Instant::now()));
                             }
                         }
                     }
                     Ok(LspCommand::SaveFile { path }) => {
+                        let mut text_to_flush = None;
+                        let mut version_to_flush = 0;
+                        if let Ok(mut pending) = pending_changes_clone.lock() {
+                            if let Some((text, version, needs_send, _)) = pending.get_mut(&path) {
+                                if *needs_send {
+                                    text_to_flush = Some(text.clone());
+                                    version_to_flush = *version;
+                                    *needs_send = false;
+                                }
+                            }
+                        }
                         let lang_id = detect_language_id(&path);
                         if let Some(server) = servers.get_mut(lang_id) {
+                            if let Some(text) = text_to_flush {
+                                let change_msg = serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "method": "textDocument/didChange",
+                                    "params": {
+                                        "textDocument": {
+                                            "uri": format!("file://{}", path),
+                                            "version": version_to_flush
+                                        },
+                                        "contentChanges": [
+                                            { "text": text }
+                                        ]
+                                    }
+                                });
+                                let _ = write_message(&mut server.stdin, &change_msg.to_string());
+
+                                // Request semantic tokens immediately
+                                let req_id = {
+                                    let mut id_lock = server.next_req_id.lock().unwrap();
+                                    *id_lock += 1;
+                                    *id_lock
+                                };
+                                {
+                                    let mut req_map = server.token_requests.lock().unwrap();
+                                    req_map.insert(req_id, path.clone());
+                                }
+                                let tokens_msg = serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": req_id,
+                                    "method": "textDocument/semanticTokens/full",
+                                    "params": {
+                                        "textDocument": {
+                                            "uri": format!("file://{}", path)
+                                        }
+                                    }
+                                });
+                                let _ = write_message(&mut server.stdin, &tokens_msg.to_string());
+                            }
+
                             let save_msg = serde_json::json!({
                                 "jsonrpc": "2.0",
                                 "method": "textDocument/didSave",
@@ -764,12 +898,18 @@ impl LspClient {
                                 file_path: "status:none".to_string(),
                                 errors: 0,
                                 warnings: 0,
+                                diagnostics: vec![],
+                                tokens: vec![],
+                                is_tokens_update: false,
                             });
                         } else if let Some(server) = servers.get(lang_id) {
                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                 file_path: format!("status:{}", server.cmd_name),
                                 errors: 0,
                                 warnings: 0,
+                                diagnostics: vec![],
+                                tokens: vec![],
+                                is_tokens_update: false,
                             });
                         } else if installing_servers.contains(&lang_id.to_string()) {
                             let display_name = match lang_id {
@@ -789,12 +929,18 @@ impl LspClient {
                                 file_path: format!("status:installing {}...", display_name),
                                 errors: 0,
                                 warnings: 0,
+                                diagnostics: vec![],
+                                tokens: vec![],
+                                is_tokens_update: false,
                             });
                         } else {
                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                 file_path: "status:offline".to_string(),
                                 errors: 9999,
                                 warnings: 0,
+                                diagnostics: vec![],
+                                tokens: vec![],
+                                is_tokens_update: false,
                             });
                         }
                         let _ = proxy_init.send_event(());
@@ -807,6 +953,9 @@ impl LspClient {
                                     let mut stdin = child.stdin.take().expect("Failed to open stdin");
                                     let stdout = child.stdout.take().expect("Failed to open stdout");
                                     let mut stdout_reader = BufReader::new(stdout);
+                                    
+                                    let token_requests = Arc::new(Mutex::new(HashMap::<u64, String>::new()));
+                                    let next_req_id = Arc::new(Mutex::new(0u64));
                                     
                                     // Handshake
                                     let current_dir = std::env::current_dir().unwrap_or_default();
@@ -855,12 +1004,15 @@ impl LspClient {
                                             });
                                             let _ = write_message(&mut stdin, &initialized_msg.to_string());
                                             
-                                            start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone());
+                                            start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone());
 
                                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                 file_path: format!("status:{}", cmd_name),
                                                 errors: 0,
                                                 warnings: 0,
+                                                diagnostics: vec![],
+                                                tokens: vec![],
+                                                is_tokens_update: false,
                                             });
                                             let _ = proxy_init.send_event(());
                                             
@@ -882,10 +1034,32 @@ impl LspClient {
                                                         }
                                                     });
                                                     let _ = write_message(&mut stdin, &open_msg.to_string());
+
+                                                    // Request semantic tokens immediately
+                                                    let req_id = {
+                                                        let mut id_lock = next_req_id.lock().unwrap();
+                                                        *id_lock += 1;
+                                                        *id_lock
+                                                    };
+                                                    {
+                                                        let mut req_map = token_requests.lock().unwrap();
+                                                        req_map.insert(req_id, path.clone());
+                                                    }
+                                                    let tokens_msg = serde_json::json!({
+                                                        "jsonrpc": "2.0",
+                                                        "id": req_id,
+                                                        "method": "textDocument/semanticTokens/full",
+                                                        "params": {
+                                                            "textDocument": {
+                                                                "uri": format!("file://{}", path)
+                                                            }
+                                                        }
+                                                    });
+                                                    let _ = write_message(&mut stdin, &tokens_msg.to_string());
                                                 }
                                             }
                                             
-                                            servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name });
+                                            servers.insert(lang_id.to_string(), ServerInstance { stdin, cmd_name, token_requests, next_req_id });
                                         }
                                     }
                                 }
@@ -895,6 +1069,9 @@ impl LspClient {
                                         file_path: "status:offline".to_string(),
                                         errors: 9999,
                                         warnings: 0,
+                                        diagnostics: vec![],
+                                        tokens: vec![],
+                                        is_tokens_update: false,
                                     });
                                     let _ = proxy_init.send_event(());
                                 }
@@ -980,6 +1157,7 @@ fn start_reader_thread(
     cmd_name: String,
     diag_tx: Sender<LspDiagnosticsUpdate>,
     proxy: winit::event_loop::EventLoopProxy<()>,
+    token_requests: Arc<Mutex<HashMap<u64, String>>>,
 ) {
     let cmd_name_for_reader = cmd_name;
     std::thread::spawn(move || {
@@ -996,13 +1174,31 @@ fn start_reader_thread(
                                 
                                 let mut errors = 0;
                                 let mut warnings = 0;
+                                let mut diagnostics_list = Vec::new();
                                 if let Some(diags) = params["diagnostics"].as_array() {
                                     for d in diags {
-                                        let severity = d["severity"].as_i64().unwrap_or(1);
+                                        let severity = d["severity"].as_i64().unwrap_or(1) as u32;
                                         if severity == 1 {
                                             errors += 1;
                                         } else if severity == 2 {
                                             warnings += 1;
+                                        }
+                                        
+                                        let message = d["message"].as_str().unwrap_or("").to_string();
+                                        if let Some(range) = d.get("range") {
+                                            let start_line = range["start"]["line"].as_u64().unwrap_or(0) as usize;
+                                            let start_col = range["start"]["character"].as_u64().unwrap_or(0) as usize;
+                                            let end_line = range["end"]["line"].as_u64().unwrap_or(start_line as u64) as usize;
+                                            let end_col = range["end"]["character"].as_u64().unwrap_or(start_col as u64) as usize;
+                                            
+                                            diagnostics_list.push(DiagnosticDetail {
+                                                line: start_line,
+                                                col: start_col,
+                                                end_line,
+                                                end_col,
+                                                severity,
+                                                message,
+                                            });
                                         }
                                     }
                                 }
@@ -1010,6 +1206,9 @@ fn start_reader_thread(
                                     file_path,
                                     errors,
                                     warnings,
+                                    diagnostics: diagnostics_list,
+                                    tokens: vec![],
+                                    is_tokens_update: false,
                                 });
                                 let _ = proxy.send_event(());
                             }
@@ -1037,6 +1236,9 @@ fn start_reader_thread(
                                                 file_path: status_str,
                                                 errors: 0,
                                                 warnings: 0,
+                                                diagnostics: vec![],
+                                                tokens: vec![],
+                                                is_tokens_update: false,
                                             });
                                             let _ = proxy.send_event(());
                                         }
@@ -1077,6 +1279,9 @@ fn start_reader_thread(
                                                 file_path: status_str,
                                                 errors: 0,
                                                 warnings: 0,
+                                                diagnostics: vec![],
+                                                tokens: vec![],
+                                                is_tokens_update: false,
                                             });
                                             let _ = proxy.send_event(());
                                         }
@@ -1094,10 +1299,81 @@ fn start_reader_thread(
                                                 file_path: status_str,
                                                 errors: 0,
                                                 warnings: 0,
+                                                diagnostics: vec![],
+                                                tokens: vec![],
+                                                is_tokens_update: false,
                                             });
                                             let _ = proxy.send_event(());
                                         }
                                         _ => {}
+                                    }
+                                }
+                            } else if let Some(result) = resp.get("result") {
+                                if let Some(data) = result["data"].as_array() {
+                                    if let Some(id_val) = resp.get("id") {
+                                        if let Some(id) = id_val.as_u64() {
+                                            let file_path_opt = {
+                                                let mut req_map = token_requests.lock().unwrap();
+                                                req_map.remove(&id)
+                                            };
+                                            if let Some(file_path) = file_path_opt {
+                                                let mut tokens_list = Vec::new();
+                                                let mut current_line = 0;
+                                                let mut current_start = 0;
+
+                                                let mut i = 0;
+                                                while i + 4 < data.len() {
+                                                    let delta_line = data[i].as_u64().unwrap_or(0) as usize;
+                                                    let delta_start = data[i+1].as_u64().unwrap_or(0) as usize;
+                                                    let length = data[i+2].as_u64().unwrap_or(0) as usize;
+                                                    let token_type_idx = data[i+3].as_u64().unwrap_or(0) as usize;
+
+                                                    if delta_line > 0 {
+                                                        current_line += delta_line;
+                                                        current_start = delta_start;
+                                                    } else {
+                                                        current_start += delta_start;
+                                                    }
+
+                                                    let token_type = match token_type_idx {
+                                                        0 => "type",
+                                                        1 => "class",
+                                                        2 => "struct",
+                                                        3 => "interface",
+                                                        4 => "parameter",
+                                                        5 => "variable",
+                                                        6 => "property",
+                                                        7 => "function",
+                                                        8 => "method",
+                                                        9 => "keyword",
+                                                        10 => "comment",
+                                                        11 => "string",
+                                                        12 => "number",
+                                                        13 => "operator",
+                                                        _ => "variable",
+                                                    }.to_string();
+
+                                                    tokens_list.push(SemanticTokenDetail {
+                                                        line: current_line,
+                                                        start_col: current_start,
+                                                        length,
+                                                        token_type,
+                                                    });
+
+                                                    i += 5;
+                                                }
+
+                                                let _ = diag_tx.send(LspDiagnosticsUpdate {
+                                                    file_path,
+                                                    errors: 0,
+                                                    warnings: 0,
+                                                    diagnostics: vec![],
+                                                    tokens: tokens_list,
+                                                    is_tokens_update: true,
+                                                });
+                                                let _ = proxy.send_event(());
+                                            }
+                                        }
                                     }
                                 }
                             }

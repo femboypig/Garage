@@ -64,6 +64,8 @@ pub struct UiState {
     pub git_blame_file_tx: std::sync::mpsc::Sender<(String, std::collections::HashMap<usize, String>)>,
 
     pub lsp_diagnostics: std::collections::HashMap<String, (usize, usize)>,
+    pub lsp_diagnostics_details: std::collections::HashMap<String, Vec<crate::editor::lsp::DiagnosticDetail>>,
+    pub lsp_semantic_tokens: std::collections::HashMap<String, Vec<crate::editor::lsp::SemanticTokenDetail>>,
     pub lsp_diagnostics_rx: Option<std::sync::mpsc::Receiver<crate::editor::lsp::LspDiagnosticsUpdate>>,
     pub lsp_status: String,
 
@@ -203,6 +205,8 @@ impl UiState {
             tree_tx,
             languages,
             lsp_diagnostics: std::collections::HashMap::new(),
+            lsp_diagnostics_details: std::collections::HashMap::new(),
+            lsp_semantic_tokens: std::collections::HashMap::new(),
             lsp_diagnostics_rx: None,
             lsp_status: "starting".to_string(),
             command_palette_query: String::new(),
