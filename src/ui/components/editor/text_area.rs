@@ -102,12 +102,19 @@ pub fn draw_text_area(
                     let end = (token.start_col + token.length).min(char_count);
                     
                     let token_color = match token.token_type.as_str() {
-                        "keyword" => ui.config.theme.syntax_keyword,
+                        "keyword" | "modifier" => ui.config.theme.syntax_keyword,
                         "string" => ui.config.theme.syntax_string,
                         "comment" => ui.config.theme.syntax_comment,
                         "number" => ui.config.theme.syntax_number,
-                        "type" | "class" | "struct" | "interface" => ui.config.theme.syntax_type,
+                        "type" | "class" | "struct" | "interface" | "enum" | "typeParameter" => ui.config.theme.syntax_type,
                         "function" | "method" => ui.config.theme.syntax_attribute,
+                        "macro" => ui.config.theme.syntax_macro,
+                        "namespace" => ui.config.theme.syntax_namespace,
+                        "enumMember" => ui.config.theme.syntax_enum_member,
+                        "parameter" => ui.config.theme.syntax_parameter,
+                        "variable" => ui.config.theme.syntax_variable,
+                        "property" => ui.config.theme.syntax_property,
+                        "operator" => ui.config.theme.syntax_operator,
                         _ => default_color,
                     };
                     
@@ -152,23 +159,34 @@ pub fn draw_text_area(
                             
                             if start_x_clamped < end_x_clamped {
                                 let color = match d.severity {
-                                    1 => [0.95, 0.25, 0.25, 0.8], // Error: Red
-                                    2 => [0.95, 0.6, 0.1, 0.8],   // Warning: Yellow/Orange
-                                    _ => [0.2, 0.6, 0.9, 0.8],    // Info/Hint: Blue
+                                    1 => [0.95, 0.25, 0.25, 0.9], // Error: Red
+                                    2 => [0.95, 0.6, 0.1, 0.9],   // Warning: Yellow/Orange
+                                    3 => [0.2, 0.6, 0.9, 0.7],    // Info: Blue
+                                    _ => [0.5, 0.5, 0.5, 0.7],    // Hint: Gray
                                 };
-                                let underline_y = row_y + ui.buffer_line_height - 2.0;
-                                let underline_w = end_x_clamped - start_x_clamped;
+                                let wave_y = row_y + ui.buffer_line_height - 3.0;
+                                let wave_height = 2.0;
+                                let wave_period = 4.0;
+                                let seg_width = 2.0;
                                 
-                                ui.push_quad(
-                                    vertices,
-                                    indices,
-                                    start_x_clamped,
-                                    underline_y,
-                                    underline_w,
-                                    1.5,
-                                    white_uv,
-                                    color,
-                                );
+                                let mut wx = start_x_clamped;
+                                let mut wave_up = true;
+                                while wx < end_x_clamped {
+                                    let seg_w = seg_width.min(end_x_clamped - wx);
+                                    let seg_y = if wave_up { wave_y - wave_height * 0.5 } else { wave_y + wave_height * 0.5 };
+                                    ui.push_quad(
+                                        vertices,
+                                        indices,
+                                        wx,
+                                        seg_y,
+                                        seg_w,
+                                        1.5,
+                                        white_uv,
+                                        color,
+                                    );
+                                    wx += wave_period * 0.5;
+                                    wave_up = !wave_up;
+                                }
                             }
                         }
                     }
