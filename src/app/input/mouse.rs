@@ -425,7 +425,7 @@ pub fn handle_mouse_input(
  
                     match action_res {
                         UiAction::None => {
-                            let active_tab = &mut state.tabs[state.active_tab_idx];
+                            let active_tab_idx = state.active_tab_idx;
                             let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
                             
                             let main_y = ui.titlebar_height;
@@ -440,7 +440,8 @@ pub fn handle_mouse_input(
                             };
                             let editor_height = editor_bottom_limit - editor_top - 14.0;
                             
-                            let max_line_digits = active_tab.buffer.len().to_string().len().max(3);
+                            let active_tab_len = state.tabs[active_tab_idx].buffer.len();
+                            let max_line_digits = active_tab_len.to_string().len().max(3);
                             let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
                             let text_area_x = ui.sidebar_width + gutter_width;
                             let scrollbar_width = ui.scrollbar_width();
@@ -454,20 +455,21 @@ pub fn handle_mouse_input(
                                 state.is_dragging_minimap = true;
                                 let total_editor_height = editor_bottom_limit - editor_top;
                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-                                let max_scroll = (active_tab.buffer.len() as isize - visible_lines as isize).max(0) as f32;
+                                let max_scroll = (active_tab_len as isize - visible_lines as isize).max(0) as f32;
                                 let relative_y = state.mouse_y - editor_top;
                                 
                                 let minimap_line_height = (ui.buffer_font_size * 0.22).round().max(2.0);
-                                let minimap_total_h = active_tab.buffer.len() as f32 * minimap_line_height;
+                                let minimap_total_h = active_tab_len as f32 * minimap_line_height;
                                 
                                 let clicked_line = if minimap_total_h > total_editor_height {
                                     let scroll_ratio = (relative_y / total_editor_height).clamp(0.0, 1.0);
-                                    (scroll_ratio * (active_tab.buffer.len() - 1) as f32).round() as usize
+                                    (scroll_ratio * (active_tab_len - 1) as f32).round() as usize
                                 } else {
                                     (relative_y / minimap_line_height).floor() as usize
                                 };
-                                let clicked_line = clicked_line.min(active_tab.buffer.len() - 1);
+                                let clicked_line = clicked_line.min(active_tab_len - 1);
                                 
+                                let active_tab = &mut state.tabs[active_tab_idx];
                                 active_tab.cursor.line = clicked_line;
                                 let line_chars = active_tab.buffer.lines()[clicked_line].chars().count();
                                 active_tab.cursor.col = active_tab.cursor.col.min(line_chars);
@@ -480,9 +482,9 @@ pub fn handle_mouse_input(
                             else if state.mouse_x >= sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit {
                                 state.is_dragging_scroll = true;
                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-                                let ratio = visible_lines as f32 / active_tab.buffer.len() as f32;
+                                let ratio = visible_lines as f32 / active_tab_len as f32;
                                 let thumb_h = (editor_height * ratio).clamp(20.0, editor_height);
-                                let max_scroll = (active_tab.buffer.len() as isize - visible_lines as isize).max(0) as f32;
+                                let max_scroll = (active_tab_len as isize - visible_lines as isize).max(0) as f32;
                                 
                                 let scroll_ratio = if max_scroll > 0.0 { ui.scroll_y as f32 / max_scroll } else { 0.0 };
                                 let thumb_y = editor_top + scroll_ratio * (editor_height - thumb_h);
@@ -500,6 +502,7 @@ pub fn handle_mouse_input(
                             // 3. Check if click is on horizontal scrollbar
                             else if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_bottom_limit - 14.0 && state.mouse_y < editor_bottom_limit {
                                 state.is_dragging_horizontal_scroll = true;
+                                let active_tab = &mut state.tabs[active_tab_idx];
                                 let max_line_len = ui.get_max_line_len(&active_tab.buffer, active_tab.path.as_deref(), active_tab.cursor.line);
                                 let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
                                 let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
@@ -521,6 +524,107 @@ pub fn handle_mouse_input(
                             } else {
                                  // Click inside editor area
                                  if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit - 14.0 {
+                                     // 1. Check if copy button of hover diagnostic was clicked
+                                     let mut copy_clicked = false;
+                                     if let Some(diag) = &ui.hovered_diagnostic {
+                                         if let Some((line_idx, col_idx)) = ui.hover_pos {
+                                             let char_x = text_area_x + (col_idx as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
+                                             let char_y = editor_top + (line_idx as isize - ui.scroll_y as isize) as f32 * ui.buffer_line_height;
+                                             
+                                             let label = match diag.severity {
+                                                 1 => "Syntax Error",
+                                                 2 => "Warning",
+                                                 _ => "Info",
+                                             };
+                                             let max_w = 400.0f32;
+                                             let max_chars_per_line = (max_w / ui.ui_char_width).floor() as usize;
+                                             let full_message = if diag.message.is_empty() { label.to_string() } else { format!("{}: {}", label, diag.message) };
+                                             
+                                             let mut lines = Vec::new();
+                                             let words: Vec<&str> = full_message.split_whitespace().collect();
+                                             let mut current_line = String::new();
+                                             for word in words {
+                                                 if current_line.is_empty() {
+                                                     current_line = word.to_string();
+                                                 } else if (current_line.chars().count() + 1 + word.chars().count()) <= max_chars_per_line {
+                                                     current_line.push(' ');
+                                                     current_line.push_str(word);
+                                                 } else {
+                                                     lines.push(current_line);
+                                                     current_line = word.to_string();
+                                                 }
+                                             }
+                                             if !current_line.is_empty() { lines.push(current_line); }
+                                             
+                                             let line_count = lines.len();
+                                             let popup_w = (lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f32 * ui.ui_char_width + 24.0 + 20.0).max(120.0);
+                                             let popup_h = line_count as f32 * ui.ui_line_height + 16.0;
+                                             
+                                             let mut popup_x = char_x.round();
+                                             let mut popup_y = (char_y + ui.buffer_line_height + 4.0).round();
+                                             
+                                             if popup_x + popup_w > minimap_x {
+                                                 popup_x = (minimap_x - popup_w - 10.0).max(text_area_x + 10.0);
+                                             }
+                                             if popup_y + popup_h > editor_top + editor_height {
+                                                 popup_y = (char_y - popup_h - 4.0).max(editor_top + 4.0);
+                                             }
+                                             
+                                             let copy_x = (popup_x + popup_w - 24.0).round();
+                                             let copy_y = (popup_y + (popup_h - 11.0) / 2.0).round();
+                                             
+                                             if state.mouse_x >= copy_x - 4.0 && state.mouse_x < copy_x + 15.0 && state.mouse_y >= copy_y - 4.0 && state.mouse_y < copy_y + 15.0 {
+                                                 state.internal_clipboard = diag.message.clone();
+                                                 ui.hovered_diagnostic = None;
+                                                 ui.hover_start = None;
+                                                 ui.hover_pos = None;
+                                                 copy_clicked = true;
+                                                 window.request_redraw();
+                                             }
+                                         }
+                                     }
+                                     if copy_clicked {
+                                         return;
+                                     }
+
+                                      // 2. Check if virtual diagnostics tab item was clicked
+                                      let mut clicked_info = None;
+                                      if state.tabs[active_tab_idx].path.as_deref() == Some("diagnostics://project") {
+                                          let clicked_target = ui.diagnostics_click_targets.iter().find(|t| {
+                                              state.mouse_x >= t.0 && state.mouse_x <= t.2 && state.mouse_y >= t.1 && state.mouse_y <= t.3
+                                          }).cloned();
+                                          if let Some((target_path, target_line, target_col)) = clicked_target.map(|t| (t.4, t.5, t.6)) {
+                                              clicked_info = Some((target_path, target_line, target_col));
+                                          }
+                                      }
+                                      
+                                      if let Some((target_path, target_line, target_col)) = clicked_info {
+                                          // Open the file
+                                          let open_action = crate::ui::UiAction::OpenFile(std::path::PathBuf::from(target_path));
+                                          crate::app::handler::handle_action(
+                                              ui,
+                                              state,
+                                              open_action,
+                                              window,
+                                              elwt,
+                                              gpu,
+                                              atlas,
+                                              font_bytes,
+                                          );
+                                          
+                                          // Set cursor on new active tab
+                                          let new_active_tab = &mut state.tabs[state.active_tab_idx];
+                                          new_active_tab.cursor.line = target_line;
+                                          new_active_tab.cursor.col = target_col;
+                                          new_active_tab.cursor.intended_col = target_col;
+                                          new_active_tab.cursor.selection_anchor = Some((target_line, target_col));
+                                          ui.scroll_to_cursor(&new_active_tab.cursor, new_active_tab.buffer.len(), size.width as f32, size.height as f32);
+                                          window.request_redraw();
+                                          return;
+                                      }
+
+                                     // Normal click
+                                     let active_tab = &mut state.tabs[active_tab_idx];
                                      active_tab.buffer.commit_transaction();
                                      state.is_dragging = true;
  
