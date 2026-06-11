@@ -374,39 +374,53 @@ impl UiState {
         // 3. Check Tabbar Clicks
         let main_y = self.titlebar_height;
         if my >= main_y && my < main_y + self.tabbar_height {
-            // Check actual file tabs
-            let tab_close_icon_sz = (self.ui_font_size * 0.8).round().max(10.0);
             let activity_bar_width = 0.0;
-            let mut current_tab_x = activity_bar_width + self.sidebar_width;
-            let close_reserved = 8.0f32 + tab_close_icon_sz;
+            let tabbar_start_x = activity_bar_width + self.sidebar_width;
 
-            for idx in 0..tab_paths.len() {
-                let path_opt = &tab_paths[idx];
-                let _is_modified = tab_modified.get(idx).copied().unwrap_or(false);
-                let dot_reserved = 18.0f32;
-                let file_name = path_opt.as_ref()
-                    .and_then(|p| Path::new(p).file_name())
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "untitled.txt".to_string());
+            // Check if clicking in the scrollbar area (bottom 6px of the tab bar)
+            if my >= main_y + self.tabbar_height - 6.0 {
+                return UiAction::None;
+            }
 
-                let name_w = file_name.chars().count() as f32 * self.ui_char_width;
-                let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+            // Make sure the click is within the visible tab bar area
+            if mx >= tabbar_start_x && mx < width {
+                // Check actual file tabs
+                let tab_close_icon_sz = (self.ui_font_size * 0.8).round().max(10.0);
+                let mut current_tab_x = tabbar_start_x;
+                let close_reserved = 8.0f32 + tab_close_icon_sz;
 
-                if mx >= current_tab_x && mx < current_tab_x + tab_w {
-                    // Check if clicked the close button
-                    let close_x = current_tab_x + tab_w - 10.0 - tab_close_icon_sz;
-                    let close_y = (main_y + self.tabbar_height / 2.0 - tab_close_icon_sz / 2.0).round();
-                    
-                    // Allow some padding around the close icon for easier clicking
-                    if mx >= close_x - 3.0 && mx < close_x + tab_close_icon_sz + 3.0 && my >= close_y - 3.0 && my <= close_y + tab_close_icon_sz + 3.0 {
-                        self.active_menu = None;
-                        return UiAction::CloseTab(idx);
-                    } else {
-                        self.active_menu = None;
-                        return UiAction::SelectTab(idx);
+                for idx in 0..tab_paths.len() {
+                    let path_opt = &tab_paths[idx];
+                    let _is_modified = tab_modified.get(idx).copied().unwrap_or(false);
+                    let dot_reserved = 18.0f32;
+                    let file_name = path_opt.as_ref()
+                        .and_then(|p| Path::new(p).file_name())
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "untitled.txt".to_string());
+
+                    let name_w = file_name.chars().count() as f32 * self.ui_char_width;
+                    let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+
+                    let draw_x = current_tab_x - self.tab_scroll_x;
+                    let clip_left = draw_x.max(tabbar_start_x);
+                    let clip_right = (draw_x + tab_w).min(width);
+
+                    if mx >= clip_left && mx < clip_right {
+                        // Check if clicked the close button
+                        let close_x = draw_x + tab_w - 10.0 - tab_close_icon_sz;
+                        let close_y = (main_y + self.tabbar_height / 2.0 - tab_close_icon_sz / 2.0).round();
+                        
+                        // Allow some padding around the close icon for easier clicking
+                        if mx >= close_x - 3.0 && mx < close_x + tab_close_icon_sz + 3.0 && my >= close_y - 3.0 && my <= close_y + tab_close_icon_sz + 3.0 {
+                            self.active_menu = None;
+                            return UiAction::CloseTab(idx);
+                        } else {
+                            self.active_menu = None;
+                            return UiAction::SelectTab(idx);
+                        }
                     }
+                    current_tab_x += tab_w;
                 }
-                current_tab_x += tab_w;
             }
 
             self.active_menu = None;
