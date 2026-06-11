@@ -147,15 +147,39 @@ fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> 
         }
         "typescript" | "javascript" => {
             let mut list = Vec::new();
+            let current_dir = std::env::current_dir().unwrap_or_default();
+            let is_deno_project = current_dir.join("deno.json").exists() || current_dir.join("deno.jsonc").exists();
+
+            if is_deno_project && validate_binary("deno") {
+                list.push(("deno".to_string(), vec!["lsp".to_string()]));
+            }
+
             if validate_binary("typescript-language-server") {
                 list.push(("typescript-language-server".to_string(), vec!["--stdio".to_string()]));
             }
             list.push((get_local_lsp_path("node_modules/.bin/typescript-language-server"), vec!["--stdio".to_string()]));
-            if validate_binary("deno") {
-                list.push(("deno".to_string(), vec!["lsp".to_string()]));
-            }
             list
         }
+        "json" => vec![
+            ("vscode-json-language-server".to_string(), vec!["--stdio".to_string()]),
+            (get_local_lsp_path("node_modules/.bin/vscode-json-language-server"), vec!["--stdio".to_string()]),
+        ],
+        "yaml" => vec![
+            ("yaml-language-server".to_string(), vec!["--stdio".to_string()]),
+            (get_local_lsp_path("node_modules/.bin/yaml-language-server"), vec!["--stdio".to_string()]),
+        ],
+        "html" => vec![
+            ("vscode-html-language-server".to_string(), vec!["--stdio".to_string()]),
+            (get_local_lsp_path("node_modules/.bin/vscode-html-language-server"), vec!["--stdio".to_string()]),
+        ],
+        "css" | "scss" => vec![
+            ("vscode-css-language-server".to_string(), vec!["--stdio".to_string()]),
+            (get_local_lsp_path("node_modules/.bin/vscode-css-language-server"), vec!["--stdio".to_string()]),
+        ],
+        "markdown" => vec![
+            ("marksman".to_string(), vec!["server".to_string()]),
+            (get_local_lsp_path("marksman"), vec!["server".to_string()]),
+        ],
         _ => return Err("No configured LSP server for this language".to_string()),
     };
 
@@ -455,6 +479,42 @@ fn attempt_auto_install(
                     Err("Failed to install yaml-language-server".to_string())
                 }
             }
+            "markdown" => {
+                let os = if cfg!(target_os = "macos") {
+                    "macos"
+                } else if cfg!(target_os = "windows") {
+                    "win.exe"
+                } else {
+                    if cfg!(target_arch = "aarch64") {
+                        "linux-arm64"
+                    } else {
+                        "linux-x64"
+                    }
+                };
+                let filename = if os == "win.exe" { "marksman.exe".to_string() } else if os == "macos" { "marksman-macos".to_string() } else { format!("marksman-{}", os) };
+                let url = format!("https://github.com/artempyanykh/marksman/releases/latest/download/{}", filename);
+                let dest_bin = lsp_dir.join(if cfg!(target_os = "windows") { "marksman.exe" } else { "marksman" });
+
+                log::info!("LSP Auto-Install: Downloading marksman from {}", url);
+                let curl_status = std::process::Command::new("curl")
+                    .args(&["-L", "-o", dest_bin.to_str().unwrap(), &url])
+                    .status();
+                
+                if curl_status.map(|s| s.success()).unwrap_or(false) {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if let Ok(metadata) = std::fs::metadata(&dest_bin) {
+                            let mut perms = metadata.permissions();
+                            perms.set_mode(0o755);
+                            let _ = std::fs::set_permissions(&dest_bin, perms);
+                        }
+                    }
+                    Ok(())
+                } else {
+                    Err("Failed to download marksman".to_string())
+                }
+            }
             _ => Err(format!("Unsupported language {}", lang_id)),
         };
 
@@ -475,6 +535,7 @@ fn attempt_auto_install(
                     "yaml" => "yaml-language-server",
                     "html" => "html-language-server",
                     "css" | "scss" => "css-language-server",
+                    "markdown" => "marksman",
                     _ => lang_id,
                 };
                 let _ = diag_tx.send(LspDiagnosticsUpdate {
@@ -574,6 +635,9 @@ impl LspClient {
                                                             "willSave": false,
                                                             "willSaveWaitUntil": false
                                                         }
+                                                    },
+                                                    "window": {
+                                                        "workDoneProgress": true
                                                     }
                                                 },
                                                 "workspaceFolders": [{
@@ -596,47 +660,7 @@ impl LspClient {
                                                 });
                                                 let _ = write_message(&mut stdin, &initialized_msg.to_string());
                                                 
-                                                let diag_tx = diagnostics_tx.clone();
-                                                let proxy_reader = proxy_init.clone();
-                                                std::thread::spawn(move || {
-                                                    loop {
-                                                        match read_message(&mut stdout_reader) {
-                                                            Ok(resp_str) => {
-                                                                if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&resp_str) {
-                                                                    if resp["method"] == "textDocument/publishDiagnostics" {
-                                                                        if let Some(params) = resp.get("params") {
-                                                                            let uri = params["uri"].as_str().unwrap_or("");
-                                                                            let file_path = uri.trim_start_matches("file://").to_string();
-                                                                            
-                                                                            let mut errors = 0;
-                                                                            let mut warnings = 0;
-                                                                            if let Some(diags) = params["diagnostics"].as_array() {
-                                                                                for d in diags {
-                                                                                    let severity = d["severity"].as_i64().unwrap_or(1);
-                                                                                    if severity == 1 {
-                                                                                        errors += 1;
-                                                                                    } else if severity == 2 {
-                                                                                        warnings += 1;
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                            let _ = diag_tx.send(LspDiagnosticsUpdate {
-                                                                                file_path,
-                                                                                errors,
-                                                                                warnings,
-                                                                            });
-                                                                            let _ = proxy_reader.send_event(());
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                            Err(e) => {
-                                                                log::warn!("LSP: Reader thread exit: {:?}", e);
-                                                                break;
-                                                            }
-                                                        }
-                                                    }
-                                                });
+                                                start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone());
 
                                                 let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                     file_path: format!("status:{}", cmd_name),
@@ -652,20 +676,21 @@ impl LspClient {
                                     }
                                     Err(e_msg) => {
                                         log::warn!("LSP: Failed to start server for {}: {}", lang_id, e_msg);
-                                        if !installing_servers.contains(&lang_id.to_string()) && (lang_id == "rust" || lang_id == "python" || lang_id == "go" || lang_id == "c" || lang_id == "cpp" || lang_id == "typescript" || lang_id == "javascript" || lang_id == "json" || lang_id == "yaml" || lang_id == "html" || lang_id == "css" || lang_id == "scss") {
-                                            installing_servers.push(lang_id.to_string());
-                                            let display_name = match lang_id {
-                                                "rust" => "rust-analyzer",
-                                                "python" => "python-lsp-server",
-                                                "go" => "gopls",
-                                                "c" | "cpp" => "clangd",
-                                                "typescript" | "javascript" => "typescript-language-server",
-                                                "json" => "json-language-server",
-                                                "yaml" => "yaml-language-server",
-                                                "html" => "html-language-server",
-                                                "css" | "scss" => "css-language-server",
-                                                _ => lang_id,
-                                            };
+                                         if !installing_servers.contains(&lang_id.to_string()) && (lang_id == "rust" || lang_id == "python" || lang_id == "go" || lang_id == "c" || lang_id == "cpp" || lang_id == "typescript" || lang_id == "javascript" || lang_id == "json" || lang_id == "yaml" || lang_id == "html" || lang_id == "css" || lang_id == "scss" || lang_id == "markdown") {
+                                             installing_servers.push(lang_id.to_string());
+                                             let display_name = match lang_id {
+                                                 "rust" => "rust-analyzer",
+                                                 "python" => "python-lsp-server",
+                                                 "go" => "gopls",
+                                                 "c" | "cpp" => "clangd",
+                                                 "typescript" | "javascript" => "typescript-language-server",
+                                                 "json" => "json-language-server",
+                                                 "yaml" => "yaml-language-server",
+                                                 "html" => "html-language-server",
+                                                 "css" | "scss" => "css-language-server",
+                                                 "markdown" => "marksman",
+                                                 _ => lang_id,
+                                             };
                                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                 file_path: format!("status:installing {}...", display_name),
                                                 errors: 0,
@@ -757,6 +782,7 @@ impl LspClient {
                                 "yaml" => "yaml-language-server",
                                 "html" => "html-language-server",
                                 "css" | "scss" => "css-language-server",
+                                "markdown" => "marksman",
                                 _ => lang_id,
                             };
                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
@@ -804,6 +830,9 @@ impl LspClient {
                                                         "willSave": false,
                                                         "willSaveWaitUntil": false
                                                     }
+                                                },
+                                                "window": {
+                                                    "workDoneProgress": true
                                                 }
                                             },
                                             "workspaceFolders": [{
@@ -826,47 +855,7 @@ impl LspClient {
                                             });
                                             let _ = write_message(&mut stdin, &initialized_msg.to_string());
                                             
-                                            let diag_tx = diagnostics_tx.clone();
-                                            let proxy_reader = proxy_init.clone();
-                                            std::thread::spawn(move || {
-                                                loop {
-                                                    match read_message(&mut stdout_reader) {
-                                                        Ok(resp_str) => {
-                                                            if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&resp_str) {
-                                                                if resp["method"] == "textDocument/publishDiagnostics" {
-                                                                    if let Some(params) = resp.get("params") {
-                                                                        let uri = params["uri"].as_str().unwrap_or("");
-                                                                        let file_path = uri.trim_start_matches("file://").to_string();
-                                                                        
-                                                                        let mut errors = 0;
-                                                                        let mut warnings = 0;
-                                                                        if let Some(diags) = params["diagnostics"].as_array() {
-                                                                            for d in diags {
-                                                                                let severity = d["severity"].as_i64().unwrap_or(1);
-                                                                                if severity == 1 {
-                                                                                    errors += 1;
-                                                                                } else if severity == 2 {
-                                                                                    warnings += 1;
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                        let _ = diag_tx.send(LspDiagnosticsUpdate {
-                                                                            file_path,
-                                                                            errors,
-                                                                            warnings,
-                                                                        });
-                                                                        let _ = proxy_reader.send_event(());
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                        Err(e) => {
-                                                            log::warn!("LSP: Reader thread exit: {:?}", e);
-                                                            break;
-                                                        }
-                                                    }
-                                                }
-                                            });
+                                            start_reader_thread(stdout_reader, cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone());
 
                                             let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
                                                 file_path: format!("status:{}", cmd_name),
@@ -984,6 +973,144 @@ fn write_message<W: Write>(writer: &mut W, msg: &str) -> Result<(), Box<dyn std:
     writer.write_all(content.as_bytes())?;
     writer.flush()?;
     Ok(())
+}
+
+fn start_reader_thread(
+    stdout_reader: BufReader<std::process::ChildStdout>,
+    cmd_name: String,
+    diag_tx: Sender<LspDiagnosticsUpdate>,
+    proxy: winit::event_loop::EventLoopProxy<()>,
+) {
+    let cmd_name_for_reader = cmd_name;
+    std::thread::spawn(move || {
+        let mut stdout_reader = stdout_reader;
+        let mut active_progress = HashMap::<String, String>::new();
+        loop {
+            match read_message(&mut stdout_reader) {
+                Ok(resp_str) => {
+                    if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&resp_str) {
+                        if resp["method"] == "textDocument/publishDiagnostics" {
+                            if let Some(params) = resp.get("params") {
+                                let uri = params["uri"].as_str().unwrap_or("");
+                                let file_path = uri.trim_start_matches("file://").to_string();
+                                
+                                let mut errors = 0;
+                                let mut warnings = 0;
+                                if let Some(diags) = params["diagnostics"].as_array() {
+                                    for d in diags {
+                                        let severity = d["severity"].as_i64().unwrap_or(1);
+                                        if severity == 1 {
+                                            errors += 1;
+                                        } else if severity == 2 {
+                                            warnings += 1;
+                                        }
+                                    }
+                                }
+                                let _ = diag_tx.send(LspDiagnosticsUpdate {
+                                    file_path,
+                                    errors,
+                                    warnings,
+                                });
+                                let _ = proxy.send_event(());
+                            }
+                        } else if resp["method"] == "$/progress" {
+                            if let Some(params) = resp.get("params") {
+                                let token = params["token"].as_str()
+                                    .map(|s| s.to_string())
+                                    .or_else(|| params["token"].as_i64().map(|i| i.to_string()))
+                                    .unwrap_or_default();
+                                
+                                if let Some(value) = params.get("value") {
+                                    let kind = value["kind"].as_str().unwrap_or("");
+                                    match kind {
+                                        "begin" => {
+                                            let title = value["title"].as_str().unwrap_or("");
+                                            active_progress.insert(token.clone(), title.to_string());
+                                            
+                                            let message = value["message"].as_str().unwrap_or("");
+                                            let status_str = if message.is_empty() {
+                                                format!("status:{} ({})", cmd_name_for_reader, title)
+                                            } else {
+                                                format!("status:{} ({} - {})", cmd_name_for_reader, title, message)
+                                            };
+                                            let _ = diag_tx.send(LspDiagnosticsUpdate {
+                                                file_path: status_str,
+                                                errors: 0,
+                                                warnings: 0,
+                                            });
+                                            let _ = proxy.send_event(());
+                                        }
+                                        "report" => {
+                                            let title = active_progress.get(&token).map(|s| s.as_str()).unwrap_or("");
+                                            let message = value["message"].as_str().unwrap_or("");
+                                            let percentage = value["percentage"].as_i64();
+                                            
+                                            let detail = if message.is_empty() {
+                                                if let Some(pct) = percentage {
+                                                    format!("{}% Finished", pct)
+                                                } else {
+                                                    "".to_string()
+                                                }
+                                            } else {
+                                                if let Some(pct) = percentage {
+                                                    format!("{} - {}%", message, pct)
+                                                } else {
+                                                    message.to_string()
+                                                }
+                                            };
+                                            
+                                            let status_str = if title.is_empty() {
+                                                if detail.is_empty() {
+                                                    format!("status:{}", cmd_name_for_reader)
+                                                } else {
+                                                    format!("status:{} ({})", cmd_name_for_reader, detail)
+                                                }
+                                            } else {
+                                                if detail.is_empty() {
+                                                    format!("status:{} ({})", cmd_name_for_reader, title)
+                                                } else {
+                                                    format!("status:{} ({}: {})", cmd_name_for_reader, title, detail)
+                                                }
+                                            };
+                                            
+                                            let _ = diag_tx.send(LspDiagnosticsUpdate {
+                                                file_path: status_str,
+                                                errors: 0,
+                                                warnings: 0,
+                                            });
+                                            let _ = proxy.send_event(());
+                                        }
+                                        "end" => {
+                                            active_progress.remove(&token);
+                                            
+                                            let status_str = if active_progress.is_empty() {
+                                                format!("status:{}", cmd_name_for_reader)
+                                            } else {
+                                                let next_title = active_progress.values().next().unwrap();
+                                                format!("status:{} ({})", cmd_name_for_reader, next_title)
+                                            };
+                                            
+                                            let _ = diag_tx.send(LspDiagnosticsUpdate {
+                                                file_path: status_str,
+                                                errors: 0,
+                                                warnings: 0,
+                                            });
+                                            let _ = proxy.send_event(());
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("LSP: Reader thread exit: {:?}", e);
+                    break;
+                }
+            }
+        }
+    });
 }
 
 fn detect_language_id(path: &str) -> &'static str {
