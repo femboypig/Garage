@@ -96,6 +96,9 @@ pub struct UiState {
 
     pub tree_rx: Option<std::sync::mpsc::Receiver<Vec<FileNode>>>,
     pub tree_tx: std::sync::mpsc::Sender<Vec<FileNode>>,
+    pub hovered_diagnostic: Option<crate::editor::lsp::DiagnosticDetail>,
+    pub hover_start: Option<std::time::Instant>,
+    pub hover_pos: Option<(usize, usize)>,
 }
 
 impl UiState {
@@ -223,6 +226,9 @@ impl UiState {
             active_dock_tab: 0,
             hovered_dock_tab_close: None,
             event_loop_proxy,
+            hovered_diagnostic: None,
+            hover_start: None,
+            hover_pos: None,
         };
 
         state.rebuild_tree();
