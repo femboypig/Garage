@@ -21,6 +21,7 @@ pub fn draw_editor_view(
     status_y: f32,
 ) {
     let active_file_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
+    let is_diagnostics = active_file_path.map_or(false, |p| p.starts_with("diagnostics://"));
     let main_y = ui.titlebar_height;
 
     // Sidebar Navigator (Activity Bar) Width
@@ -28,11 +29,11 @@ pub fn draw_editor_view(
 
     // Calculate dynamic layouts
     let max_line_digits = buffer.len().to_string().len().max(3);
-    let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
+    let gutter_width = if is_diagnostics { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
     let text_area_x = activity_bar_width + ui.sidebar_width + gutter_width;
     
     let scrollbar_width = ui.scrollbar_width();
-    let minimap_width = ui.minimap_width();
+    let minimap_width = if is_diagnostics { 0.0 } else { ui.minimap_width() };
     let sb_x = width - scrollbar_width;
     let minimap_x = sb_x - minimap_width;
     let text_viewport_w = minimap_x - text_area_x;
@@ -41,7 +42,7 @@ pub fn draw_editor_view(
     let total_editor_height = status_y - editor_y;
     let editor_height = total_editor_height - 14.0;
     let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-    let (virtual_len, visible_count) = if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
+    let (virtual_len, visible_count) = if is_diagnostics {
         let mut count = 0;
         for diags in ui.lsp_diagnostics_details.values() {
             count += diags.len();
@@ -89,24 +90,26 @@ pub fn draw_editor_view(
     );
 
     // 3. Draw Gutter
-    gutter::draw_gutter(
-        ui,
-        vertices,
-        indices,
-        atlas,
-        queue,
-        buffer,
-        cursor,
-        editor_y,
-        total_editor_height,
-        gutter_width,
-        text_area_x,
-        activity_bar_width,
-        start_idx,
-        end_idx,
-        max_line_digits,
-        active_file_path,
-    );
+    if !is_diagnostics {
+        gutter::draw_gutter(
+            ui,
+            vertices,
+            indices,
+            atlas,
+            queue,
+            buffer,
+            cursor,
+            editor_y,
+            total_editor_height,
+            gutter_width,
+            text_area_x,
+            activity_bar_width,
+            start_idx,
+            end_idx,
+            max_line_digits,
+            active_file_path,
+        );
+    }
 
     // 4. Draw Text Area
     text_area::draw_text_area(
@@ -152,17 +155,19 @@ pub fn draw_editor_view(
     );
 
     // 6. Draw Minimap
-    minimap::draw_minimap(
-        ui,
-        vertices,
-        indices,
-        atlas,
-        buffer,
-        editor_y,
-        editor_height,
-        total_editor_height,
-        minimap_x,
-        minimap_width,
-        visible_lines,
-    );
+    if !is_diagnostics {
+        minimap::draw_minimap(
+            ui,
+            vertices,
+            indices,
+            atlas,
+            buffer,
+            editor_y,
+            editor_height,
+            total_editor_height,
+            minimap_x,
+            minimap_width,
+            visible_lines,
+        );
+    }
 }
