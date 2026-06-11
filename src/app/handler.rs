@@ -21,7 +21,7 @@ pub fn handle_action(
     match action {
         UiAction::OpenFile(path) => {
             let path_str = path.to_string_lossy().to_string();
-            let is_new = if let Some(existing_idx) = state.tabs.iter().position(|t| t.path.as_ref() == Some(&path_str)) {
+            let _is_new = if let Some(existing_idx) = state.tabs.iter().position(|t| t.path.as_ref() == Some(&path_str)) {
                 state.tabs[state.active_tab_idx].scroll_x = ui.scroll_x;
                 state.tabs[state.active_tab_idx].scroll_y = ui.scroll_y;
                 state.active_tab_idx = existing_idx;
@@ -52,9 +52,7 @@ pub fn handle_action(
                 ui.update_git_file_blame(Some(active_path));
                 ui.update_git_statuses();
                 if let Some(ref lsp) = state.lsp_client {
-                    if is_new {
-                        lsp.notify_open(active_path, state.tabs[state.active_tab_idx].buffer.lines().join("\n"));
-                    }
+                    lsp.notify_open(active_path, state.tabs[state.active_tab_idx].buffer.lines().join("\n"));
                     lsp.notify_active_file(active_path);
                 }
             }
@@ -218,6 +216,7 @@ pub fn handle_action(
             ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
             if let Some(ref lsp) = state.lsp_client {
                 if let Some(ref path) = state.tabs[idx].path {
+                    lsp.notify_open(path, state.tabs[idx].buffer.lines().join("\n"));
                     lsp.notify_active_file(path);
                 } else {
                     lsp.notify_active_file("");
