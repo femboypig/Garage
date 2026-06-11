@@ -215,90 +215,50 @@ impl UiState {
         None
     }
 
-    /// Fast token coloring logic for Rust code lines
+    /// Basic fallback syntax highlighting when no LSP semantic tokens are available
     pub fn get_line_char_colors(&self, line_text: &str) -> Vec<[f32; 4]> {
         let chars: Vec<char> = line_text.chars().collect();
-        let default_color = self.config.theme.syntax_default;
-        let mut colors = vec![default_color; chars.len()];
-
-        let keywords = [
-            "use", "fn", "pub", "struct", "bool", "true", "false", "let", "mut",
-            "impl", "for", "in", "if", "else", "return", "match", "self", "as",
-            "ref", "type", "enum", "mod", "crate", "const", "static", "where",
-            "break", "continue", "loop", "while",
-        ];
-
+        let len = chars.len();
+        let mut colors = vec![self.config.theme.syntax_default; len];
+        
         let mut i = 0;
-        while i < chars.len() {
-            // 1. Comment check
-            if i + 1 < chars.len() && chars[i] == '/' && chars[i+1] == '/' {
-                for j in i..chars.len() {
+        while i < len {
+            // Line comments
+            if i + 1 < len && chars[i] == '/' && chars[i + 1] == '/' {
+                for j in i..len {
                     colors[j] = self.config.theme.syntax_comment;
                 }
                 break;
             }
-
-            // 2. String literal check
+            // String literals
             if chars[i] == '"' {
                 colors[i] = self.config.theme.syntax_string;
-                i += 1;
-                while i < chars.len() {
-                    colors[i] = self.config.theme.syntax_string;
-                    if chars[i] == '"' && (i == 0 || chars[i-1] != '\\') {
-                        i += 1;
+                let mut j = i + 1;
+                while j < len {
+                    colors[j] = self.config.theme.syntax_string;
+                    if chars[j] == '"' && (j == 0 || chars[j - 1] != '\\') {
                         break;
                     }
-                    i += 1;
+                    j += 1;
                 }
+                i = j + 1;
                 continue;
             }
-
-            // 3. Char literal check
-            if chars[i] == '\'' {
-                colors[i] = self.config.theme.syntax_string;
-                i += 1;
-                while i < chars.len() {
-                    colors[i] = self.config.theme.syntax_string;
-                    if chars[i] == '\'' && (i == 0 || chars[i-1] != '\\') {
-                        i += 1;
-                        break;
+            // Char literals
+            if chars[i] == '\'' && i + 2 < len {
+                if (i + 2 < len && chars[i + 2] == '\'') || (i + 3 < len && chars[i + 1] == '\\' && chars[i + 3] == '\'') {
+                    let end = if chars[i + 1] == '\\' { i + 4 } else { i + 3 };
+                    for j in i..end.min(len) {
+                        colors[j] = self.config.theme.syntax_string;
                     }
-                    i += 1;
+                    i = end;
+                    continue;
                 }
-                continue;
             }
-
-            // 4. Attribute check
-            if chars[i] == '#' {
-                colors[i] = self.config.theme.syntax_attribute;
-                i += 1;
-                continue;
-            }
-
-            // 5. Identifier check
-            if chars[i].is_alphabetic() || chars[i] == '_' {
+            // Numbers
+            if chars[i].is_ascii_digit() && (i == 0 || !chars[i - 1].is_alphanumeric() && chars[i - 1] != '_') {
                 let start = i;
-                while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
-                    i += 1;
-                }
-                let word: String = chars[start..i].iter().collect();
-                let color = if keywords.contains(&word.as_str()) {
-                    self.config.theme.syntax_keyword
-                } else if word.chars().next().map_or(false, |c| c.is_uppercase()) {
-                    self.config.theme.syntax_type
-                } else {
-                    default_color
-                };
-                for j in start..i {
-                    colors[j] = color;
-                }
-                continue;
-            }
-
-            // 6. Number check
-            if chars[i].is_ascii_digit() {
-                let start = i;
-                while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
+                while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '_' || chars[i] == '.' || chars[i] == 'x' || chars[i] == 'b' || chars[i] == 'o') {
                     i += 1;
                 }
                 for j in start..i {
@@ -306,10 +266,55 @@ impl UiState {
                 }
                 continue;
             }
-
+            // Identifiers and keywords
+            if chars[i].is_alphabetic() || chars[i] == '_' {
+                let start = i;
+                while i < len && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                    i += 1;
+                }
+                let word: String = chars[start..i].iter().collect();
+                let color = match word.as_str() {
+                    "fn" | "let" | "mut" | "const" | "static" | "if" | "else" | "match" | "for" |
+                    "while" | "loop" | "break" | "continue" | "return" | "pub" | "mod" | "use" |
+                    "struct" | "enum" | "impl" | "trait" | "type" | "where" | "as" | "in" |
+                    "ref" | "self" | "Self" | "super" | "crate" | "async" | "await" | "move" |
+                    "dyn" | "unsafe" | "extern" | "true" | "false" => self.config.theme.syntax_keyword,
+                    "String" | "Vec" | "Option" | "Result" | "Box" | "Arc" | "Mutex" | "HashMap" |
+                    "HashSet" | "PathBuf" | "Path" | "Rc" | "Cell" | "RefCell" | "Cow" |
+                    "u8" | "u16" | "u32" | "u64" | "u128" | "usize" |
+                    "i8" | "i16" | "i32" | "i64" | "i128" | "isize" |
+                    "f32" | "f64" | "bool" | "char" | "str" => self.config.theme.syntax_type,
+                    "Some" | "None" | "Ok" | "Err" => self.config.theme.syntax_enum_member,
+                    _ => {
+                        // If the first char is uppercase, treat as a type
+                        if chars[start].is_uppercase() {
+                            self.config.theme.syntax_type
+                        } else {
+                            self.config.theme.syntax_default
+                        }
+                    }
+                };
+                for j in start..i {
+                    colors[j] = color;
+                }
+                continue;
+            }
+            // Attributes (#[...])
+            if chars[i] == '#' && i + 1 < len && chars[i + 1] == '[' {
+                let start = i;
+                let mut depth = 0;
+                while i < len {
+                    if chars[i] == '[' { depth += 1; }
+                    if chars[i] == ']' { depth -= 1; if depth == 0 { i += 1; break; } }
+                    i += 1;
+                }
+                for j in start..i.min(len) {
+                    colors[j] = self.config.theme.syntax_attribute;
+                }
+                continue;
+            }
             i += 1;
         }
-
         colors
     }
 
