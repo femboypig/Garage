@@ -107,7 +107,7 @@ impl Buffer {
     pub fn commit_transaction(&mut self) {
         if let Some(tx) = self.current_transaction.take() {
             if !tx.is_empty() {
-                self.undo_stack.push(tx);
+                self.push_undo(tx);
                 self.redo_stack.clear();
             }
         }
@@ -128,7 +128,7 @@ impl Buffer {
         if let Some(ref mut tx) = self.current_transaction {
             tx.push(action);
         } else {
-            self.undo_stack.push(vec![action]);
+            self.push_undo(vec![action]);
             self.redo_stack.clear();
         }
 
@@ -189,7 +189,7 @@ impl Buffer {
         if let Some(ref mut tx) = self.current_transaction {
             tx.push(action);
         } else {
-            self.undo_stack.push(vec![action]);
+            self.push_undo(vec![action]);
             self.redo_stack.clear();
         }
 
@@ -262,7 +262,7 @@ impl Buffer {
                     }
                 }
             }
-            self.redo_stack.push(redo_tx);
+            self.push_redo(redo_tx);
             edit_pos
         } else {
             None
@@ -304,10 +304,24 @@ impl Buffer {
                     }
                 }
             }
-            self.undo_stack.push(undo_tx);
+            self.push_undo(undo_tx);
             edit_pos
         } else {
             None
+        }
+    }
+
+    fn push_undo(&mut self, tx: Vec<Action>) {
+        self.undo_stack.push(tx);
+        if self.undo_stack.len() > 1000 {
+            self.undo_stack.drain(0..(self.undo_stack.len() - 1000));
+        }
+    }
+
+    fn push_redo(&mut self, tx: Vec<Action>) {
+        self.redo_stack.push(tx);
+        if self.redo_stack.len() > 1000 {
+            self.redo_stack.drain(0..(self.redo_stack.len() - 1000));
         }
     }
 
