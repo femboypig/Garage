@@ -58,4 +58,95 @@ impl AppState {
             lsp_client,
         }
     }
+
+    pub fn copy_to_clipboard(&mut self, text: String) {
+        self.internal_clipboard = text.clone();
+        
+        // Linux system clipboard commands
+        // Try wl-copy first (Wayland)
+        if let Ok(mut child) = std::process::Command::new("wl-copy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            use std::io::Write;
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            let _ = child.wait();
+            return;
+        }
+        // Try xclip (X11)
+        if let Ok(mut child) = std::process::Command::new("xclip")
+            .arg("-selection")
+            .arg("clipboard")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            use std::io::Write;
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            let _ = child.wait();
+            return;
+        }
+        // Try xsel (X11)
+        if let Ok(mut child) = std::process::Command::new("xsel")
+            .arg("--clipboard")
+            .arg("--input")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            use std::io::Write;
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            let _ = child.wait();
+        }
+    }
+
+    pub fn paste_from_clipboard(&self) -> String {
+        // Try wl-paste (Wayland)
+        if let Ok(output) = std::process::Command::new("wl-paste")
+            .arg("--no-newline")
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(text) = String::from_utf8(output.stdout) {
+                    if !text.is_empty() {
+                        return text;
+                    }
+                }
+            }
+        }
+        // Try xclip (X11)
+        if let Ok(output) = std::process::Command::new("xclip")
+            .arg("-selection")
+            .arg("clipboard")
+            .arg("-o")
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(text) = String::from_utf8(output.stdout) {
+                    if !text.is_empty() {
+                        return text;
+                    }
+                }
+            }
+        }
+        // Try xsel (X11)
+        if let Ok(output) = std::process::Command::new("xsel")
+            .arg("--clipboard")
+            .arg("--output")
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(text) = String::from_utf8(output.stdout) {
+                    if !text.is_empty() {
+                        return text;
+                    }
+                }
+            }
+        }
+        self.internal_clipboard.clone()
+    }
 }
