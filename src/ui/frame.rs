@@ -217,7 +217,138 @@ impl UiState {
 
     /// Basic fallback syntax highlighting when no LSP semantic tokens are available
     pub fn get_line_char_colors(&self, line_text: &str) -> Vec<[f32; 4]> {
-        vec![self.config.theme.syntax_default; line_text.chars().count()]
+        let chars: Vec<char> = line_text.chars().collect();
+        let len = chars.len();
+        let mut colors = vec![self.config.theme.syntax_default; len];
+        
+        let mut i = 0;
+        while i < len {
+            // Skip whitespace
+            if chars[i].is_whitespace() {
+                i += 1;
+                continue;
+            }
+
+            // Line comments (// for C-like, # for python/bash/toml/yaml)
+            if (i + 1 < len && chars[i] == '/' && chars[i + 1] == '/') || chars[i] == '#' {
+                for j in i..len {
+                    colors[j] = self.config.theme.syntax_comment;
+                }
+                break;
+            }
+
+            // String literals (double quotes)
+            if chars[i] == '"' {
+                colors[i] = self.config.theme.syntax_string;
+                let mut j = i + 1;
+                while j < len {
+                    colors[j] = self.config.theme.syntax_string;
+                    if chars[j] == '"' && (j == 0 || chars[j - 1] != '\\') {
+                        break;
+                    }
+                    j += 1;
+                }
+                i = j + 1;
+                continue;
+            }
+
+            // Char literals or single-quote strings (Python/JS/Rust)
+            if chars[i] == '\'' {
+                colors[i] = self.config.theme.syntax_string;
+                let mut j = i + 1;
+                while j < len {
+                    colors[j] = self.config.theme.syntax_string;
+                    if chars[j] == '\'' && (j == 0 || chars[j - 1] != '\\') {
+                        break;
+                    }
+                    j += 1;
+                }
+                i = j + 1;
+                continue;
+            }
+
+            // Numbers (hex, octal, binary, decimal, float)
+            if chars[i].is_ascii_digit() && (i == 0 || (!chars[i - 1].is_alphanumeric() && chars[i - 1] != '_')) {
+                let start = i;
+                while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '_' || chars[i] == '.' || chars[i] == 'x' || chars[i] == 'b' || chars[i] == 'o') {
+                    i += 1;
+                }
+                for j in start..i {
+                    colors[j] = self.config.theme.syntax_number;
+                }
+                continue;
+            }
+
+            // Identifiers, keywords, types
+            if chars[i].is_alphabetic() || chars[i] == '_' {
+                let start = i;
+                while i < len && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                    i += 1;
+                }
+                let word: String = chars[start..i].iter().collect();
+                let color = match word.as_str() {
+                    // Keywords
+                    "fn" | "def" | "let" | "var" | "const" | "function" | "class" | "struct" | "enum" | "impl" | "trait" | "type" |
+                    "if" | "else" | "match" | "switch" | "for" | "while" | "loop" | "break" | "continue" | "return" |
+                    "pub" | "mod" | "use" | "import" | "from" | "as" | "in" | "ref" | "self" | "Self" | "super" | "crate" |
+                    "async" | "await" | "move" | "dyn" | "unsafe" | "extern" | "true" | "false" | "nil" | "null" | "None" | "Some" |
+                    "and" | "or" | "not" | "pass" | "lambda" | "yield" | "try" | "except" | "finally" | "raise" | "assert" | "global" |
+                    "nonlocal" | "del" | "with" => self.config.theme.syntax_keyword,
+
+                    // Common type names
+                    "String" | "str" | "char" | "bool" | "int" | "float" | "u8" | "u16" | "u32" | "u64" | "u128" | "usize" |
+                    "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "f32" | "f64" | "Vec" | "Option" | "Result" | "Box" |
+                    "Arc" | "Mutex" | "HashMap" | "HashSet" | "PathBuf" | "Path" | "Rc" | "Cell" | "RefCell" | "Cow" |
+                    "Ok" | "Err" | "list" | "dict" | "set" | "tuple" | "object" => self.config.theme.syntax_type,
+
+                    _ => {
+                        // If it starts with uppercase, treat as a type / class
+                        if chars[start].is_uppercase() {
+                            self.config.theme.syntax_type
+                        } else {
+                            self.config.theme.syntax_default
+                        }
+                    }
+                };
+                for j in start..i {
+                    colors[j] = color;
+                }
+                continue;
+            }
+
+            // Rust attributes (#[...]) or Python decorators (@...)
+            if chars[i] == '@' {
+                colors[i] = self.config.theme.syntax_attribute;
+                i += 1;
+                while i < len && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                    colors[i] = self.config.theme.syntax_attribute;
+                    i += 1;
+                }
+                continue;
+            }
+
+            if chars[i] == '#' && i + 1 < len && chars[i + 1] == '[' {
+                let start = i;
+                let mut depth = 0;
+                while i < len {
+                    if chars[i] == '[' { depth += 1; }
+                    if chars[i] == ']' { depth -= 1; if depth == 0 { i += 1; break; } }
+                    i += 1;
+                }
+                for j in start..i.min(len) {
+                    colors[j] = self.config.theme.syntax_attribute;
+                }
+                continue;
+            }
+
+            // Operators / Punctuation
+            if "+-*/%&|^!=<>?:;.,".contains(chars[i]) {
+                colors[i] = self.config.theme.syntax_operator;
+            }
+
+            i += 1;
+        }
+        colors
     }
 
     pub fn update_git_branch(&mut self) {
