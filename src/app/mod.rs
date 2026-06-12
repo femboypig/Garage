@@ -87,8 +87,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let initial_tab = {
         let mut buffer = Buffer::new();
         let save_path = if let Some(ref path) = file_path {
-            if let Err(e) = buffer.load_file(path) {
-                log::warn!("Failed to load file '{}': {}. Starting with empty buffer.", path, e);
+            if !path.starts_with("diagnostics://") {
+                if let Err(e) = buffer.load_file(path) {
+                    log::warn!("Failed to load file '{}': {}. Starting with empty buffer.", path, e);
+                }
             }
             if path.starts_with("diagnostics://") {
                 Some(path.clone())
@@ -311,6 +313,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         if !state.terminal_focus {
                             let active_tab = &state.tabs[state.active_tab_idx];
                             if let Some(ref path) = active_tab.path {
+                                ui.diagnostics_file_cache.insert(path.clone(), active_tab.buffer.lines().to_vec());
                                 if let Some(ref lsp) = state.lsp_client {
                                     lsp.notify_change(path, active_tab.buffer.lines().join("\n"));
                                 }
