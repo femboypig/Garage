@@ -382,7 +382,7 @@ pub fn draw_text_area(
                         
                         let mut wx = start_x;
                         while wx < end_x {
-                            let seg_w = 1.0f32.min(end_x - wx);
+                            let seg_w = 2.0f32.min(end_x - wx);
                             let phase = (wx - start_x) * (2.0 * std::f32::consts::PI / wave_period);
                             let seg_y = wave_y + phase.sin() * (wave_height * 0.5);
                             ui.push_quad(
@@ -673,7 +673,7 @@ pub fn draw_text_area(
                                 
                                 let mut wx = start_x_clamped;
                                 while wx < end_x_clamped {
-                                    let seg_w = 1.0f32.min(end_x_clamped - wx);
+                                    let seg_w = 2.0f32.min(end_x_clamped - wx);
                                     let phase = (wx - start_x) * (2.0 * std::f32::consts::PI / wave_period);
                                     let seg_y = wave_y + phase.sin() * (wave_height * 0.5);
                                     ui.push_quad(
