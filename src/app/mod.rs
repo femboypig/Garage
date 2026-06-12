@@ -204,6 +204,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             } else {
                                 ui.lsp_diagnostics.insert(update.file_path.clone(), (update.errors, update.warnings));
                                 ui.lsp_diagnostics_details.insert(update.file_path, update.diagnostics);
+                                ui.diagnostics_changed = true;
                             }
                         }
                     }
@@ -238,35 +239,50 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     for tab in &state.tabs {
                         if let Some(ref path) = tab.path {
                             if !path.starts_with("diagnostics://") {
-                                ui.diagnostics_file_cache.insert(path.clone(), tab.buffer.lines().to_vec());
+                                let tab_lines = tab.buffer.lines();
+                                let mut needs_update = false;
+                                if let Some(cached) = ui.diagnostics_file_cache.get(path) {
+                                    if cached.len() != tab_lines.len() || cached != tab_lines {
+                                        needs_update = true;
+                                    }
+                                } else {
+                                    needs_update = true;
+                                }
+                                if needs_update {
+                                    ui.diagnostics_file_cache.insert(path.clone(), tab_lines.to_vec());
+                                    ui.diagnostics_changed = true;
+                                }
                             }
                         }
                     }
 
                     // Rebuild and sync the diagnostics://project tab buffer itself to match visual diagnostic lines
-                    if let Some(diag_tab_idx) = state.tabs.iter().position(|t| t.path.as_deref() == Some("diagnostics://project")) {
-                        let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(&mut ui);
-                        let mut text_lines = Vec::new();
-                        for vl in &visual_lines {
-                            match vl {
-                                crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, line, col } => {
-                                    text_lines.push(format!("▶ {} (Line {}, Col {})", path, line + 1, col + 1));
-                                }
-                                crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => {
-                                    text_lines.push(line_content.clone());
-                                }
-                                crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => {
-                                    text_lines.push(format!("  └─ [{}] {}", match diag.severity { 1 => "Error", 2 => "Warning", 3 => "Info", _ => "Hint" }, diag.message));
+                    if ui.diagnostics_changed {
+                        ui.diagnostics_changed = false;
+                        if let Some(diag_tab_idx) = state.tabs.iter().position(|t| t.path.as_deref() == Some("diagnostics://project")) {
+                            let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(&mut ui);
+                            let mut text_lines = Vec::new();
+                            for vl in &visual_lines {
+                                match vl {
+                                    crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, line, col } => {
+                                        text_lines.push(format!("▶ {} (Line {}, Col {})", path, line + 1, col + 1));
+                                    }
+                                    crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => {
+                                        text_lines.push(line_content.clone());
+                                    }
+                                    crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => {
+                                        text_lines.push(format!("  └─ [{}] {}", match diag.severity { 1 => "Error", 2 => "Warning", 3 => "Info", _ => "Hint" }, diag.message));
+                                    }
                                 }
                             }
-                        }
-                        if text_lines.is_empty() {
-                            text_lines.push("No problems found in the workspace".to_string());
-                        }
-                        let new_text = text_lines.join("\n");
-                        let current_text = state.tabs[diag_tab_idx].buffer.lines().join("\n");
-                        if current_text != new_text {
-                            state.tabs[diag_tab_idx].buffer = crate::editor::buffer::Buffer::from_text(&new_text);
+                            if text_lines.is_empty() {
+                                text_lines.push("No problems found in the workspace".to_string());
+                            }
+                            let new_text = text_lines.join("\n");
+                            let current_text = state.tabs[diag_tab_idx].buffer.lines().join("\n");
+                            if current_text != new_text {
+                                state.tabs[diag_tab_idx].buffer = crate::editor::buffer::Buffer::from_text(&new_text);
+                            }
                         }
                     }
 
@@ -444,6 +460,16 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+fn is_hidden(path: &std::path::Path) -> bool {
+    path.components().any(|comp| {
+        if let std::path::Component::Normal(name) = comp {
+            name.to_string_lossy().starts_with('.')
+        } else {
+            false
+        }
+    })
+}
+
 fn scan_workspace_for_lsp(files: &mut Vec<std::path::PathBuf>) {
     let output = std::process::Command::new("git")
         .args(&["ls-files", "--cached", "--others", "--exclude-standard"])
@@ -456,6 +482,9 @@ fn scan_workspace_for_lsp(files: &mut Vec<std::path::PathBuf>) {
             let stdout = String::from_utf8_lossy(&out.stdout);
             for line in stdout.lines() {
                 let path = std::path::PathBuf::from(line.trim());
+                if is_hidden(&path) {
+                    continue;
+                }
                 let path_str = path.to_string_lossy();
                 let lang_id = crate::editor::lsp::detect_language_id(&path_str);
                 if lang_id != "plaintext" {
@@ -486,6 +515,9 @@ fn scan_dir_fallback(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>)
                 continue;
             }
             let path = entry.path();
+            if is_hidden(path) {
+                continue;
+            }
             if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
                 let path_str = path.to_string_lossy();
                 let lang_id = crate::editor::lsp::detect_language_id(&path_str);
