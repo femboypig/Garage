@@ -81,18 +81,11 @@ fn request_semantic_tokens(server: &ServerInstance, path: &str) {
 
 fn trigger_rust_analyzer_flycheck(server: &ServerInstance) {
     if server.cmd_name == "rust-analyzer" {
-        let req_id = {
-            let mut id_lock = server.next_req_id.lock().unwrap();
-            *id_lock += 1;
-            *id_lock
-        };
         let cmd_msg = serde_json::json!({
             "jsonrpc": "2.0",
-            "id": req_id,
-            "method": "workspace/executeCommand",
+            "method": "rust-analyzer/runFlycheck",
             "params": {
-                "command": "rust-analyzer.runFlycheck",
-                "arguments": []
+                "textDocument": null
             }
         });
         if let Ok(mut writer) = server.stdin.lock() {
@@ -947,11 +940,19 @@ impl LspClient {
                                                 });
                                                 let _ = proxy_init.send_event(());
                                                 
-                                                let server_instance = ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types };
-                                                open_all_documents_for_server(&server_instance, lang_id, &open_documents, &mut document_versions);
-                                                servers.insert(lang_id.to_string(), server_instance);
-                                                server_ready = true;
-                                                server_just_spawned = true;
+                                                 let server_instance = ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types };
+                                                 open_all_documents_for_server(&server_instance, lang_id, &open_documents, &mut document_versions);
+                                                 servers.insert(lang_id.to_string(), server_instance);
+                                                 
+                                                 let cmd_tx_delay = cmd_tx_clone.clone();
+                                                 let lang_id_delay = lang_id.to_string();
+                                                 std::thread::spawn(move || {
+                                                     std::thread::sleep(std::time::Duration::from_millis(2000));
+                                                     let _ = cmd_tx_delay.send(LspCommand::RunFlycheck { lang_id: lang_id_delay });
+                                                 });
+
+                                                 server_ready = true;
+                                                 server_just_spawned = true;
                                             }
                                         }
                                     }
@@ -1101,6 +1102,7 @@ impl LspClient {
                             if let Ok(mut writer) = server.stdin.lock() {
                                 let _ = write_message(&mut *writer, &save_msg.to_string());
                             }
+                            trigger_rust_analyzer_flycheck(server);
                         }
                     }
                     Ok(LspCommand::SetActiveFile { path }) => {
@@ -1293,6 +1295,13 @@ impl LspClient {
                                             let server_instance = ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types };
                                             open_all_documents_for_server(&server_instance, &lang_id, &open_documents, &mut document_versions);
                                             servers.insert(lang_id.to_string(), server_instance);
+
+                                            let cmd_tx_delay = cmd_tx_clone.clone();
+                                            let lang_id_delay = lang_id.to_string();
+                                            std::thread::spawn(move || {
+                                                std::thread::sleep(std::time::Duration::from_millis(2000));
+                                                let _ = cmd_tx_delay.send(LspCommand::RunFlycheck { lang_id: lang_id_delay });
+                                            });
                                         }
                                     }
                                 }
@@ -1344,6 +1353,10 @@ impl LspClient {
             get_absolute_path(path)
         };
         let _ = self.cmd_tx.send(LspCommand::SetActiveFile { path: abs_path });
+    }
+
+    pub fn trigger_flycheck(&self, lang_id: &str) {
+        let _ = self.cmd_tx.send(LspCommand::RunFlycheck { lang_id: lang_id.to_string() });
     }
 }
 
@@ -1423,6 +1436,9 @@ fn start_reader_thread(
                                     }
                                 }
                                 let _ = cmd_tx.send(LspCommand::RequestActiveTokens { lang_id: lang_id.clone() });
+                                if method == "workspace/diagnostic/refresh" {
+                                    let _ = cmd_tx.send(LspCommand::RunFlycheck { lang_id: lang_id.clone() });
+                                }
                             }
                         }
 
