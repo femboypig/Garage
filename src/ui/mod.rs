@@ -99,8 +99,11 @@ pub struct UiState {
     pub hovered_diagnostic: Option<crate::editor::lsp::DiagnosticDetail>,
     pub hover_start: Option<std::time::Instant>,
     pub hover_pos: Option<(usize, usize)>,
-    pub diagnostics_click_targets: Vec<(f32, f32, f32, f32, String, usize, usize)>,
+    pub hovered_copy_button: bool,
+    pub mouse_in_popup: bool,
+    pub diagnostics_click_targets: Vec<(f32, f32, f32, f32, String, usize, usize, String)>,
     pub diagnostics_file_cache: std::collections::HashMap<String, Vec<String>>,
+    pub collapsed_diagnostics: std::collections::HashSet<String>,
 }
 
 impl UiState {
@@ -231,8 +234,11 @@ impl UiState {
             hovered_diagnostic: None,
             hover_start: None,
             hover_pos: None,
+            hovered_copy_button: false,
+            mouse_in_popup: false,
             diagnostics_click_targets: Vec::new(),
             diagnostics_file_cache: std::collections::HashMap::new(),
+            collapsed_diagnostics: std::collections::HashSet::new(),
         };
 
         state.rebuild_tree();
