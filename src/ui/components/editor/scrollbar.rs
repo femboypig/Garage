@@ -55,10 +55,11 @@ pub fn draw_scrollbars(
     let (virtual_len, visible_count) = if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
         let mut count = 0;
         for diags in ui.lsp_diagnostics_details.values() {
-            count += diags.len();
+            if !diags.is_empty() {
+                count += 1 + 2 * diags.len();
+            }
         }
-        let vis = (editor_height / (ui.buffer_line_height * 3.0)).floor() as usize;
-        (count.max(1), vis.max(1))
+        (count.max(1), visible_lines)
     } else {
         (buffer.len(), visible_lines)
     };
