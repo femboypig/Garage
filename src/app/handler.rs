@@ -285,6 +285,7 @@ pub fn handle_action(
                         lsp.notify_active_file(path);
                     } else {
                         lsp.notify_active_file("");
+                        lsp.trigger_flycheck("rust");
                     }
                 } else {
                     lsp.notify_active_file("");
