@@ -366,6 +366,19 @@ fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> 
         if !new_path.is_empty() {
             command.env("PATH", &new_path);
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            unsafe {
+                command.pre_exec(|| {
+                    unsafe extern "C" {
+                        fn nice(inc: std::os::raw::c_int) -> std::os::raw::c_int;
+                    }
+                    nice(19);
+                    Ok(())
+                });
+            }
+        }
         match command.spawn() {
             Ok(child) => {
                 let cmd_name = std::path::Path::new(&cmd)
