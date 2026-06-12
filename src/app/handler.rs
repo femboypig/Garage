@@ -18,6 +18,23 @@ pub fn handle_action(
     atlas: &mut FontAtlas,
     font_bytes: &[u8],
 ) {
+    let (active_path_start, old_content) = {
+        if state.active_tab_idx < state.tabs.len() {
+            let active_tab = &state.tabs[state.active_tab_idx];
+            if let Some(ref path) = active_tab.path {
+                if !path.starts_with("diagnostics://") {
+                    (Some(path.clone()), Some(active_tab.buffer.lines().to_vec()))
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        }
+    };
+
     match action {
         UiAction::OpenFile(path) => {
             let current_dir = std::env::current_dir().unwrap_or_default();
@@ -60,8 +77,10 @@ pub fn handle_action(
                 false
             } else {
                 let mut new_buf = Buffer::new();
-                if let Err(e) = new_buf.load_file(&path_str) {
-                    log::warn!("Failed to load file '{}': {}", path_str, e);
+                if !path_str.starts_with("diagnostics://") {
+                    if let Err(e) = new_buf.load_file(&path_str) {
+                        log::warn!("Failed to load file '{}': {}", path_str, e);
+                    }
                 }
                 state.tabs[state.active_tab_idx].scroll_x = ui.scroll_x;
                 state.tabs[state.active_tab_idx].scroll_y = ui.scroll_y;
@@ -80,6 +99,7 @@ pub fn handle_action(
             if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
                 ui.selected_file = Some(std::path::PathBuf::from(active_path));
                 if !active_path.starts_with("diagnostics://") {
+                    ui.diagnostics_file_cache.insert(active_path.clone(), state.tabs[state.active_tab_idx].buffer.lines().to_vec());
                     ui.update_git_diff(Some(active_path));
                     ui.update_git_file_blame(Some(active_path));
                     ui.update_git_statuses();
@@ -451,5 +471,20 @@ pub fn handle_action(
             elwt.exit();
         }
         UiAction::None => {}
+    }
+
+    if let (Some(start_path), Some(old_lines)) = (active_path_start, old_content) {
+        if state.active_tab_idx < state.tabs.len() {
+            let active_tab = &state.tabs[state.active_tab_idx];
+            if active_tab.path.as_ref() == Some(&start_path) {
+                let new_lines = active_tab.buffer.lines();
+                if old_lines != new_lines {
+                    if let Some(ref lsp) = state.lsp_client {
+                        lsp.notify_change(&start_path, new_lines.join("\n"));
+                    }
+                    ui.diagnostics_file_cache.insert(start_path.clone(), new_lines.to_vec());
+                }
+            }
+        }
     }
 }
