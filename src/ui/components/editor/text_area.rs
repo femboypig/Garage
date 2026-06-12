@@ -2,6 +2,90 @@ use crate::ui::{UiState, Vertex, FontAtlas};
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 
+#[derive(Clone, Debug)]
+pub enum VisualDiagnosticLine {
+    Header { path: String, line: usize, col: usize },
+    Code { path: String, line_idx: usize, line_content: String, is_diagnostic_line: bool, diag: crate::editor::lsp::DiagnosticDetail },
+    Banner { path: String, diag: crate::editor::lsp::DiagnosticDetail },
+}
+
+pub fn get_visual_diagnostic_lines(ui: &mut UiState) -> Vec<VisualDiagnosticLine> {
+    // Gather all diagnostics files and sort them by highest severity
+    let mut sorted_files: Vec<String> = ui.lsp_diagnostics_details.keys().cloned().collect();
+    sorted_files.sort_by(|a, b| {
+        let severity_a = ui.lsp_diagnostics_details.get(a).and_then(|v| v.iter().map(|d| d.severity).min()).unwrap_or(4);
+        let severity_b = ui.lsp_diagnostics_details.get(b).and_then(|v| v.iter().map(|d| d.severity).min()).unwrap_or(4);
+        severity_a.cmp(&severity_b).then_with(|| a.cmp(b))
+    });
+
+    let mut visual_lines = Vec::new();
+    for file_path in &sorted_files {
+        if let Some(diags) = ui.lsp_diagnostics_details.get(file_path) {
+            if diags.is_empty() {
+                continue;
+            }
+            
+            // Cache the file lines if not present
+            if !ui.diagnostics_file_cache.contains_key(file_path) {
+                if let Ok(content) = std::fs::read_to_string(file_path) {
+                    let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                    ui.diagnostics_file_cache.insert(file_path.clone(), lines);
+                } else {
+                    ui.diagnostics_file_cache.insert(file_path.clone(), Vec::new());
+                }
+            }
+            
+            let file_lines = ui.diagnostics_file_cache.get(file_path).cloned().unwrap_or_default();
+            if file_lines.is_empty() {
+                continue;
+            }
+
+            let mut file_diags = diags.clone();
+            file_diags.sort_by_key(|d| (d.line, d.col));
+            
+            if ui.collapsed_diagnostics.contains(file_path) {
+                if let Some(first_diag) = file_diags.first() {
+                    visual_lines.push(VisualDiagnosticLine::Header {
+                        path: file_path.clone(),
+                        line: first_diag.line,
+                        col: first_diag.col,
+                    });
+                }
+            } else {
+                for diag in file_diags {
+                    let start_line = diag.line.saturating_sub(3);
+                    let end_line = (diag.line + 3).min(file_lines.len() - 1);
+                    
+                    visual_lines.push(VisualDiagnosticLine::Header {
+                        path: file_path.clone(),
+                        line: diag.line,
+                        col: diag.col,
+                    });
+                    
+                    for line_idx in start_line..=end_line {
+                        let line_content = file_lines.get(line_idx).cloned().unwrap_or_default();
+                        visual_lines.push(VisualDiagnosticLine::Code {
+                            path: file_path.clone(),
+                            line_idx,
+                            line_content,
+                            is_diagnostic_line: line_idx == diag.line,
+                            diag: diag.clone(),
+                        });
+                        
+                        if line_idx == diag.line {
+                            visual_lines.push(VisualDiagnosticLine::Banner {
+                                path: file_path.clone(),
+                                diag: diag.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    visual_lines
+}
+
 pub fn draw_text_area(
     ui: &mut UiState,
     vertices: &mut Vec<Vertex>,
@@ -19,17 +103,12 @@ pub fn draw_text_area(
     end_idx: usize,
     visible_lines: usize,
     active_file_path: Option<&str>,
+    tab_paths: &[Option<String>],
+    tab_modified: &[bool],
 ) {
     let white_uv = atlas.white_pixel_uv();
     
     if active_file_path == Some("diagnostics://project") {
-        #[derive(Clone, Debug)]
-        enum VisualLine {
-            Header { path: String, line: usize, col: usize },
-            Code { path: String, line_idx: usize, line_content: String, is_diagnostic_line: bool, diag: crate::editor::lsp::DiagnosticDetail },
-            Banner { path: String, diag: crate::editor::lsp::DiagnosticDetail },
-        }
-
         // Clear click targets
         if start_idx == ui.scroll_y {
             ui.diagnostics_click_targets.clear();
@@ -47,69 +126,7 @@ pub fn draw_text_area(
             ui.config.theme.editor_bg,
         );
 
-        // Gather all diagnostics files and sort them by highest severity
-        let mut sorted_files: Vec<String> = ui.lsp_diagnostics_details.keys().cloned().collect();
-        sorted_files.sort_by(|a, b| {
-            let severity_a = ui.lsp_diagnostics_details.get(a).and_then(|v| v.iter().map(|d| d.severity).min()).unwrap_or(4);
-            let severity_b = ui.lsp_diagnostics_details.get(b).and_then(|v| v.iter().map(|d| d.severity).min()).unwrap_or(4);
-            severity_a.cmp(&severity_b).then_with(|| a.cmp(b))
-        });
-
-        let mut visual_lines = Vec::new();
-        for file_path in &sorted_files {
-            if let Some(diags) = ui.lsp_diagnostics_details.get(file_path) {
-                if diags.is_empty() {
-                    continue;
-                }
-                
-                // Cache the file lines if not present
-                if !ui.diagnostics_file_cache.contains_key(file_path) {
-                    if let Ok(content) = std::fs::read_to_string(file_path) {
-                        let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-                        ui.diagnostics_file_cache.insert(file_path.clone(), lines);
-                    } else {
-                        ui.diagnostics_file_cache.insert(file_path.clone(), Vec::new());
-                    }
-                }
-                
-                let file_lines = ui.diagnostics_file_cache.get(file_path).cloned().unwrap_or_default();
-                if file_lines.is_empty() {
-                    continue;
-                }
-
-                let mut file_diags = diags.clone();
-                file_diags.sort_by_key(|d| (d.line, d.col));
-                
-                for diag in file_diags {
-                    let start_line = diag.line.saturating_sub(3);
-                    let end_line = (diag.line + 3).min(file_lines.len() - 1);
-                    
-                    visual_lines.push(VisualLine::Header {
-                        path: file_path.clone(),
-                        line: diag.line,
-                        col: diag.col,
-                    });
-                    
-                    for line_idx in start_line..=end_line {
-                        let line_content = file_lines.get(line_idx).cloned().unwrap_or_default();
-                        visual_lines.push(VisualLine::Code {
-                            path: file_path.clone(),
-                            line_idx,
-                            line_content,
-                            is_diagnostic_line: line_idx == diag.line,
-                            diag: diag.clone(),
-                        });
-                        
-                        if line_idx == diag.line {
-                            visual_lines.push(VisualLine::Banner {
-                                path: file_path.clone(),
-                                diag: diag.clone(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
+        let visual_lines = get_visual_diagnostic_lines(ui);
 
         if visual_lines.is_empty() {
             // Draw "No problems found" message in the center
@@ -145,7 +162,7 @@ pub fn draw_text_area(
             let row_y = editor_y + (item_idx - start_idx) as f32 * ui.buffer_line_height;
             
             match &visual_lines[item_idx] {
-                VisualLine::Header { path, line, col } => {
+                VisualDiagnosticLine::Header { path, line, col } => {
                     // Draw excerpt subheader background (contrast color)
                     let header_bg = [
                         ui.config.theme.editor_bg[0] * 0.96,
@@ -186,25 +203,55 @@ pub fn draw_text_area(
                         ui.config.theme.scrollbar_border,
                     );
 
-                    let file_severity = ui.lsp_diagnostics_details.get(path)
-                        .and_then(|v| v.iter().map(|d| d.severity).min())
-                        .unwrap_or(2);
-                    let dot_color = if file_severity == 1 { [0.95, 0.25, 0.25, 1.0] } else { [0.95, 0.70, 0.15, 1.0] };
-                    
                     let mut pen_x = text_area_x + 8.0;
-                    // Draw dot prefix
+
+                    // 1. Draw collapse/expand toggle arrow
+                    let is_collapsed = ui.collapsed_diagnostics.contains(path);
+                    let toggle_char = if is_collapsed { '▶' } else { '▼' };
                     pen_x += ui.push_char(
                         vertices,
                         indices,
                         atlas,
                         queue,
-                        '•',
+                        toggle_char,
                         pen_x,
                         (row_y + ui.buffer_font_ascent).round(),
-                        dot_color,
-                        ui.buffer_font_size,
+                        ui.config.theme.syntax_comment,
+                        ui.buffer_font_size * 0.8,
                         ui.buffer_char_width,
                     );
+                    pen_x += 4.0;
+                    
+                    // 2. Draw unsaved changes dot or empty space
+                    let mut is_modified = false;
+                    for (i, p_opt) in tab_paths.iter().enumerate() {
+                        if let Some(p) = p_opt {
+                            let abs_p = crate::editor::lsp::get_absolute_path(p);
+                            let abs_path = crate::editor::lsp::get_absolute_path(path);
+                            if abs_p == abs_path {
+                                is_modified = tab_modified.get(i).copied().unwrap_or(false);
+                                break;
+                            }
+                        }
+                    }
+                    if is_modified {
+                        let dot_size = (ui.ui_font_size * 0.55).round().max(7.0);
+                        let dot_y = (row_y + (ui.buffer_line_height - dot_size) / 2.0).round();
+                        ui.push_icon(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            "circle",
+                            pen_x,
+                            dot_y,
+                            [0.95, 0.25, 0.25, 1.0], // Red modified dot
+                            dot_size,
+                        );
+                        pen_x += ui.buffer_char_width;
+                    } else {
+                        pen_x += ui.buffer_char_width;
+                    }
                     pen_x += 4.0;
 
                     // Format path: filename in default color, folder in muted comment color
@@ -253,43 +300,6 @@ pub fn draw_text_area(
                         }
                     }
 
-                    // Open File button label on the right
-                    let btn_label = "Open File";
-                    let shortcut_label = "Alt-Enter";
-                    let label_chars = btn_label.chars().count() + 2 + shortcut_label.chars().count();
-                    let right_x = text_area_x + text_viewport_w - (label_chars as f32 * ui.buffer_char_width) - 16.0;
-                    
-                    let mut btn_pen_x = right_x;
-                    for c in btn_label.chars() {
-                        btn_pen_x += ui.push_char(
-                            vertices,
-                            indices,
-                            atlas,
-                            queue,
-                            c,
-                            btn_pen_x,
-                            (row_y + ui.buffer_font_ascent).round(),
-                            ui.config.theme.syntax_keyword,
-                            ui.buffer_font_size * 0.9,
-                            ui.buffer_char_width,
-                        );
-                    }
-                    btn_pen_x += 8.0;
-                    for c in shortcut_label.chars() {
-                        btn_pen_x += ui.push_char(
-                            vertices,
-                            indices,
-                            atlas,
-                            queue,
-                            c,
-                            btn_pen_x,
-                            (row_y + ui.buffer_font_ascent).round(),
-                            ui.config.theme.syntax_comment,
-                            ui.buffer_font_size * 0.8,
-                            ui.buffer_char_width,
-                        );
-                    }
-
                     // Click target for Header
                     ui.diagnostics_click_targets.push((
                         text_area_x,
@@ -299,10 +309,11 @@ pub fn draw_text_area(
                         path.clone(),
                         *line,
                         *col,
+                        "header".to_string(),
                     ));
                 }
                 
-                VisualLine::Code { path, line_idx, line_content, is_diagnostic_line, diag } => {
+                VisualDiagnosticLine::Code { path, line_idx, line_content, is_diagnostic_line, diag } => {
                     let gutter_w: f32 = 48.0;
                     // Vertical gutter border line
                     ui.push_quad(
@@ -368,13 +379,12 @@ pub fn draw_text_area(
                         let wave_y = row_y + ui.buffer_line_height - 3.0;
                         let wave_height: f32 = 2.0;
                         let wave_period: f32 = 4.0;
-                        let seg_width: f32 = 2.0;
                         
                         let mut wx = start_x;
-                        let mut wave_up = true;
                         while wx < end_x {
-                            let seg_w = seg_width.min(end_x - wx);
-                            let seg_y = if wave_up { wave_y - wave_height * 0.5 } else { wave_y + wave_height * 0.5 };
+                            let seg_w = 1.0f32.min(end_x - wx);
+                            let phase = (wx - start_x) * (2.0 * std::f32::consts::PI / wave_period);
+                            let seg_y = wave_y + phase.sin() * (wave_height * 0.5);
                             ui.push_quad(
                                 vertices,
                                 indices,
@@ -385,8 +395,7 @@ pub fn draw_text_area(
                                 white_uv,
                                 color,
                             );
-                            wx += wave_period * 0.5;
-                            wave_up = !wave_up;
+                            wx += 1.0;
                         }
                     }
                     
@@ -399,10 +408,11 @@ pub fn draw_text_area(
                         path.clone(),
                         diag.line,
                         diag.col,
+                        "code".to_string(),
                     ));
                 }
                 
-                VisualLine::Banner { path, diag } => {
+                VisualDiagnosticLine::Banner { path, diag } => {
                     let gutter_w: f32 = 48.0;
                     let code_start_x = text_area_x + gutter_w;
                     
@@ -445,7 +455,7 @@ pub fn draw_text_area(
                     let mut pen_x = code_start_x + 12.0;
                     let msg_color = border_color;
                     for c in diag.message.chars() {
-                        if pen_x + ui.buffer_char_width > text_area_x + text_viewport_w - 70.0 {
+                        if pen_x + ui.buffer_char_width > text_area_x + text_viewport_w - 20.0 {
                             break;
                         }
                         pen_x += ui.push_char(
@@ -462,25 +472,6 @@ pub fn draw_text_area(
                         );
                     }
                     
-                    // Render copy button on the right
-                    let copy_label = "[Copy]";
-                    let mut copy_pen_x = text_area_x + text_viewport_w - 60.0;
-                    for c in copy_label.chars() {
-                        copy_pen_x += ui.push_char(
-                            vertices,
-                            indices,
-                            atlas,
-                            queue,
-                            c,
-                            copy_pen_x,
-                            (row_y + ui.buffer_font_ascent).round(),
-                            ui.config.theme.syntax_comment,
-                            ui.buffer_font_size * 0.9,
-                            ui.buffer_char_width,
-                        );
-                    }
-                    
-                    // Click target for Banner line
                     ui.diagnostics_click_targets.push((
                         text_area_x,
                         row_y,
@@ -489,7 +480,39 @@ pub fn draw_text_area(
                         path.clone(),
                         diag.line,
                         diag.col,
+                        "banner".to_string(),
                     ));
+                }
+            }
+        }
+
+        // Draw cursor in diagnostics tab
+        if cursor.line >= start_idx && cursor.line < end_idx {
+            let cur_row_y = editor_y + (cursor.line - start_idx) as f32 * ui.buffer_line_height;
+            if let Some(vl) = visual_lines.get(cursor.line) {
+                let cur_x = match vl {
+                    VisualDiagnosticLine::Code { .. } => {
+                        let gutter_w: f32 = 48.0;
+                        text_area_x + gutter_w + cursor.col as f32 * ui.buffer_char_width
+                    }
+                    VisualDiagnosticLine::Header { .. } => {
+                        text_area_x + 8.0 + cursor.col as f32 * ui.buffer_char_width
+                    }
+                    VisualDiagnosticLine::Banner { .. } => {
+                        text_area_x + 12.0 + cursor.col as f32 * ui.buffer_char_width
+                    }
+                };
+                if cur_x + 2.0 <= text_area_x + text_viewport_w {
+                    ui.push_quad(
+                        vertices,
+                        indices,
+                        cur_x,
+                        cur_row_y + 1.0,
+                        2.0,
+                        ui.buffer_line_height - 2.0,
+                        white_uv,
+                        ui.config.theme.cursor_color,
+                    );
                 }
             }
         }
@@ -647,13 +670,12 @@ pub fn draw_text_area(
                                 let wave_y = row_y + ui.buffer_line_height - 3.0;
                                 let wave_height = 2.0f32;
                                 let wave_period = 4.0f32;
-                                let seg_width = 2.0f32;
                                 
                                 let mut wx = start_x_clamped;
-                                let mut wave_up = true;
                                 while wx < end_x_clamped {
-                                    let seg_w = seg_width.min(end_x_clamped - wx);
-                                    let seg_y = if wave_up { wave_y - wave_height * 0.5 } else { wave_y + wave_height * 0.5 };
+                                    let seg_w = 1.0f32.min(end_x_clamped - wx);
+                                    let phase = (wx - start_x) * (2.0 * std::f32::consts::PI / wave_period);
+                                    let seg_y = wave_y + phase.sin() * (wave_height * 0.5);
                                     ui.push_quad(
                                         vertices,
                                         indices,
@@ -664,8 +686,7 @@ pub fn draw_text_area(
                                         white_uv,
                                         color,
                                     );
-                                    wx += wave_period * 0.5;
-                                    wave_up = !wave_up;
+                                    wx += 1.0;
                                 }
                             }
                         }
@@ -902,12 +923,34 @@ pub fn draw_text_area(
             let copy_x = (popup_x + popup_w - 24.0).round();
             let copy_y = (popup_y + (popup_h - 11.0) / 2.0).round();
             
+            let icon_border_color = if ui.hovered_copy_button {
+                let hover_bg = [
+                    ui.config.theme.tab_text[0],
+                    ui.config.theme.tab_text[1],
+                    ui.config.theme.tab_text[2],
+                    0.15,
+                ];
+                ui.push_quad(
+                    vertices,
+                    indices,
+                    copy_x - 4.0,
+                    copy_y - 4.0,
+                    19.0,
+                    19.0,
+                    white_uv,
+                    hover_bg,
+                );
+                ui.config.theme.tab_text
+            } else {
+                border_color
+            };
+            
             // Back square
-            ui.push_quad(vertices, indices, copy_x, copy_y, 8.0, 8.0, white_uv, border_color);
+            ui.push_quad(vertices, indices, copy_x, copy_y, 8.0, 8.0, white_uv, icon_border_color);
             ui.push_quad(vertices, indices, copy_x + 1.0, copy_y + 1.0, 6.0, 6.0, white_uv, bg_color);
             
             // Front square
-            ui.push_quad(vertices, indices, copy_x + 3.0, copy_y + 3.0, 8.0, 8.0, white_uv, border_color);
+            ui.push_quad(vertices, indices, copy_x + 3.0, copy_y + 3.0, 8.0, 8.0, white_uv, icon_border_color);
             ui.push_quad(vertices, indices, copy_x + 4.0, copy_y + 4.0, 6.0, 6.0, white_uv, bg_color);
         }
     }
