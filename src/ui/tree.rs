@@ -17,6 +17,16 @@ impl UiState {
     }
 }
 
+fn is_hidden(path: &Path) -> bool {
+    path.components().any(|comp| {
+        if let std::path::Component::Normal(name) = comp {
+            name.to_string_lossy().starts_with('.')
+        } else {
+            false
+        }
+    })
+}
+
 fn scan_dir_recursive(dir: &Path, depth: usize, expanded_dirs: &std::collections::HashSet<std::path::PathBuf>, visible_nodes: &mut Vec<FileNode>) {
     let walker = ignore::WalkBuilder::new(dir)
         .max_depth(Some(1))
@@ -32,6 +42,9 @@ fn scan_dir_recursive(dir: &Path, depth: usize, expanded_dirs: &std::collections
                 continue;
             }
             let path = entry.path().to_path_buf();
+            if is_hidden(&path) {
+                continue;
+            }
             let name = entry.file_name().to_string_lossy().to_string();
             let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
             entries_vec.push((path, name, is_dir));
