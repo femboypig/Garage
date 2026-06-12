@@ -153,20 +153,6 @@ pub fn handle_keyboard_input(
     // Diagnostics tab input routing
     if state.tabs[state.active_tab_idx].path.as_deref() == Some("diagnostics://project") {
         if let Some(action) = crate::editor::keymap::map_key(&logical_key, physical_key, ctrl, shift, alt) {
-            let is_editing_action = match &action {
-                crate::editor::actions::Action::InsertChar(_) |
-                crate::editor::actions::Action::InsertTab |
-                crate::editor::actions::Action::InsertNewLine |
-                crate::editor::actions::Action::DeleteLeft |
-                crate::editor::actions::Action::DeleteRight |
-                crate::editor::actions::Action::Cut |
-                crate::editor::actions::Action::Paste |
-                crate::editor::actions::Action::Undo |
-                crate::editor::actions::Action::Redo |
-                crate::editor::actions::Action::SaveFile => true,
-                _ => false,
-            };
-
             let is_navigation_action = match &action {
                 crate::editor::actions::Action::MoveUp { .. } |
                 crate::editor::actions::Action::MoveDown { .. } |
@@ -176,6 +162,16 @@ pub fn handle_keyboard_input(
                 crate::editor::actions::Action::MoveToLineEnd { .. } => true,
                 _ => false,
             };
+
+            let is_global_action = match &action {
+                crate::editor::actions::Action::ZoomIn |
+                crate::editor::actions::Action::ZoomOut |
+                crate::editor::actions::Action::CommandPalette |
+                crate::editor::actions::Action::Escape => true,
+                _ => false,
+            };
+
+            let is_document_action = !is_navigation_action && !is_global_action;
 
             if is_navigation_action {
                 match &action {
@@ -266,7 +262,7 @@ pub fn handle_keyboard_input(
                 return;
             }
 
-            if is_editing_action {
+            if is_document_action {
                 if matches!(action, crate::editor::actions::Action::SaveFile) {
                     // Save all modified tabs in memory
                     for tab in &mut state.tabs {
