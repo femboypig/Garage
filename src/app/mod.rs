@@ -131,12 +131,12 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
             lsp.notify_active_file("");
         }
 
-        // Scan workspace recursively on startup and notify LSP client of all supported files
+        // Scan workspace dynamically on startup and notify LSP client of all supported files
         let lsp_clone = lsp.clone();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(500));
             let mut files = Vec::new();
-            scan_workspace_for_lsp(std::path::Path::new("."), &mut files);
+            scan_workspace_for_lsp(&mut files);
             for path in files {
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     lsp_clone.notify_open(&path.to_string_lossy(), content);
@@ -444,7 +444,33 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-fn scan_workspace_for_lsp(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+fn scan_workspace_for_lsp(files: &mut Vec<std::path::PathBuf>) {
+    let output = std::process::Command::new("git")
+        .args(&["ls-files", "--cached", "--others", "--exclude-standard"])
+        .output();
+    
+    let mut success = false;
+    if let Ok(out) = output {
+        if out.status.success() {
+            success = true;
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            for line in stdout.lines() {
+                let path = std::path::PathBuf::from(line.trim());
+                let path_str = path.to_string_lossy();
+                let lang_id = crate::editor::lsp::detect_language_id(&path_str);
+                if lang_id != "plaintext" {
+                    files.push(path);
+                }
+            }
+        }
+    }
+    
+    if !success {
+        scan_dir_fallback(std::path::Path::new("."), files);
+    }
+}
+
+fn scan_dir_fallback(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
     if files.len() >= 300 {
         return;
     }
@@ -469,7 +495,7 @@ fn scan_workspace_for_lsp(dir: &std::path::Path, files: &mut Vec<std::path::Path
                 }
                 if let Ok(file_type) = entry.file_type() {
                     if file_type.is_dir() {
-                        scan_workspace_for_lsp(&path, files);
+                        scan_dir_fallback(&path, files);
                     } else if file_type.is_file() {
                         let path_str = path.to_string_lossy();
                         let lang_id = crate::editor::lsp::detect_language_id(&path_str);
