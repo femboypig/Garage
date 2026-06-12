@@ -38,6 +38,23 @@ impl Buffer {
         }
     }
 
+    /// Create a Buffer from string content.
+    pub fn from_text(text: &str) -> Self {
+        let lines: Vec<String> = if text.is_empty() {
+            vec![String::new()]
+        } else {
+            text.lines().map(|s| s.to_string()).collect()
+        };
+        Self {
+            lines: lines.clone(),
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            current_transaction: None,
+            is_modified: false,
+            initial_lines: lines,
+        }
+    }
+
     /// Load a file into the buffer.
     pub fn load_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
         let mut file = File::open(path)?;
