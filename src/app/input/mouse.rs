@@ -334,31 +334,52 @@ pub fn handle_cursor_moved(
         
         ui.scroll_y = clicked_line.saturating_sub(visible_lines / 2).min(max_scroll as usize);
     } else if state.is_dragging {
-        let max_line_digits = state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3);
-        let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
+        let is_diagnostics = state.tabs[state.active_tab_idx].path.as_deref().map_or(false, |p| p.starts_with("diagnostics://"));
+        let max_line_digits = if is_diagnostics { 3 } else { state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3) };
+        let gutter_width = if is_diagnostics { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
         let text_area_x = ui.sidebar_width + gutter_width;
         let scrollbar_width = ui.scrollbar_width();
-        let minimap_width = ui.minimap_width();
+        let minimap_width = if is_diagnostics { 0.0 } else { ui.minimap_width() };
         let sb_x = size.width as f32 - scrollbar_width;
         let minimap_x = sb_x - minimap_width;
- 
+  
         let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
-        let line_idx = if state.mouse_y >= editor_top {
+        let raw_line_idx = if state.mouse_y >= editor_top {
             ((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y
         } else {
             ui.scroll_y
         };
-        let line_idx = line_idx.min(state.tabs[state.active_tab_idx].buffer.len() - 1);
- 
+
+        let line_idx = if is_diagnostics {
+            let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+            if visual_lines.is_empty() {
+                0
+            } else {
+                raw_line_idx.min(visual_lines.len() - 1)
+            }
+        } else {
+            raw_line_idx.min(state.tabs[state.active_tab_idx].buffer.len().saturating_sub(1))
+        };
+  
         let mouse_x_clamped = state.mouse_x.min(minimap_x);
         let col_idx = if mouse_x_clamped > text_area_x {
             ((mouse_x_clamped - text_area_x) / ui.buffer_char_width).round() as usize + ui.scroll_x
         } else {
             0
         };
-        let line_chars = state.tabs[state.active_tab_idx].buffer.lines()[line_idx].chars().count();
+
+        let line_chars = if is_diagnostics {
+            let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+            visual_lines.get(line_idx).map_or(0, |vl| match vl {
+                crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+                crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+            })
+        } else {
+            state.tabs[state.active_tab_idx].buffer.lines()[line_idx].chars().count()
+        };
         let col_idx = col_idx.min(line_chars);
- 
+  
         state.tabs[state.active_tab_idx].cursor.line = line_idx;
         state.tabs[state.active_tab_idx].cursor.col = col_idx;
         state.tabs[state.active_tab_idx].cursor.intended_col = col_idx;
