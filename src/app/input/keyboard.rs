@@ -279,90 +279,123 @@ pub fn handle_keyboard_input(
                     return;
                 }
 
-                let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
-                let current_visual_line = {
-                    let active_tab = &state.tabs[state.active_tab_idx];
-                    visual_lines.get(active_tab.cursor.line).cloned()
+                let is_modifying_action = match &action {
+                    crate::editor::actions::Action::InsertChar(_) |
+                    crate::editor::actions::Action::InsertNewLine |
+                    crate::editor::actions::Action::InsertTab |
+                    crate::editor::actions::Action::DeleteLeft |
+                    crate::editor::actions::Action::DeleteRight |
+                    crate::editor::actions::Action::Undo |
+                    crate::editor::actions::Action::Redo |
+                    crate::editor::actions::Action::Paste |
+                    crate::editor::actions::Action::Cut => true,
+                    _ => false,
                 };
 
-                if let Some(crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { path, line_idx, line_content, .. }) = current_visual_line {
-                    // Get or create target tab index
-                    let target_tab_idx = if let Some(idx) = state.tabs.iter().position(|t| t.path.as_deref() == Some(&path)) {
-                        idx
-                    } else {
-                        let mut new_buf = Buffer::new();
-                        if let Err(e) = new_buf.load_file(&path) {
-                            log::warn!("Failed to load file '{}' in diagnostics view: {}", path, e);
-                        }
-                        state.tabs.push(crate::app::Tab {
-                            path: Some(path.clone()),
-                            buffer: new_buf,
-                            cursor: Cursor::new(),
-                            scroll_x: 0,
-                            scroll_y: 0,
-                        });
-                        state.tabs.len() - 1
-                    };
-
-                    let target_line = line_idx.min(state.tabs[target_tab_idx].buffer.len().saturating_sub(1));
-                    let line_len = state.tabs[target_tab_idx].buffer.lines().get(target_line).map_or(0, |l| l.chars().count());
-                    let target_col = {
+                if is_modifying_action {
+                    let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                    let current_visual_line = {
                         let active_tab = &state.tabs[state.active_tab_idx];
-                        active_tab.cursor.col.min(line_content.chars().count()).min(line_len)
+                        visual_lines.get(active_tab.cursor.line).cloned()
                     };
 
-                    state.tabs[target_tab_idx].cursor.line = target_line;
-                    state.tabs[target_tab_idx].cursor.col = target_col;
-                    state.tabs[target_tab_idx].cursor.intended_col = target_col;
-                    state.tabs[target_tab_idx].cursor.selection_anchor = None;
+                    let path_opt = current_visual_line.as_ref().map(|vl| match vl {
+                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.clone(),
+                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { path, .. } => path.clone(),
+                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { path, .. } => path.clone(),
+                    });
 
-                    // Temporarily set active tab to target tab and execute handler
-                    let original_active_tab_idx = state.active_tab_idx;
-                    state.active_tab_idx = target_tab_idx;
-
-                    // Execute key input handling on target tab
-                    handle_keyboard_input(ui, state, window, elwt, gpu, atlas, font_bytes, logical_key.clone(), physical_key);
-
-                    // Update diagnostics cache in memory immediately so it redraws with correct text
-                    let new_line = state.tabs[target_tab_idx].cursor.line;
-                    let new_col = state.tabs[target_tab_idx].cursor.col;
-                    let target_lines = state.tabs[target_tab_idx].buffer.lines().to_vec();
-                    
-                    // Notify LSP of target file change
-                    if let Some(ref lsp) = state.lsp_client {
-                        lsp.notify_change(&path, target_lines.join("\n"));
-                    }
-                    
-                    ui.diagnostics_file_cache.insert(path.clone(), target_lines);
-
-                    // Restore diagnostics tab
-                    state.active_tab_idx = original_active_tab_idx;
-
-                    // Re-calculate the visual lines after the edit
-                    let visual_lines_new = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
-
-                    // Find new virtual line/col position
-                    let active_tab = &mut state.tabs[state.active_tab_idx];
-                    if new_line == line_idx {
-                        active_tab.cursor.col = new_col;
-                        active_tab.cursor.intended_col = new_col;
-                    } else {
-                        if let Some(new_v_idx) = visual_lines_new.iter().position(|vl| {
-                            match vl {
-                                crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { path: p, line_idx: li, .. } => {
-                                    p == &path && *li == new_line
-                                }
-                                _ => false
+                    if let Some(path) = path_opt {
+                        // Get or create target tab index
+                        let target_tab_idx = if let Some(idx) = state.tabs.iter().position(|t| t.path.as_deref() == Some(&path)) {
+                            idx
+                        } else {
+                            let mut new_buf = Buffer::new();
+                            if let Err(e) = new_buf.load_file(&path) {
+                                log::warn!("Failed to load file '{}' in diagnostics view: {}", path, e);
                             }
-                        }) {
-                            active_tab.cursor.line = new_v_idx;
-                            active_tab.cursor.col = new_col;
-                            active_tab.cursor.intended_col = new_col;
+                            state.tabs.push(crate::app::Tab {
+                                path: Some(path.clone()),
+                                buffer: new_buf,
+                                cursor: Cursor::new(),
+                                scroll_x: 0,
+                                scroll_y: 0,
+                            });
+                            state.tabs.len() - 1
+                        };
+
+                        let (target_line, target_col) = match current_visual_line.as_ref().unwrap() {
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_idx, line_content, .. } => {
+                                let line_idx = *line_idx;
+                                let target_line = line_idx.min(state.tabs[target_tab_idx].buffer.len().saturating_sub(1));
+                                let line_len = state.tabs[target_tab_idx].buffer.lines().get(target_line).map_or(0, |l| l.chars().count());
+                                let target_col = {
+                                    let active_tab = &state.tabs[state.active_tab_idx];
+                                    active_tab.cursor.col.min(line_content.chars().count()).min(line_len)
+                                };
+                                (target_line, target_col)
+                            }
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { line, col, .. } => {
+                                (*line, *col)
+                            }
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => {
+                                (diag.line, diag.col)
+                            }
+                        };
+
+                        state.tabs[target_tab_idx].cursor.line = target_line;
+                        state.tabs[target_tab_idx].cursor.col = target_col;
+                        state.tabs[target_tab_idx].cursor.intended_col = target_col;
+                        state.tabs[target_tab_idx].cursor.selection_anchor = None;
+
+                        // Temporarily set active tab to target tab and execute handler
+                        let original_active_tab_idx = state.active_tab_idx;
+                        state.active_tab_idx = target_tab_idx;
+
+                        // Execute key input handling on target tab
+                        handle_keyboard_input(ui, state, window, elwt, gpu, atlas, font_bytes, logical_key.clone(), physical_key);
+
+                        // Update diagnostics cache in memory immediately so it redraws with correct text
+                        let new_line = state.tabs[target_tab_idx].cursor.line;
+                        let new_col = state.tabs[target_tab_idx].cursor.col;
+                        let target_lines = state.tabs[target_tab_idx].buffer.lines().to_vec();
+                        
+                        // Notify LSP of target file change
+                        if let Some(ref lsp) = state.lsp_client {
+                            lsp.notify_change(&path, target_lines.join("\n"));
+                        }
+                        
+                        ui.diagnostics_file_cache.insert(path.clone(), target_lines);
+
+                        // Restore diagnostics tab
+                        state.active_tab_idx = original_active_tab_idx;
+
+                        // Re-calculate the visual lines after the edit
+                        let visual_lines_new = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+
+                        // Find new virtual line/col position
+                        let active_tab = &mut state.tabs[state.active_tab_idx];
+                        if let crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_idx: orig_line_idx, .. } = current_visual_line.as_ref().unwrap() {
+                            if new_line == *orig_line_idx {
+                                active_tab.cursor.col = new_col;
+                                active_tab.cursor.intended_col = new_col;
+                            } else if let Some(new_v_idx) = visual_lines_new.iter().position(|vl| {
+                                match vl {
+                                    crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { path: p, line_idx: li, .. } => {
+                                        p == &path && *li == new_line
+                                    }
+                                    _ => false
+                                }
+                            }) {
+                                active_tab.cursor.line = new_v_idx;
+                                active_tab.cursor.col = new_col;
+                                active_tab.cursor.intended_col = new_col;
+                            }
                         }
                     }
                     window.request_redraw();
+                    return;
                 }
-                return;
             }
         }
     }
