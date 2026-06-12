@@ -983,6 +983,16 @@ impl LspClient {
 
                                     // Request semantic tokens immediately
                                     request_semantic_tokens(server, &path);
+
+                                    // Spawn debounced retries
+                                    let cmd_tx_thread = cmd_tx_clone.clone();
+                                    let path_clone = path.clone();
+                                    std::thread::spawn(move || {
+                                        for delay in &[100, 300, 1000, 3000, 6000] {
+                                            std::thread::sleep(std::time::Duration::from_millis(*delay));
+                                            let _ = cmd_tx_thread.send(LspCommand::RequestTokensForFile { path: path_clone.clone() });
+                                        }
+                                    });
                                 }
                             }
                         }
@@ -1070,6 +1080,16 @@ impl LspClient {
                                 is_tokens_update: false,
                             });
                             request_semantic_tokens(server, &path);
+
+                            // Spawn debounced retries
+                            let cmd_tx_thread = cmd_tx_clone.clone();
+                            let path_clone = path.clone();
+                            std::thread::spawn(move || {
+                                for delay in &[100, 300, 1000, 3000, 6000] {
+                                    std::thread::sleep(std::time::Duration::from_millis(*delay));
+                                    let _ = cmd_tx_thread.send(LspCommand::RequestTokensForFile { path: path_clone.clone() });
+                                }
+                            });
                         } else if installing_servers.contains(&lang_id.to_string()) {
                             let display_name = match lang_id {
                                 "rust" => "rust-analyzer",
@@ -1329,7 +1349,24 @@ fn start_reader_thread(
                         log::debug!("LSP: Received raw message: {}", resp_str);
                         log::debug!("LSP: Received message method/id: {:?}", resp.get("method").or_else(|| resp.get("id")));
                         
-                        // Check if this is a request from the server to the client
+                        // Check if this is a request/notification from the server to the client
+                        if let Some(method_val) = resp.get("method") {
+                            let method = method_val.as_str().unwrap_or("");
+                            if method == "workspace/semanticTokens/refresh" || method == "workspace/diagnostic/refresh" {
+                                if let Some(id_val) = resp.get("id") {
+                                    let response = serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id_val,
+                                        "result": serde_json::Value::Null
+                                    });
+                                    if let Ok(mut writer) = stdin.lock() {
+                                        let _ = write_message(&mut *writer, &response.to_string());
+                                    }
+                                }
+                                let _ = cmd_tx.send(LspCommand::RequestActiveTokens { lang_id: lang_id.clone() });
+                            }
+                        }
+
                         if let Some(id_val) = resp.get("id") {
                             if let Some(method_val) = resp.get("method") {
                                 let method = method_val.as_str().unwrap_or("");
@@ -1357,6 +1394,8 @@ fn start_reader_thread(
                                     if let Ok(mut writer) = stdin.lock() {
                                         let _ = write_message(&mut *writer, &response.to_string());
                                     }
+                                } else if method == "workspace/semanticTokens/refresh" || method == "workspace/diagnostic/refresh" {
+                                    // Already handled above, do nothing
                                 } else {
                                     let response = serde_json::json!({
                                         "jsonrpc": "2.0",
