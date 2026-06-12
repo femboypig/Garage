@@ -130,6 +130,19 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
         } else {
             lsp.notify_active_file("");
         }
+
+        // Scan workspace recursively on startup and notify LSP client of all supported files
+        let lsp_clone = lsp.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let mut files = Vec::new();
+            scan_workspace_for_lsp(std::path::Path::new("."), &mut files);
+            for path in files {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    lsp_clone.notify_open(&path.to_string_lossy(), content);
+                }
+            }
+        });
     }
 
     let mut state = AppState::new(initial_tab, lsp_client);
@@ -402,4 +415,43 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     })?;
 
     Ok(())
+}
+
+fn scan_workspace_for_lsp(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+    if files.len() >= 300 {
+        return;
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name == ".git"
+                    || name == "target"
+                    || name == ".gemini"
+                    || name == "node_modules"
+                    || name == ".lsp"
+                    || name == ".cargo"
+                    || name == "build"
+                    || name == "dist"
+                    || name == "venv"
+                    || name == ".venv"
+                    || name == "__pycache__"
+                {
+                    continue;
+                }
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_dir() {
+                        scan_workspace_for_lsp(&path, files);
+                    } else if file_type.is_file() {
+                        let path_str = path.to_string_lossy();
+                        let lang_id = crate::editor::lsp::detect_language_id(&path_str);
+                        if lang_id != "plaintext" {
+                            files.push(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
