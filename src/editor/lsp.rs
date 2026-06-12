@@ -39,6 +39,7 @@ pub enum LspCommand {
     RetrySpawn { lang_id: String },
     RequestActiveTokens { lang_id: String },
     RequestTokensForFile { path: String },
+    RunFlycheck { lang_id: String },
 }
 
 pub struct LspClient {
@@ -78,12 +79,35 @@ fn request_semantic_tokens(server: &ServerInstance, path: &str) {
     }
 }
 
+fn trigger_rust_analyzer_flycheck(server: &ServerInstance) {
+    if server.cmd_name == "rust-analyzer" {
+        let req_id = {
+            let mut id_lock = server.next_req_id.lock().unwrap();
+            *id_lock += 1;
+            *id_lock
+        };
+        let cmd_msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "method": "workspace/executeCommand",
+            "params": {
+                "command": "rust-analyzer.runFlycheck",
+                "arguments": []
+            }
+        });
+        if let Ok(mut writer) = server.stdin.lock() {
+            let _ = write_message(&mut *writer, &cmd_msg.to_string());
+        }
+    }
+}
+
 fn open_all_documents_for_server(
     server: &ServerInstance,
     lang_id: &str,
     open_documents: &HashMap<String, String>,
     document_versions: &mut HashMap<String, usize>,
 ) {
+    let mut opened_any = false;
     for (path, text) in open_documents {
         if detect_language_id(path) == lang_id {
             let version = document_versions.entry(path.clone()).or_insert(0);
@@ -104,7 +128,11 @@ fn open_all_documents_for_server(
                 let _ = write_message(&mut *writer, &open_msg.to_string());
             }
             request_semantic_tokens(server, path);
+            opened_any = true;
         }
+    }
+    if opened_any {
+        trigger_rust_analyzer_flycheck(server);
     }
 }
 fn get_local_lsp_path(subpath: &str) -> String {
@@ -876,6 +904,7 @@ impl LspClient {
                                                     },
                                                     "checkOnSave": {
                                                         "enable": true,
+                                                        "command": "check",
                                                         "extraArgs": ["--target-dir", "target/rust-analyzer"]
                                                     },
                                                     "cargo": {
@@ -999,6 +1028,7 @@ impl LspClient {
 
                                         // Request semantic tokens immediately
                                         request_semantic_tokens(server, &path);
+                                        trigger_rust_analyzer_flycheck(server);
                                     }
                                 }
 
@@ -1147,6 +1177,11 @@ impl LspClient {
                             }
                         }
                     }
+                    Ok(LspCommand::RunFlycheck { lang_id }) => {
+                        if let Some(server) = servers.get(&lang_id) {
+                            trigger_rust_analyzer_flycheck(server);
+                        }
+                    }
                     Ok(LspCommand::RequestTokensForFile { path }) => {
                         let lang_id = detect_language_id(&path);
                         if let Some(server) = servers.get(lang_id) {
@@ -1210,9 +1245,12 @@ impl LspClient {
                                             },
                                             "initializationOptions": {
                                                 "check": {
+                                                    "command": "check",
                                                     "extraArgs": ["--target-dir", "target/rust-analyzer"]
                                                  },
                                                  "checkOnSave": {
+                                                     "enable": true,
+                                                     "command": "check",
                                                      "extraArgs": ["--target-dir", "target/rust-analyzer"]
                                                  }
                                              },
@@ -1412,27 +1450,41 @@ fn start_reader_thread(
                                             if section == "rust-analyzer" {
                                                 result_array.push(serde_json::json!({
                                                     "check": {
+                                                        "command": "check",
                                                         "extraArgs": ["--target-dir", "target/rust-analyzer"]
                                                     },
                                                     "checkOnSave": {
+                                                        "enable": true,
+                                                        "command": "check",
                                                         "extraArgs": ["--target-dir", "target/rust-analyzer"]
                                                     },
                                                     "cargo": {
-                                                        "targetDir": true
+                                                        "targetDir": "target/rust-analyzer"
                                                     }
                                                 }));
-                                            } else if section == "rust-analyzer.check" || section == "rust-analyzer.checkOnSave" {
+                                            } else if section == "rust-analyzer.check" {
                                                 result_array.push(serde_json::json!({
+                                                    "command": "check",
+                                                    "extraArgs": ["--target-dir", "target/rust-analyzer"]
+                                                }));
+                                            } else if section == "rust-analyzer.checkOnSave" {
+                                                result_array.push(serde_json::json!({
+                                                    "enable": true,
+                                                    "command": "check",
                                                     "extraArgs": ["--target-dir", "target/rust-analyzer"]
                                                 }));
                                             } else if section == "rust-analyzer.check.extraArgs" || section == "rust-analyzer.checkOnSave.extraArgs" {
                                                 result_array.push(serde_json::json!(["--target-dir", "target/rust-analyzer"]));
+                                            } else if section == "rust-analyzer.check.command" || section == "rust-analyzer.checkOnSave.command" {
+                                                result_array.push(serde_json::json!("check"));
+                                            } else if section == "rust-analyzer.checkOnSave.enable" {
+                                                result_array.push(serde_json::json!(true));
                                             } else if section == "rust-analyzer.cargo" {
                                                 result_array.push(serde_json::json!({
-                                                    "targetDir": true
+                                                    "targetDir": "target/rust-analyzer"
                                                 }));
                                             } else if section == "rust-analyzer.cargo.targetDir" {
-                                                result_array.push(serde_json::json!(true));
+                                                result_array.push(serde_json::json!("target/rust-analyzer"));
                                             } else {
                                                 result_array.push(serde_json::Value::Null);
                                             }
@@ -1606,6 +1658,9 @@ fn start_reader_thread(
 
                                             // Request active tokens as indexing is now complete
                                             let _ = cmd_tx.send(LspCommand::RequestActiveTokens { lang_id: lang_id.clone() });
+                                            if active_progress.is_empty() {
+                                                let _ = cmd_tx.send(LspCommand::RunFlycheck { lang_id: lang_id.clone() });
+                                            }
                                         }
                                         _ => {}
                                     }
