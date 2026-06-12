@@ -784,13 +784,14 @@ pub fn handle_mouse_input(
                                                if target_type == "header" {
                                                    // Check if clicked the toggle arrow / left portion (e.g., mouse_x < text_area_x + 50.0)
                                                    if state.mouse_x < text_area_x + 50.0 {
-                                                       if ui.collapsed_diagnostics.contains(&target_path) {
-                                                           ui.collapsed_diagnostics.remove(&target_path);
-                                                       } else {
-                                                           ui.collapsed_diagnostics.insert(target_path);
-                                                       }
-                                                       window.request_redraw();
-                                                       return;
+                                                        if ui.collapsed_diagnostics.contains(&target_path) {
+                                                            ui.collapsed_diagnostics.remove(&target_path);
+                                                        } else {
+                                                            ui.collapsed_diagnostics.insert(target_path);
+                                                        }
+                                                        ui.diagnostics_changed = true;
+                                                        window.request_redraw();
+                                                        return;
                                                    } else {
                                                        clicked_info = Some((target_path, target_line, target_col));
                                                    }
