@@ -100,6 +100,7 @@ pub struct UiState {
     pub hover_start: Option<std::time::Instant>,
     pub hover_pos: Option<(usize, usize)>,
     pub diagnostics_click_targets: Vec<(f32, f32, f32, f32, String, usize, usize)>,
+    pub diagnostics_file_cache: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl UiState {
@@ -231,6 +232,7 @@ impl UiState {
             hover_start: None,
             hover_pos: None,
             diagnostics_click_targets: Vec::new(),
+            diagnostics_file_cache: std::collections::HashMap::new(),
         };
 
         state.rebuild_tree();
