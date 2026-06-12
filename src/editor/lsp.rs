@@ -42,6 +42,7 @@ pub enum LspCommand {
     RunFlycheck { lang_id: String },
 }
 
+#[derive(Clone)]
 pub struct LspClient {
     cmd_tx: Sender<LspCommand>,
 }
@@ -1774,7 +1775,7 @@ fn start_reader_thread(
     });
 }
 
-fn detect_language_id(path: &str) -> &'static str {
+pub fn detect_language_id(path: &str) -> &'static str {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
