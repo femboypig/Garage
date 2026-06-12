@@ -53,11 +53,15 @@ impl Cursor {
     pub fn move_left(&mut self, buffer: &Buffer, select: bool) {
         self.update_selection(select);
 
+        if self.line >= buffer.len() {
+            self.line = buffer.len().saturating_sub(1);
+        }
+
         if self.col > 0 {
             self.col -= 1;
         } else if self.line > 0 {
             self.line -= 1;
-            self.col = buffer.lines()[self.line].chars().count();
+            self.col = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
         }
 
         self.intended_col = self.col;
@@ -67,7 +71,11 @@ impl Cursor {
     pub fn move_right(&mut self, buffer: &Buffer, select: bool) {
         self.update_selection(select);
 
-        let line_len = buffer.lines()[self.line].chars().count();
+        if self.line >= buffer.len() {
+            self.line = buffer.len().saturating_sub(1);
+        }
+
+        let line_len = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
         if self.col < line_len {
             self.col += 1;
         } else if self.line < buffer.len() - 1 {
@@ -82,9 +90,13 @@ impl Cursor {
     pub fn move_up(&mut self, buffer: &Buffer, select: bool) {
         self.update_selection(select);
 
+        if self.line >= buffer.len() {
+            self.line = buffer.len().saturating_sub(1);
+        }
+
         if self.line > 0 {
             self.line -= 1;
-            let line_len = buffer.lines()[self.line].chars().count();
+            let line_len = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
             self.col = self.intended_col.min(line_len);
         } else {
             self.col = 0;
@@ -96,12 +108,16 @@ impl Cursor {
     pub fn move_down(&mut self, buffer: &Buffer, select: bool) {
         self.update_selection(select);
 
+        if self.line >= buffer.len() {
+            self.line = buffer.len().saturating_sub(1);
+        }
+
         if self.line < buffer.len() - 1 {
             self.line += 1;
-            let line_len = buffer.lines()[self.line].chars().count();
+            let line_len = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
             self.col = self.intended_col.min(line_len);
         } else {
-            let line_len = buffer.lines()[self.line].chars().count();
+            let line_len = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
             self.col = line_len;
             self.intended_col = line_len;
         }
@@ -117,7 +133,10 @@ impl Cursor {
     /// Move to the end of the current line.
     pub fn move_to_line_end(&mut self, buffer: &Buffer, select: bool) {
         self.update_selection(select);
-        let line_len = buffer.lines()[self.line].chars().count();
+        if self.line >= buffer.len() {
+            self.line = buffer.len().saturating_sub(1);
+        }
+        let line_len = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
         self.col = line_len;
         self.intended_col = line_len;
     }
@@ -126,26 +145,30 @@ impl Cursor {
     pub fn move_word_left(&mut self, buffer: &Buffer, select: bool) {
         self.update_selection(select);
 
+        if self.line >= buffer.len() {
+            self.line = buffer.len().saturating_sub(1);
+        }
+
         if self.col == 0 {
             if self.line > 0 {
                 self.line -= 1;
-                self.col = buffer.lines()[self.line].chars().count();
+                self.col = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
             } else {
                 return;
             }
         }
 
-        let line_chars: Vec<char> = buffer.lines()[self.line].chars().collect();
+        let line_chars: Vec<char> = buffer.lines().get(self.line).map_or(Vec::new(), |l| l.chars().collect());
         let mut idx = self.col;
 
         // Skip leading whitespace leftwards
-        while idx > 0 && line_chars[idx - 1].is_whitespace() {
+        while idx > 0 && idx - 1 < line_chars.len() && line_chars[idx - 1].is_whitespace() {
             idx -= 1;
         }
 
-        if idx > 0 {
+        if idx > 0 && idx - 1 < line_chars.len() {
             let start_is_alphanumeric = line_chars[idx - 1].is_alphanumeric();
-            while idx > 0 && line_chars[idx - 1].is_alphanumeric() == start_is_alphanumeric && !line_chars[idx - 1].is_whitespace() {
+            while idx > 0 && idx - 1 < line_chars.len() && line_chars[idx - 1].is_alphanumeric() == start_is_alphanumeric && !line_chars[idx - 1].is_whitespace() {
                 idx -= 1;
             }
         }
@@ -158,7 +181,11 @@ impl Cursor {
     pub fn move_word_right(&mut self, buffer: &Buffer, select: bool) {
         self.update_selection(select);
 
-        let line_chars: Vec<char> = buffer.lines()[self.line].chars().collect();
+        if self.line >= buffer.len() {
+            self.line = buffer.len().saturating_sub(1);
+        }
+
+        let line_chars: Vec<char> = buffer.lines().get(self.line).map_or(Vec::new(), |l| l.chars().collect());
         let line_len = line_chars.len();
 
         if self.col >= line_len {
