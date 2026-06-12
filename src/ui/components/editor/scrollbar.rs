@@ -26,32 +26,6 @@ pub fn draw_scrollbars(
     let white_uv = atlas.white_pixel_uv();
     
     // --- 1. Draw Vertical Scrollbar ---
-    let is_sb_hovered = ui.active_modal.is_none() && mouse_x >= sb_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
-
-    // Scrollbar Track background
-    ui.push_quad(
-        vertices,
-        indices,
-        sb_x,
-        editor_y,
-        scrollbar_width,
-        total_editor_height,
-        white_uv,
-        ui.config.theme.scrollbar_track,
-    );
-    // Vertical track separator (left of scrollbar)
-    ui.push_quad(
-        vertices,
-        indices,
-        sb_x - 1.0,
-        editor_y,
-        1.0,
-        total_editor_height,
-        white_uv,
-        ui.config.theme.scrollbar_border,
-    );
-
-    let track_h = editor_height;
     let (virtual_len, visible_count) = if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
         let mut count = 0;
         for (file_path, diags) in &ui.lsp_diagnostics_details {
@@ -74,29 +48,58 @@ pub fn draw_scrollbars(
     } else {
         (buffer.len(), visible_lines)
     };
-    let ratio = visible_count as f32 / virtual_len as f32;
-    let thumb_h = (track_h * ratio).clamp(20.0, track_h);
-    let max_scroll_f = (virtual_len as isize - visible_count as isize).max(0) as f32;
-    let scroll_ratio = if max_scroll_f > 0.0 { ui.scroll_y as f32 / max_scroll_f } else { 0.0 };
-    let thumb_y = editor_y + scroll_ratio * (track_h - thumb_h);
 
-    let thumb_color = if is_sb_hovered {
-        ui.config.theme.scrollbar_thumb_hover
-    } else {
-        ui.config.theme.scrollbar_thumb
-    };
+    if virtual_len > visible_count {
+        let is_sb_hovered = ui.active_modal.is_none() && mouse_x >= sb_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
 
-    // Draw Scrollbar Thumb
-    ui.push_quad(
-        vertices,
-        indices,
-        sb_x + 2.0,
-        thumb_y,
-        scrollbar_width - 4.0,
-        thumb_h,
-        white_uv,
-        thumb_color,
-    );
+        // Scrollbar Track background
+        ui.push_quad(
+            vertices,
+            indices,
+            sb_x,
+            editor_y,
+            scrollbar_width,
+            total_editor_height,
+            white_uv,
+            ui.config.theme.scrollbar_track,
+        );
+        // Vertical track separator (left of scrollbar)
+        ui.push_quad(
+            vertices,
+            indices,
+            sb_x - 1.0,
+            editor_y,
+            1.0,
+            total_editor_height,
+            white_uv,
+            ui.config.theme.scrollbar_border,
+        );
+
+        let track_h = editor_height;
+        let ratio = visible_count as f32 / virtual_len as f32;
+        let thumb_h = (track_h * ratio).clamp(20.0, track_h);
+        let max_scroll_f = (virtual_len as isize - visible_count as isize).max(0) as f32;
+        let scroll_ratio = if max_scroll_f > 0.0 { ui.scroll_y as f32 / max_scroll_f } else { 0.0 };
+        let thumb_y = editor_y + scroll_ratio * (track_h - thumb_h);
+
+        let thumb_color = if is_sb_hovered {
+            ui.config.theme.scrollbar_thumb_hover
+        } else {
+            ui.config.theme.scrollbar_thumb
+        };
+
+        // Draw Scrollbar Thumb
+        ui.push_quad(
+            vertices,
+            indices,
+            sb_x + 2.0,
+            thumb_y,
+            scrollbar_width - 4.0,
+            thumb_h,
+            white_uv,
+            thumb_color,
+        );
+    }
 
     // --- 2. Draw Horizontal Scrollbar ---
     if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
