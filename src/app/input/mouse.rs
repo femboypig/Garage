@@ -31,6 +31,10 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, buffer: &Buffer, mouse_
         window.set_cursor_icon(winit::window::CursorIcon::ColResize);
     } else if on_dock_border {
         window.set_cursor_icon(winit::window::CursorIcon::RowResize);
+    } else if ui.hovered_copy_button {
+        window.set_cursor_icon(winit::window::CursorIcon::Pointer);
+    } else if ui.mouse_in_popup {
+        window.set_cursor_icon(winit::window::CursorIcon::Default);
     } else {
         let scrollbar_width = ui.scrollbar_width();
         let minimap_width = ui.minimap_width();
@@ -63,6 +67,7 @@ pub fn handle_cursor_moved(
     state.mouse_y = position_y;
  
     let size = window.inner_size();
+    let mut mouse_in_popup = false;
 
     // Update diagnostic hover detection
     let mut hover_reset = true;
@@ -84,7 +89,7 @@ pub fn handle_cursor_moved(
                 let sb_x = size.width as f32 - scrollbar_width;
                 let minimap_x = sb_x - minimap_width;
                 
-                let mut mouse_in_popup = false;
+                mouse_in_popup = false;
                 if let Some(diag) = &ui.hovered_diagnostic {
                     if let Some((line_idx, col_idx)) = ui.hover_pos {
                         let char_x = text_area_x + (col_idx as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
@@ -131,8 +136,20 @@ pub fn handle_cursor_moved(
                             popup_y = (char_y - popup_h - 4.0).max(editor_top + 4.0);
                         }
                         
-                        if state.mouse_x >= popup_x && state.mouse_x < popup_x + popup_w && state.mouse_y >= popup_y && state.mouse_y < popup_y + popup_h {
+                        let combined_min_x = char_x.min(popup_x) - 15.0;
+                        let combined_max_x = (char_x + ui.buffer_char_width).max(popup_x + popup_w) + 15.0;
+                        let combined_min_y = char_y.min(popup_y) - 15.0;
+                        let combined_max_y = (char_y + ui.buffer_line_height).max(popup_y + popup_h) + 15.0;
+                        
+                        if state.mouse_x >= combined_min_x && state.mouse_x < combined_max_x && state.mouse_y >= combined_min_y && state.mouse_y < combined_max_y {
                             mouse_in_popup = true;
+                            let copy_x = (popup_x + popup_w - 24.0).round();
+                            let copy_y = (popup_y + (popup_h - 11.0) / 2.0).round();
+                            if state.mouse_x >= copy_x - 4.0 && state.mouse_x < copy_x + 15.0 && state.mouse_y >= copy_y - 4.0 && state.mouse_y < copy_y + 15.0 {
+                                ui.hovered_copy_button = true;
+                            } else {
+                                ui.hovered_copy_button = false;
+                            }
                         }
                     }
                 }
@@ -158,6 +175,13 @@ pub fn handle_cursor_moved(
         ui.hover_pos = None;
         ui.hover_start = None;
         ui.hovered_diagnostic = None;
+        ui.mouse_in_popup = false;
+        ui.hovered_copy_button = false;
+    } else {
+        ui.mouse_in_popup = mouse_in_popup;
+        if !mouse_in_popup {
+            ui.hovered_copy_button = false;
+        }
     }
  
     if state.is_dragging_sidebar {
@@ -371,6 +395,14 @@ pub fn handle_mouse_input(
     if button == MouseButton::Left {
         let size = window.inner_size();
         if input_state == ElementState::Pressed {
+            if ui.hovered_copy_button {
+                if let Some(ref diag) = ui.hovered_diagnostic {
+                    state.copy_to_clipboard(diag.message.clone());
+                }
+                window.request_redraw();
+                return;
+            }
+            
             // Check if click is on tab scrollbar
             let tabbar_start_x = ui.sidebar_width;
             let visible_width = size.width as f32 - tabbar_start_x;
@@ -610,7 +642,10 @@ pub fn handle_mouse_input(
                                 window.request_redraw();
                             }
                             // 2. Check if click is on scrollbar
-                            else if state.mouse_x >= sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit {
+                            else if state.mouse_x >= sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit && {
+                                let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
+                                virtual_len > visible_lines
+                            } {
                                 state.is_dragging_scroll = true;
                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                 let ratio = visible_lines as f32 / virtual_len as f32;
@@ -705,7 +740,7 @@ pub fn handle_mouse_input(
                                              let copy_y = (popup_y + (popup_h - 11.0) / 2.0).round();
                                              
                                              if state.mouse_x >= copy_x - 4.0 && state.mouse_x < copy_x + 15.0 && state.mouse_y >= copy_y - 4.0 && state.mouse_y < copy_y + 15.0 {
-                                                 state.internal_clipboard = diag.message.clone();
+                                                 state.copy_to_clipboard(diag.message.clone());
                                                  ui.hovered_diagnostic = None;
                                                  ui.hover_start = None;
                                                  ui.hover_pos = None;
@@ -718,17 +753,52 @@ pub fn handle_mouse_input(
                                          return;
                                      }
 
-                                      // 2. Check if virtual diagnostics tab item was clicked
-                                      let mut clicked_info = None;
-                                      if state.tabs[active_tab_idx].path.as_deref() == Some("diagnostics://project") {
-                                          let clicked_target = ui.diagnostics_click_targets.iter().find(|t| {
-                                              state.mouse_x >= t.0 && state.mouse_x <= t.2 && state.mouse_y >= t.1 && state.mouse_y <= t.3
-                                          }).cloned();
-                                          if let Some((target_path, target_line, target_col)) = clicked_target.map(|t| (t.4, t.5, t.6)) {
-                                              clicked_info = Some((target_path, target_line, target_col));
-                                          }
-                                      }
-                                      
+                                       // 2. Check if virtual diagnostics tab item was clicked
+                                       let mut clicked_info = None;
+                                       if state.tabs[active_tab_idx].path.as_deref() == Some("diagnostics://project") {
+                                           let clicked_target = ui.diagnostics_click_targets.iter().find(|t| {
+                                               state.mouse_x >= t.0 && state.mouse_x <= t.2 && state.mouse_y >= t.1 && state.mouse_y <= t.3
+                                           }).cloned();
+                                           if let Some((target_path, target_line, target_col, target_type)) = clicked_target.map(|t| (t.4, t.5, t.6, t.7)) {
+                                               if target_type == "header" {
+                                                   // Check if clicked the toggle arrow / left portion (e.g., mouse_x < text_area_x + 50.0)
+                                                   if state.mouse_x < text_area_x + 50.0 {
+                                                       if ui.collapsed_diagnostics.contains(&target_path) {
+                                                           ui.collapsed_diagnostics.remove(&target_path);
+                                                       } else {
+                                                           ui.collapsed_diagnostics.insert(target_path);
+                                                       }
+                                                       window.request_redraw();
+                                                       return;
+                                                   } else {
+                                                       clicked_info = Some((target_path, target_line, target_col));
+                                                   }
+                                               } else if target_type == "code" {
+                                                   // Place virtual cursor in diagnostics view
+                                                   let clicked_line = ((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y;
+                                                   let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                                                   if !visual_lines.is_empty() {
+                                                       let clicked_line = clicked_line.min(visual_lines.len() - 1);
+                                                       let code_start_x = text_area_x + 48.0; // gutter_w is 48.0
+                                                       let col_idx = ((state.mouse_x - code_start_x) / ui.buffer_char_width).round() as isize + ui.scroll_x as isize;
+                                                       let col_idx = col_idx.max(0) as usize;
+                                                       
+                                                       let active_tab = &mut state.tabs[active_tab_idx];
+                                                       if let Some(crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. }) = visual_lines.get(clicked_line) {
+                                                           let line_chars = line_content.chars().count();
+                                                           let col_idx = col_idx.min(line_chars);
+                                                           active_tab.cursor.line = clicked_line;
+                                                           active_tab.cursor.col = col_idx;
+                                                           active_tab.cursor.intended_col = col_idx;
+                                                           active_tab.cursor.selection_anchor = Some((clicked_line, col_idx));
+                                                           state.is_dragging = true;
+                                                       }
+                                                   }
+                                                   window.request_redraw();
+                                                   return;
+                                               }
+                                           }
+                                       }
                                       if let Some((target_path, target_line, target_col)) = clicked_info {
                                           // Open the file
                                           let open_action = crate::ui::UiAction::OpenFile(std::path::PathBuf::from(target_path));
