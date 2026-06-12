@@ -243,6 +243,33 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         }
                     }
 
+                    // Rebuild and sync the diagnostics://project tab buffer itself to match visual diagnostic lines
+                    if let Some(diag_tab_idx) = state.tabs.iter().position(|t| t.path.as_deref() == Some("diagnostics://project")) {
+                        let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(&mut ui);
+                        let mut text_lines = Vec::new();
+                        for vl in &visual_lines {
+                            match vl {
+                                crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, line, col } => {
+                                    text_lines.push(format!("▶ {} (Line {}, Col {})", path, line + 1, col + 1));
+                                }
+                                crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => {
+                                    text_lines.push(line_content.clone());
+                                }
+                                crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => {
+                                    text_lines.push(format!("  └─ [{}] {}", match diag.severity { 1 => "Error", 2 => "Warning", 3 => "Info", _ => "Hint" }, diag.message));
+                                }
+                            }
+                        }
+                        if text_lines.is_empty() {
+                            text_lines.push("No problems found in the workspace".to_string());
+                        }
+                        let new_text = text_lines.join("\n");
+                        let current_text = state.tabs[diag_tab_idx].buffer.lines().join("\n");
+                        if current_text != new_text {
+                            state.tabs[diag_tab_idx].buffer = crate::editor::buffer::Buffer::from_text(&new_text);
+                        }
+                    }
+
                     let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
                     let tab_modified: Vec<bool> = state.tabs.iter().map(|t| t.buffer.is_modified).collect();
 
