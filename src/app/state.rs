@@ -72,8 +72,11 @@ impl AppState {
             if let Some(mut stdin) = child.stdin.take() {
                 let _ = stdin.write_all(text.as_bytes());
             }
-            let _ = child.wait();
-            return;
+            if let Ok(status) = child.wait() {
+                if status.success() {
+                    return;
+                }
+            }
         }
         // Try xclip (X11)
         if let Ok(mut child) = std::process::Command::new("xclip")
@@ -86,8 +89,11 @@ impl AppState {
             if let Some(mut stdin) = child.stdin.take() {
                 let _ = stdin.write_all(text.as_bytes());
             }
-            let _ = child.wait();
-            return;
+            if let Ok(status) = child.wait() {
+                if status.success() {
+                    return;
+                }
+            }
         }
         // Try xsel (X11)
         if let Ok(mut child) = std::process::Command::new("xsel")
