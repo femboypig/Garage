@@ -56,16 +56,20 @@ pub fn draw_editor_view(
             if diags.is_empty() {
                 continue;
             }
-            let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
-            for diag in diags {
-                let start_line = diag.line.saturating_sub(3);
-                let end_line = if file_lines_len > 0 {
-                    (diag.line + 3).min(file_lines_len - 1)
-                } else {
-                    diag.line + 3
-                };
-                let num_code_lines = end_line - start_line + 1;
-                count += 1 + num_code_lines + 1; // Header + Code lines + Banner
+            if ui.collapsed_diagnostics.contains(file_path) {
+                count += 1; // Just the header
+            } else {
+                let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
+                for diag in diags {
+                    let start_line = diag.line.saturating_sub(3);
+                    let end_line = if file_lines_len > 0 {
+                        (diag.line + 3).min(file_lines_len - 1)
+                    } else {
+                        diag.line + 3
+                    };
+                    let num_code_lines = end_line - start_line + 1;
+                    count += 1 + num_code_lines + 1; // Header + Code lines + Banner
+                }
             }
         }
         (count.max(1), visible_lines)
@@ -149,6 +153,8 @@ pub fn draw_editor_view(
         end_idx,
         visible_lines,
         active_file_path,
+        tab_paths,
+        tab_modified,
     );
 
     // 5. Draw Scrollbars
