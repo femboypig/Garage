@@ -224,13 +224,14 @@ pub fn draw_text_area(
                     
                     // 2. Draw unsaved changes dot or empty space
                     let mut is_modified = false;
-                    let target_path = std::path::PathBuf::from(path);
-                    let target_path_canon = target_path.canonicalize().unwrap_or(target_path);
+                    let target_path = std::path::Path::new(path);
                     for (i, p_opt) in tab_paths.iter().enumerate() {
                         if let Some(p) = p_opt {
-                            let p_buf = std::path::PathBuf::from(p);
-                            let p_canon = p_buf.canonicalize().unwrap_or(p_buf);
-                            if p_canon == target_path_canon {
+                            let p_buf = std::path::Path::new(p);
+                            if p_buf == target_path
+                                || (p_buf.is_relative() && target_path.ends_with(p_buf))
+                                || (target_path.is_relative() && p_buf.ends_with(target_path))
+                            {
                                 is_modified = tab_modified.get(i).copied().unwrap_or(false);
                                 break;
                             }
