@@ -471,38 +471,26 @@ fn scan_workspace_for_lsp(files: &mut Vec<std::path::PathBuf>) {
 }
 
 fn scan_dir_fallback(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
-    if files.len() >= 300 {
-        return;
-    }
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name == ".git"
-                    || name == "target"
-                    || name == ".gemini"
-                    || name == "node_modules"
-                    || name == ".lsp"
-                    || name == ".cargo"
-                    || name == "build"
-                    || name == "dist"
-                    || name == "venv"
-                    || name == ".venv"
-                    || name == "__pycache__"
-                {
-                    continue;
-                }
-                if let Ok(file_type) = entry.file_type() {
-                    if file_type.is_dir() {
-                        scan_dir_fallback(&path, files);
-                    } else if file_type.is_file() {
-                        let path_str = path.to_string_lossy();
-                        let lang_id = crate::editor::lsp::detect_language_id(&path_str);
-                        if lang_id != "plaintext" {
-                            files.push(path);
-                        }
-                    }
+    let walker = ignore::WalkBuilder::new(dir)
+        .hidden(true)
+        .git_ignore(true)
+        .parents(true)
+        .build();
+
+    for result in walker {
+        if files.len() >= 300 {
+            break;
+        }
+        if let Ok(entry) = result {
+            if entry.depth() == 0 {
+                continue;
+            }
+            let path = entry.path();
+            if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                let path_str = path.to_string_lossy();
+                let lang_id = crate::editor::lsp::detect_language_id(&path_str);
+                if lang_id != "plaintext" {
+                    files.push(path.to_path_buf());
                 }
             }
         }
