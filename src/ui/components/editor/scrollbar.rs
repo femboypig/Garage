@@ -54,9 +54,20 @@ pub fn draw_scrollbars(
     let track_h = editor_height;
     let (virtual_len, visible_count) = if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
         let mut count = 0;
-        for diags in ui.lsp_diagnostics_details.values() {
-            if !diags.is_empty() {
-                count += 1 + 2 * diags.len();
+        for (file_path, diags) in &ui.lsp_diagnostics_details {
+            if diags.is_empty() {
+                continue;
+            }
+            let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
+            for diag in diags {
+                let start_line = diag.line.saturating_sub(3);
+                let end_line = if file_lines_len > 0 {
+                    (diag.line + 3).min(file_lines_len - 1)
+                } else {
+                    diag.line + 3
+                };
+                let num_code_lines = end_line - start_line + 1;
+                count += 1 + num_code_lines + 1; // Header + Code lines + Banner
             }
         }
         (count.max(1), visible_lines)
@@ -95,39 +106,38 @@ pub fn draw_scrollbars(
     let max_line_len = ui.get_max_line_len(buffer, active_file_path, cursor.line);
     let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
     
-    let hs_y = editor_y + editor_height;
-    let hs_h = 14.0f32;
-    let is_hs_hovered = ui.active_modal.is_none()
-        && mouse_x >= text_area_x
-        && mouse_x < minimap_x
-        && mouse_y >= hs_y
-        && mouse_y < hs_y + hs_h;
-
-    // Draw Horizontal Scrollbar Track Background
-    ui.push_quad(
-        vertices,
-        indices,
-        text_area_x,
-        hs_y,
-        text_viewport_w,
-        hs_h,
-        white_uv,
-        ui.config.theme.scrollbar_track,
-    );
-
-    // Draw horizontal track border separator (top of horizontal scrollbar)
-    ui.push_quad(
-        vertices,
-        indices,
-        text_area_x,
-        hs_y,
-        text_viewport_w,
-        1.0,
-        white_uv,
-        ui.config.theme.scrollbar_border,
-    );
-
     if max_line_len > visible_cols {
+        let hs_y = editor_y + editor_height;
+        let hs_h = 14.0f32;
+        let is_hs_hovered = ui.active_modal.is_none()
+            && mouse_x >= text_area_x
+            && mouse_x < minimap_x
+            && mouse_y >= hs_y
+            && mouse_y < hs_y + hs_h;
+
+        // Draw Horizontal Scrollbar Track Background
+        ui.push_quad(
+            vertices,
+            indices,
+            text_area_x,
+            hs_y,
+            text_viewport_w,
+            hs_h,
+            white_uv,
+            ui.config.theme.scrollbar_track,
+        );
+
+        // Draw horizontal track border separator (top of horizontal scrollbar)
+        ui.push_quad(
+            vertices,
+            indices,
+            text_area_x,
+            hs_y,
+            text_viewport_w,
+            1.0,
+            white_uv,
+            ui.config.theme.scrollbar_border,
+        );
         // Calculate horizontal scrollbar thumb
         let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
         let thumb_w = (text_viewport_w * ratio_x).clamp(20.0, text_viewport_w);

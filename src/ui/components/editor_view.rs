@@ -40,13 +40,32 @@ pub fn draw_editor_view(
 
     let editor_y = main_y + ui.tabbar_height + ui.breadcrumb_height;
     let total_editor_height = status_y - editor_y;
-    let editor_height = total_editor_height - 14.0;
+    let show_horizontal_scrollbar = if is_diagnostics {
+        false
+    } else {
+        let max_line_len = ui.get_max_line_len(buffer, active_file_path, cursor.line);
+        let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
+        max_line_len > visible_cols
+    };
+    let hs_height = if show_horizontal_scrollbar { 14.0 } else { 0.0 };
+    let editor_height = total_editor_height - hs_height;
     let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
     let (virtual_len, visible_count) = if is_diagnostics {
         let mut count = 0;
-        for diags in ui.lsp_diagnostics_details.values() {
-            if !diags.is_empty() {
-                count += 1 + 2 * diags.len();
+        for (file_path, diags) in &ui.lsp_diagnostics_details {
+            if diags.is_empty() {
+                continue;
+            }
+            let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
+            for diag in diags {
+                let start_line = diag.line.saturating_sub(3);
+                let end_line = if file_lines_len > 0 {
+                    (diag.line + 3).min(file_lines_len - 1)
+                } else {
+                    diag.line + 3
+                };
+                let num_code_lines = end_line - start_line + 1;
+                count += 1 + num_code_lines + 1; // Header + Code lines + Banner
             }
         }
         (count.max(1), visible_lines)
@@ -169,6 +188,7 @@ pub fn draw_editor_view(
             minimap_x,
             minimap_width,
             visible_lines,
+            active_file_path,
         );
     }
 }

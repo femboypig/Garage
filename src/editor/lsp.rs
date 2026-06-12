@@ -814,6 +814,7 @@ impl LspClient {
                         let lang_id = detect_language_id(&path);
                         if lang_id != "plaintext" {
                             let mut server_ready = servers.contains_key(lang_id);
+                            let mut server_just_spawned = false;
                             
                             if !server_ready {
                                 match spawn_server(lang_id) {
@@ -868,6 +869,19 @@ impl LspClient {
                                                         "workDoneProgress": true
                                                     }
                                                 },
+                                                "initializationOptions": {
+                                                    "check": {
+                                                        "command": "check",
+                                                        "extraArgs": ["--target-dir", "target/rust-analyzer"]
+                                                    },
+                                                    "checkOnSave": {
+                                                        "enable": true,
+                                                        "extraArgs": ["--target-dir", "target/rust-analyzer"]
+                                                    },
+                                                    "cargo": {
+                                                        "targetDir": "target/rust-analyzer"
+                                                    }
+                                                },
                                                 "workspaceFolders": [{
                                                     "uri": root_uri,
                                                     "name": current_dir.file_name()
@@ -908,6 +922,7 @@ impl LspClient {
                                                 open_all_documents_for_server(&server_instance, lang_id, &open_documents, &mut document_versions);
                                                 servers.insert(lang_id.to_string(), server_instance);
                                                 server_ready = true;
+                                                server_just_spawned = true;
                                             }
                                         }
                                     }
@@ -955,45 +970,45 @@ impl LspClient {
                             }
 
                             if server_ready {
-                                if let Some(server) = servers.get_mut(lang_id) {
-                                    let version = document_versions.entry(path.clone()).or_insert(0);
-                                    *version += 1;
-                                    if let Ok(mut pending) = pending_changes.lock() {
-                                        if let Some((_, _, needs_send, _)) = pending.get_mut(&path) {
-                                            *needs_send = false;
-                                        }
-                                    }
-                                    if !is_already_open {
-                                        let open_msg = serde_json::json!({
-                                            "jsonrpc": "2.0",
-                                            "method": "textDocument/didOpen",
-                                            "params": {
-                                                "textDocument": {
-                                                    "uri": format!("file://{}", path),
-                                                    "languageId": lang_id,
-                                                    "version": *version,
-                                                    "text": text
-                                                }
+                                if !server_just_spawned {
+                                    if let Some(server) = servers.get_mut(lang_id) {
+                                        let version = document_versions.entry(path.clone()).or_insert(0);
+                                        *version += 1;
+                                        if let Ok(mut pending) = pending_changes.lock() {
+                                            if let Some((_, _, needs_send, _)) = pending.get_mut(&path) {
+                                                *needs_send = false;
                                             }
-                                        });
-                                        if let Ok(mut writer) = server.stdin.lock() {
-                                            let _ = write_message(&mut *writer, &open_msg.to_string());
                                         }
+                                        if !is_already_open {
+                                            let open_msg = serde_json::json!({
+                                                "jsonrpc": "2.0",
+                                                "method": "textDocument/didOpen",
+                                                "params": {
+                                                    "textDocument": {
+                                                        "uri": format!("file://{}", path),
+                                                        "languageId": lang_id,
+                                                        "version": *version,
+                                                        "text": text
+                                                    }
+                                                }
+                                            });
+                                            if let Ok(mut writer) = server.stdin.lock() {
+                                                let _ = write_message(&mut *writer, &open_msg.to_string());
+                                            }
+                                        }
+
+                                        // Request semantic tokens immediately
+                                        request_semantic_tokens(server, &path);
                                     }
-
-                                    // Request semantic tokens immediately
-                                    request_semantic_tokens(server, &path);
-
-                                    // Spawn debounced retries
-                                    let cmd_tx_thread = cmd_tx_clone.clone();
-                                    let path_clone = path.clone();
-                                    std::thread::spawn(move || {
-                                        for delay in &[100, 300, 1000, 3000, 6000] {
-                                            std::thread::sleep(std::time::Duration::from_millis(*delay));
-                                            let _ = cmd_tx_thread.send(LspCommand::RequestTokensForFile { path: path_clone.clone() });
-                                        }
-                                    });
                                 }
+
+                                // Spawn a single debounced retry
+                                let cmd_tx_thread = cmd_tx_clone.clone();
+                                let path_clone = path.clone();
+                                std::thread::spawn(move || {
+                                    std::thread::sleep(std::time::Duration::from_millis(400));
+                                    let _ = cmd_tx_thread.send(LspCommand::RequestTokensForFile { path: path_clone });
+                                });
                             }
                         }
                     }
@@ -1081,14 +1096,12 @@ impl LspClient {
                             });
                             request_semantic_tokens(server, &path);
 
-                            // Spawn debounced retries
+                            // Spawn a single debounced retry
                             let cmd_tx_thread = cmd_tx_clone.clone();
                             let path_clone = path.clone();
                             std::thread::spawn(move || {
-                                for delay in &[100, 300, 1000, 3000, 6000] {
-                                    std::thread::sleep(std::time::Duration::from_millis(*delay));
-                                    let _ = cmd_tx_thread.send(LspCommand::RequestTokensForFile { path: path_clone.clone() });
-                                }
+                                std::thread::sleep(std::time::Duration::from_millis(400));
+                                let _ = cmd_tx_thread.send(LspCommand::RequestTokensForFile { path: path_clone });
                             });
                         } else if installing_servers.contains(&lang_id.to_string()) {
                             let display_name = match lang_id {
@@ -1195,6 +1208,14 @@ impl LspClient {
                                                     "workDoneProgress": true
                                                 }
                                             },
+                                            "initializationOptions": {
+                                                "check": {
+                                                    "extraArgs": ["--target-dir", "target/rust-analyzer"]
+                                                 },
+                                                 "checkOnSave": {
+                                                     "extraArgs": ["--target-dir", "target/rust-analyzer"]
+                                                 }
+                                             },
                                             "workspaceFolders": [{
                                                 "uri": root_uri,
                                                 "name": current_dir.file_name()
@@ -1380,12 +1401,46 @@ fn start_reader_thread(
                                         let _ = write_message(&mut *writer, &response.to_string());
                                     }
                                 } else if method == "workspace/configuration" {
-                                    let items_len = resp.get("params")
+                                    let items = resp.get("params")
                                         .and_then(|p| p.get("items"))
-                                        .and_then(|i| i.as_array())
-                                        .map(|a| a.len())
-                                        .unwrap_or(1);
-                                    let result_array = vec![serde_json::Value::Null; items_len];
+                                        .and_then(|i| i.as_array());
+                                    
+                                    let mut result_array = Vec::new();
+                                    if let Some(items_list) = items {
+                                        for item in items_list {
+                                            let section = item.get("section").and_then(|s| s.as_str()).unwrap_or("");
+                                            if section == "rust-analyzer" {
+                                                result_array.push(serde_json::json!({
+                                                    "check": {
+                                                        "extraArgs": ["--target-dir", "target/rust-analyzer"]
+                                                    },
+                                                    "checkOnSave": {
+                                                        "extraArgs": ["--target-dir", "target/rust-analyzer"]
+                                                    },
+                                                    "cargo": {
+                                                        "targetDir": true
+                                                    }
+                                                }));
+                                            } else if section == "rust-analyzer.check" || section == "rust-analyzer.checkOnSave" {
+                                                result_array.push(serde_json::json!({
+                                                    "extraArgs": ["--target-dir", "target/rust-analyzer"]
+                                                }));
+                                            } else if section == "rust-analyzer.check.extraArgs" || section == "rust-analyzer.checkOnSave.extraArgs" {
+                                                result_array.push(serde_json::json!(["--target-dir", "target/rust-analyzer"]));
+                                            } else if section == "rust-analyzer.cargo" {
+                                                result_array.push(serde_json::json!({
+                                                    "targetDir": true
+                                                }));
+                                            } else if section == "rust-analyzer.cargo.targetDir" {
+                                                result_array.push(serde_json::json!(true));
+                                            } else {
+                                                result_array.push(serde_json::Value::Null);
+                                            }
+                                        }
+                                    } else {
+                                        result_array.push(serde_json::Value::Null);
+                                    }
+                                    
                                     let response = serde_json::json!({
                                         "jsonrpc": "2.0",
                                         "id": id_val,
@@ -1556,63 +1611,84 @@ fn start_reader_thread(
                                     }
                                 }
                             }
-                        } else if let Some(result) = resp.get("result") {
-                            if let Some(data) = result["data"].as_array() {
-                                if let Some(id_val) = resp.get("id") {
-                                    if let Some(id) = id_val.as_u64() {
-                                        let file_path_opt = {
-                                            let mut req_map = token_requests.lock().unwrap();
-                                            req_map.remove(&id)
-                                        };
-                                        if let Some(file_path) = file_path_opt {
-                                            let mut tokens_list = Vec::new();
-                                            let mut current_line = 0;
-                                            let mut current_start = 0;
+                        }
+                        // Check if this response is for a token request
+                        let mut is_token_request = false;
+                        let mut file_path_for_tokens = None;
+                        if let Some(id_val) = resp.get("id") {
+                            if let Some(id) = id_val.as_u64() {
+                                let mut req_map = token_requests.lock().unwrap();
+                                if req_map.contains_key(&id) {
+                                    is_token_request = true;
+                                    file_path_for_tokens = req_map.remove(&id);
+                                }
+                            }
+                        }
 
-                                            let mut i = 0;
-                                            let token_types_guard = token_types.lock().unwrap();
-                                            while i + 4 < data.len() {
-                                                let delta_line = data[i].as_u64().unwrap_or(0) as usize;
-                                                let delta_start = data[i+1].as_u64().unwrap_or(0) as usize;
-                                                let length = data[i+2].as_u64().unwrap_or(0) as usize;
-                                                let token_type_idx = data[i+3].as_u64().unwrap_or(0) as usize;
+                        if is_token_request {
+                            if let Some(file_path) = file_path_for_tokens {
+                                let mut parsed_success = false;
+                                if let Some(result) = resp.get("result") {
+                                    if let Some(data) = result["data"].as_array() {
+                                        let mut tokens_list = Vec::new();
+                                        let mut current_line = 0;
+                                        let mut current_start = 0;
 
-                                                if delta_line > 0 {
-                                                    current_line += delta_line;
-                                                    current_start = delta_start;
-                                                } else {
-                                                    current_start += delta_start;
-                                                }
+                                        let mut i = 0;
+                                        let token_types_guard = token_types.lock().unwrap();
+                                        while i + 4 < data.len() {
+                                            let delta_line = data[i].as_u64().unwrap_or(0) as usize;
+                                            let delta_start = data[i+1].as_u64().unwrap_or(0) as usize;
+                                            let length = data[i+2].as_u64().unwrap_or(0) as usize;
+                                            let token_type_idx = data[i+3].as_u64().unwrap_or(0) as usize;
 
-                                                let token_type = if token_type_idx < token_types_guard.len() {
-                                                    token_types_guard[token_type_idx].as_str()
-                                                } else {
-                                                    "variable"
-                                                }.to_string();
-
-                                                tokens_list.push(SemanticTokenDetail {
-                                                    line: current_line,
-                                                    start_col: current_start,
-                                                    length,
-                                                    token_type,
-                                                });
-
-                                                i += 5;
+                                            if delta_line > 0 {
+                                                current_line += delta_line;
+                                                current_start = delta_start;
+                                            } else {
+                                                current_start += delta_start;
                                             }
 
-                                            log::debug!("LSP: Parsed {} semantic tokens for {}", tokens_list.len(), file_path);
+                                            let token_type = if token_type_idx < token_types_guard.len() {
+                                                token_types_guard[token_type_idx].as_str()
+                                            } else {
+                                                "variable"
+                                            }.to_string();
 
-                                            let _ = diag_tx.send(LspDiagnosticsUpdate {
-                                                file_path,
-                                                errors: 0,
-                                                warnings: 0,
-                                                diagnostics: vec![],
-                                                tokens: tokens_list,
-                                                is_tokens_update: true,
+                                            tokens_list.push(SemanticTokenDetail {
+                                                line: current_line,
+                                                start_col: current_start,
+                                                length,
+                                                token_type,
                                             });
-                                            let _ = proxy.send_event(());
+
+                                            i += 5;
                                         }
+
+                                        log::debug!("LSP: Parsed {} semantic tokens for {}", tokens_list.len(), file_path);
+
+                                        let _ = diag_tx.send(LspDiagnosticsUpdate {
+                                            file_path: file_path.clone(),
+                                            errors: 0,
+                                            warnings: 0,
+                                            diagnostics: vec![],
+                                            tokens: tokens_list,
+                                            is_tokens_update: true,
+                                        });
+                                        let _ = proxy.send_event(());
+                                        parsed_success = true;
                                     }
+                                }
+
+                                if !parsed_success {
+                                    // Retry requesting semantic tokens after a delay
+                                    log::debug!("LSP: Semantic tokens request failed or null for {}, retrying...", file_path);
+                                    let cmd_tx_thread = cmd_tx.clone();
+                                    let path_clone = file_path.clone();
+                                    std::thread::spawn(move || {
+                                        std::thread::sleep(std::time::Duration::from_millis(400));
+                                        let _ = cmd_tx_thread.send(LspCommand::RequestTokensForFile { path: path_clone });
+                                    });
                                 }
                             }
                         }

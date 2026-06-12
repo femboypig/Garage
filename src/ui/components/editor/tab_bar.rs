@@ -40,8 +40,19 @@ pub fn draw_tab_bar(
         let path_opt = &tab_paths[idx];
         let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
         let file_name = if is_diagnostics {
-            let err_count: usize = ui.lsp_diagnostics.values().map(|(e, _)| *e).sum();
-            format!("   {}", err_count)
+            let mut err_count = 0;
+            let mut warn_count = 0;
+            for (e, w) in ui.lsp_diagnostics.values() {
+                err_count += *e;
+                warn_count += *w;
+            }
+            if err_count > 0 {
+                format!("  ⊗ {}", err_count)
+            } else if warn_count > 0 {
+                format!("  ⚠ {}", warn_count)
+            } else {
+                "  ⊗ 0".to_string()
+            }
         } else {
             path_opt.as_ref()
                 .and_then(|p| Path::new(p).file_name())
@@ -69,8 +80,19 @@ pub fn draw_tab_bar(
         let path_opt = &tab_paths[idx];
         let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
         let file_name = if is_diagnostics {
-            let err_count: usize = ui.lsp_diagnostics.values().map(|(e, _)| *e).sum();
-            format!("   {}", err_count)
+            let mut err_count = 0;
+            let mut warn_count = 0;
+            for (e, w) in ui.lsp_diagnostics.values() {
+                err_count += *e;
+                warn_count += *w;
+            }
+            if err_count > 0 {
+                format!("  ⊗ {}", err_count)
+            } else if warn_count > 0 {
+                format!("  ⚠ {}", warn_count)
+            } else {
+                "  ⊗ 0".to_string()
+            }
         } else {
             path_opt.as_ref()
                 .and_then(|p| Path::new(p).file_name())
@@ -143,8 +165,19 @@ pub fn draw_tab_bar(
 
         let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
         let file_name = if is_diagnostics {
-            let err_count: usize = ui.lsp_diagnostics.values().map(|(e, _)| *e).sum();
-            format!("   {}", err_count)
+            let mut err_count = 0;
+            let mut warn_count = 0;
+            for (e, w) in ui.lsp_diagnostics.values() {
+                err_count += *e;
+                warn_count += *w;
+            }
+            if err_count > 0 {
+                format!("  ⊗ {}", err_count)
+            } else if warn_count > 0 {
+                format!("  ⚠ {}", warn_count)
+            } else {
+                "  ⊗ 0".to_string()
+            }
         } else {
             path_opt.as_ref()
                 .and_then(|p| Path::new(p).file_name())
@@ -252,8 +285,21 @@ pub fn draw_tab_bar(
                 }
                 if cur_char_x >= tabbar_start_x {
                     if is_diagnostics && char_idx == 0 {
-                        // Draw blue dot
-                        let dot_size = (ui.ui_font_size * 0.55).round().max(7.0);
+                        // Draw circle representing status of diagnostics (red for errors, yellow for warnings, gray for clean)
+                        let mut err_count = 0;
+                        let mut warn_count = 0;
+                        for (e, w) in ui.lsp_diagnostics.values() {
+                            err_count += *e;
+                            warn_count += *w;
+                        }
+                        let dot_color = if err_count > 0 {
+                            [0.95, 0.25, 0.25, 1.0] // Red
+                        } else if warn_count > 0 {
+                            [0.95, 0.70, 0.15, 1.0] // Yellow
+                        } else {
+                            [0.5, 0.5, 0.5, 0.6] // Muted gray
+                        };
+                        let dot_size = (ui.ui_font_size * 0.65).round().max(8.0);
                         let dot_y = (main_y + ui.tabbar_height / 2.0 - dot_size / 2.0).round();
                         ui.push_icon(
                             vertices,
@@ -263,23 +309,8 @@ pub fn draw_tab_bar(
                             "circle",
                             cur_char_x,
                             dot_y,
-                            [0.38, 0.69, 0.94, 1.0], // Blue dot
+                            dot_color,
                             dot_size,
-                        );
-                    } else if is_diagnostics && char_idx == 1 {
-                        // Draw error icon
-                        let icon_sz = (ui.ui_font_size * 0.85).round().max(12.0);
-                        let icon_y = (main_y + ui.tabbar_height / 2.0 - icon_sz / 2.0).round();
-                        ui.push_icon(
-                            vertices,
-                            indices,
-                            atlas,
-                            queue,
-                            "error",
-                            cur_char_x,
-                            icon_y,
-                            [0.95, 0.25, 0.25, 1.0], // Red error icon
-                            icon_sz,
                         );
                     } else {
                         ui.push_char(

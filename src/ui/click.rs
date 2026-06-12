@@ -393,10 +393,27 @@ impl UiState {
                     let path_opt = &tab_paths[idx];
                     let _is_modified = tab_modified.get(idx).copied().unwrap_or(false);
                     let dot_reserved = 18.0f32;
-                    let file_name = path_opt.as_ref()
-                        .and_then(|p| Path::new(p).file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "untitled.txt".to_string());
+                    let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
+                    let file_name = if is_diagnostics {
+                        let mut err_count = 0;
+                        let mut warn_count = 0;
+                        for (e, w) in self.lsp_diagnostics.values() {
+                            err_count += *e;
+                            warn_count += *w;
+                        }
+                        if err_count > 0 {
+                            format!("  ⊗ {}", err_count)
+                        } else if warn_count > 0 {
+                            format!("  ⚠ {}", warn_count)
+                        } else {
+                            "  ⊗ 0".to_string()
+                        }
+                    } else {
+                        path_opt.as_ref()
+                            .and_then(|p| Path::new(p).file_name())
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "untitled.txt".to_string())
+                    };
 
                     let name_w = file_name.chars().count() as f32 * self.ui_char_width;
                     let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);

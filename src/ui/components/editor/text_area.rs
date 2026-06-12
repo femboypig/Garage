@@ -25,9 +25,9 @@ pub fn draw_text_area(
     if active_file_path == Some("diagnostics://project") {
         #[derive(Clone, Debug)]
         enum VisualLine {
-            Header { path: String },
-            Code { path: String, diag: crate::editor::lsp::DiagnosticDetail, line_content: Option<String> },
-            Message { path: String, diag: crate::editor::lsp::DiagnosticDetail },
+            Header { path: String, line: usize, col: usize },
+            Code { path: String, line_idx: usize, line_content: String, is_diagnostic_line: bool, diag: crate::editor::lsp::DiagnosticDetail },
+            Banner { path: String, diag: crate::editor::lsp::DiagnosticDetail },
         }
 
         // Clear click targets
@@ -61,34 +61,52 @@ pub fn draw_text_area(
                 if diags.is_empty() {
                     continue;
                 }
-                let mut file_diags = diags.clone();
-                file_diags.sort_by_key(|d| (d.severity, d.line, d.col));
                 
-                visual_lines.push(VisualLine::Header { path: file_path.clone() });
+                // Cache the file lines if not present
+                if !ui.diagnostics_file_cache.contains_key(file_path) {
+                    if let Ok(content) = std::fs::read_to_string(file_path) {
+                        let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                        ui.diagnostics_file_cache.insert(file_path.clone(), lines);
+                    } else {
+                        ui.diagnostics_file_cache.insert(file_path.clone(), Vec::new());
+                    }
+                }
+                
+                let file_lines = ui.diagnostics_file_cache.get(file_path).cloned().unwrap_or_default();
+                if file_lines.is_empty() {
+                    continue;
+                }
+
+                let mut file_diags = diags.clone();
+                file_diags.sort_by_key(|d| (d.line, d.col));
                 
                 for diag in file_diags {
-                    // Cache the file lines if not present
-                    if !ui.diagnostics_file_cache.contains_key(file_path) {
-                        if let Ok(content) = std::fs::read_to_string(file_path) {
-                            let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-                            ui.diagnostics_file_cache.insert(file_path.clone(), lines);
-                        } else {
-                            ui.diagnostics_file_cache.insert(file_path.clone(), Vec::new());
+                    let start_line = diag.line.saturating_sub(3);
+                    let end_line = (diag.line + 3).min(file_lines.len() - 1);
+                    
+                    visual_lines.push(VisualLine::Header {
+                        path: file_path.clone(),
+                        line: diag.line,
+                        col: diag.col,
+                    });
+                    
+                    for line_idx in start_line..=end_line {
+                        let line_content = file_lines.get(line_idx).cloned().unwrap_or_default();
+                        visual_lines.push(VisualLine::Code {
+                            path: file_path.clone(),
+                            line_idx,
+                            line_content,
+                            is_diagnostic_line: line_idx == diag.line,
+                            diag: diag.clone(),
+                        });
+                        
+                        if line_idx == diag.line {
+                            visual_lines.push(VisualLine::Banner {
+                                path: file_path.clone(),
+                                diag: diag.clone(),
+                            });
                         }
                     }
-                    
-                    let line_content = ui.diagnostics_file_cache.get(file_path)
-                        .and_then(|lines| lines.get(diag.line).cloned());
-                        
-                    visual_lines.push(VisualLine::Code {
-                        path: file_path.clone(),
-                        diag: diag.clone(),
-                        line_content,
-                    });
-                    visual_lines.push(VisualLine::Message {
-                        path: file_path.clone(),
-                        diag: diag.clone(),
-                    });
                 }
             }
         }
@@ -127,8 +145,14 @@ pub fn draw_text_area(
             let row_y = editor_y + (item_idx - start_idx) as f32 * ui.buffer_line_height;
             
             match &visual_lines[item_idx] {
-                VisualLine::Header { path } => {
-                    // Draw a subtle background for the path header
+                VisualLine::Header { path, line, col } => {
+                    // Draw excerpt subheader background (contrast color)
+                    let header_bg = [
+                        ui.config.theme.editor_bg[0] * 0.96,
+                        ui.config.theme.editor_bg[1] * 0.96,
+                        ui.config.theme.editor_bg[2] * 0.96,
+                        1.0,
+                    ];
                     ui.push_quad(
                         vertices,
                         indices,
@@ -137,10 +161,10 @@ pub fn draw_text_area(
                         text_viewport_w,
                         ui.buffer_line_height,
                         white_uv,
-                        [ui.config.theme.editor_bg[0] * 0.95, ui.config.theme.editor_bg[1] * 0.95, ui.config.theme.editor_bg[2] * 0.95, 1.0],
+                        header_bg,
                     );
                     
-                    // Draw header separator lines
+                    // Draw header separator lines (top & bottom)
                     ui.push_quad(
                         vertices,
                         indices,
@@ -162,37 +186,38 @@ pub fn draw_text_area(
                         ui.config.theme.scrollbar_border,
                     );
 
-                    // Format path: filename in primary text color, folder in muted text color
+                    let file_severity = ui.lsp_diagnostics_details.get(path)
+                        .and_then(|v| v.iter().map(|d| d.severity).min())
+                        .unwrap_or(2);
+                    let dot_color = if file_severity == 1 { [0.95, 0.25, 0.25, 1.0] } else { [0.95, 0.70, 0.15, 1.0] };
+                    
+                    let mut pen_x = text_area_x + 8.0;
+                    // Draw dot prefix
+                    pen_x += ui.push_char(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        '•',
+                        pen_x,
+                        (row_y + ui.buffer_font_ascent).round(),
+                        dot_color,
+                        ui.buffer_font_size,
+                        ui.buffer_char_width,
+                    );
+                    pen_x += 4.0;
+
+                    // Format path: filename in default color, folder in muted comment color
                     let path_buf = std::path::Path::new(path);
                     let filename = path_buf.file_name().and_then(|n| n.to_str()).unwrap_or(path);
                     let parent = path_buf.parent().and_then(|p| p.to_str()).unwrap_or("");
                     
-                    // Get relative path from workspace root
                     let current_dir = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
                     let display_parent = if parent.starts_with(&current_dir) {
                         parent[current_dir.len()..].trim_start_matches('/').to_string()
                     } else {
                         parent.to_string()
                     };
-                    
-                    let mut pen_x = text_area_x + 8.0;
-                    if !display_parent.is_empty() {
-                        let parent_slash = format!("{}/", display_parent);
-                        for c in parent_slash.chars() {
-                            pen_x += ui.push_char(
-                                vertices,
-                                indices,
-                                atlas,
-                                queue,
-                                c,
-                                pen_x,
-                                (row_y + ui.buffer_font_ascent).round(),
-                                ui.config.theme.syntax_comment, // muted folder name
-                                ui.buffer_font_size * 0.9,
-                                ui.buffer_char_width,
-                            );
-                        }
-                    }
                     
                     for c in filename.chars() {
                         pen_x += ui.push_char(
@@ -203,64 +228,141 @@ pub fn draw_text_area(
                             c,
                             pen_x,
                             (row_y + ui.buffer_font_ascent).round(),
-                            ui.config.theme.syntax_keyword, // highlighted filename
-                            ui.buffer_font_size * 0.9,
-                            ui.buffer_char_width,
-                        );
-                    }
-                }
-                
-                VisualLine::Code { path, diag, line_content } => {
-                    // Line number prefix: e.g. "  125 │ "
-                    let line_num_str = format!(" {:>4} │ ", diag.line + 1);
-                    let mut pen_x = text_area_x + 8.0;
-                    
-                    for c in line_num_str.chars() {
-                        pen_x += ui.push_char(
-                            vertices,
-                            indices,
-                            atlas,
-                            queue,
-                            c,
-                            pen_x,
-                            (row_y + ui.buffer_font_ascent).round(),
-                            ui.config.theme.syntax_comment, // muted
+                            ui.config.theme.syntax_default,
                             ui.buffer_font_size,
                             ui.buffer_char_width,
                         );
                     }
                     
-                    let code_start_x = pen_x;
-                    
-                    // Render code line
-                    if let Some(line_text) = line_content {
-                        let syntax_colors = ui.get_line_char_colors(line_text);
-                        for (char_idx, c) in line_text.chars().enumerate() {
-                            let char_color = syntax_colors.get(char_idx).copied().unwrap_or(ui.config.theme.syntax_default);
-                            ui.push_char(
+                    if !display_parent.is_empty() {
+                        pen_x += 6.0;
+                        let parent_slash = format!("{}/", display_parent);
+                        for c in parent_slash.chars() {
+                            pen_x += ui.push_char(
                                 vertices,
                                 indices,
                                 atlas,
                                 queue,
                                 c,
-                                code_start_x + char_idx as f32 * ui.buffer_char_width,
+                                pen_x,
                                 (row_y + ui.buffer_font_ascent).round(),
-                                char_color,
-                                ui.buffer_font_size,
+                                ui.config.theme.syntax_comment,
+                                ui.buffer_font_size * 0.9,
                                 ui.buffer_char_width,
                             );
                         }
-                        
-                        // Draw squiggly underline
+                    }
+
+                    // Open File button label on the right
+                    let btn_label = "Open File";
+                    let shortcut_label = "Alt-Enter";
+                    let label_chars = btn_label.chars().count() + 2 + shortcut_label.chars().count();
+                    let right_x = text_area_x + text_viewport_w - (label_chars as f32 * ui.buffer_char_width) - 16.0;
+                    
+                    let mut btn_pen_x = right_x;
+                    for c in btn_label.chars() {
+                        btn_pen_x += ui.push_char(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            c,
+                            btn_pen_x,
+                            (row_y + ui.buffer_font_ascent).round(),
+                            ui.config.theme.syntax_keyword,
+                            ui.buffer_font_size * 0.9,
+                            ui.buffer_char_width,
+                        );
+                    }
+                    btn_pen_x += 8.0;
+                    for c in shortcut_label.chars() {
+                        btn_pen_x += ui.push_char(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            c,
+                            btn_pen_x,
+                            (row_y + ui.buffer_font_ascent).round(),
+                            ui.config.theme.syntax_comment,
+                            ui.buffer_font_size * 0.8,
+                            ui.buffer_char_width,
+                        );
+                    }
+
+                    // Click target for Header
+                    ui.diagnostics_click_targets.push((
+                        text_area_x,
+                        row_y,
+                        text_area_x + text_viewport_w,
+                        row_y + ui.buffer_line_height,
+                        path.clone(),
+                        *line,
+                        *col,
+                    ));
+                }
+                
+                VisualLine::Code { path, line_idx, line_content, is_diagnostic_line, diag } => {
+                    let gutter_w: f32 = 48.0;
+                    // Vertical gutter border line
+                    ui.push_quad(
+                        vertices,
+                        indices,
+                        text_area_x + gutter_w - 6.0,
+                        row_y,
+                        1.0,
+                        ui.buffer_line_height,
+                        white_uv,
+                        ui.config.theme.scrollbar_border,
+                    );
+                    
+                    // Line number text right-aligned
+                    let line_num_str = format!("{}", line_idx + 1);
+                    let num_len = line_num_str.chars().count();
+                    let num_x = text_area_x + gutter_w - 12.0 - (num_len as f32 * ui.buffer_char_width);
+                    ui.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        &line_num_str,
+                        num_x,
+                        (row_y + ui.buffer_font_ascent).round(),
+                        ui.config.theme.line_number_inactive,
+                        ui.buffer_font_size,
+                        ui.buffer_char_width,
+                    );
+
+                    let code_start_x = text_area_x + gutter_w;
+                    // Render syntax highlighted code line
+                    let syntax_colors = ui.get_line_char_colors(line_content);
+                    for (char_idx, c) in line_content.chars().enumerate() {
+                        let char_color = syntax_colors.get(char_idx).copied().unwrap_or(ui.config.theme.syntax_default);
+                        ui.push_char(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            c,
+                            code_start_x + char_idx as f32 * ui.buffer_char_width,
+                            (row_y + ui.buffer_font_ascent).round(),
+                            char_color,
+                            ui.buffer_font_size,
+                            ui.buffer_char_width,
+                        );
+                    }
+                    
+                    // Draw squiggly red/yellow underline under diagnostic range
+                    if *is_diagnostic_line {
                         let start_char = diag.col;
-                        let end_char = diag.end_col.max(diag.col + 1); // at least 1 char wide
+                        let end_char = diag.end_col.max(diag.col + 1);
                         let start_x = code_start_x + start_char as f32 * ui.buffer_char_width;
                         let end_x = code_start_x + end_char as f32 * ui.buffer_char_width;
                         
                         let color = match diag.severity {
-                            1 => [0.95, 0.25, 0.25, 0.9], // Error: Red
-                            2 => [0.95, 0.6, 0.1, 0.9],   // Warning: Yellow/Orange
-                            _ => [0.2, 0.6, 0.9, 0.7],    // Info/Hint: Blue/Gray
+                            1 => [0.95, 0.25, 0.25, 0.9],
+                            2 => [0.95, 0.6, 0.1, 0.9],
+                            _ => [0.2, 0.6, 0.9, 0.7],
                         };
                         
                         let wave_y = row_y + ui.buffer_line_height - 3.0;
@@ -286,25 +388,9 @@ pub fn draw_text_area(
                             wx += wave_period * 0.5;
                             wave_up = !wave_up;
                         }
-                    } else {
-                        let error_msg = "<unable to read source line>";
-                        for (char_idx, c) in error_msg.chars().enumerate() {
-                            ui.push_char(
-                                vertices,
-                                indices,
-                                atlas,
-                                queue,
-                                c,
-                                code_start_x + char_idx as f32 * ui.buffer_char_width,
-                                (row_y + ui.buffer_font_ascent).round(),
-                                ui.config.theme.syntax_comment,
-                                ui.buffer_font_size,
-                                ui.buffer_char_width,
-                            );
-                        }
                     }
                     
-                    // Add click target for the Code line
+                    // Click target for Code line
                     ui.diagnostics_click_targets.push((
                         text_area_x,
                         row_y,
@@ -316,38 +402,50 @@ pub fn draw_text_area(
                     ));
                 }
                 
-                VisualLine::Message { path, diag } => {
-                    // Empty space equivalent to " {:>4} │ "
-                    let prefix_len = 8; // " 125 │ " is 7 chars, plus some padding
-                    let msg_start_x = text_area_x + 8.0 + prefix_len as f32 * ui.buffer_char_width;
+                VisualLine::Banner { path, diag } => {
+                    let gutter_w: f32 = 48.0;
+                    let code_start_x = text_area_x + gutter_w;
                     
-                    // Severity icon and color
-                    let (icon_name, color, label) = match diag.severity {
-                        1 => ("error", [0.95, 0.25, 0.25, 1.0], "Error"),
-                        2 => ("circle", [0.95, 0.6, 0.1, 1.0], "Warning"),
-                        _ => ("circle", [0.2, 0.6, 0.9, 1.0], "Info"),
+                    let bg_color = match diag.severity {
+                        1 => [0.95, 0.25, 0.25, 0.12], // Error: light red
+                        2 => [0.95, 0.70, 0.15, 0.12], // Warning: light yellow/orange
+                        _ => [0.2, 0.6, 0.9, 0.12],    // Info: light blue
                     };
                     
-                    // Draw icon
-                    let icon_sz = (ui.buffer_font_size * 0.85).round().max(10.0);
-                    let icon_y = (row_y + (ui.buffer_line_height - icon_sz) / 2.0).round();
-                    ui.push_icon(
+                    // Draw full width banner background (excluding gutter)
+                    ui.push_quad(
                         vertices,
                         indices,
-                        atlas,
-                        queue,
-                        icon_name,
-                        msg_start_x,
-                        icon_y,
-                        color,
-                        icon_sz,
+                        code_start_x,
+                        row_y,
+                        text_viewport_w - gutter_w,
+                        ui.buffer_line_height,
+                        white_uv,
+                        bg_color,
                     );
                     
-                    // Draw message
-                    let mut pen_x = msg_start_x + icon_sz + 8.0;
-                    let full_message = if diag.message.is_empty() { label.to_string() } else { diag.message.clone() };
-                    for c in full_message.chars() {
-                        if pen_x + ui.buffer_char_width > text_area_x + text_viewport_w - 8.0 {
+                    // Draw solid left border indicator
+                    let border_color = match diag.severity {
+                        1 => [0.95, 0.25, 0.25, 1.0],
+                        2 => [0.95, 0.70, 0.15, 1.0],
+                        _ => [0.2, 0.6, 0.9, 1.0],
+                    };
+                    ui.push_quad(
+                        vertices,
+                        indices,
+                        code_start_x,
+                        row_y,
+                        3.0,
+                        ui.buffer_line_height,
+                        white_uv,
+                        border_color,
+                    );
+                    
+                    // Render diagnostic message
+                    let mut pen_x = code_start_x + 12.0;
+                    let msg_color = border_color;
+                    for c in diag.message.chars() {
+                        if pen_x + ui.buffer_char_width > text_area_x + text_viewport_w - 70.0 {
                             break;
                         }
                         pen_x += ui.push_char(
@@ -358,13 +456,31 @@ pub fn draw_text_area(
                             c,
                             pen_x,
                             (row_y + ui.buffer_font_ascent).round(),
-                            color,
+                            msg_color,
                             ui.buffer_font_size,
                             ui.buffer_char_width,
                         );
                     }
                     
-                    // Add click target for the Message line
+                    // Render copy button on the right
+                    let copy_label = "[Copy]";
+                    let mut copy_pen_x = text_area_x + text_viewport_w - 60.0;
+                    for c in copy_label.chars() {
+                        copy_pen_x += ui.push_char(
+                            vertices,
+                            indices,
+                            atlas,
+                            queue,
+                            c,
+                            copy_pen_x,
+                            (row_y + ui.buffer_font_ascent).round(),
+                            ui.config.theme.syntax_comment,
+                            ui.buffer_font_size * 0.9,
+                            ui.buffer_char_width,
+                        );
+                    }
+                    
+                    // Click target for Banner line
                     ui.diagnostics_click_targets.push((
                         text_area_x,
                         row_y,
@@ -501,9 +617,15 @@ pub fn draw_text_area(
         // Draw LSP compilation warnings/errors underlines under characters
         if let Some(diags) = ui.lsp_diagnostics_details.get(&abs_path) {
             for d in diags {
+                if d.severity > 2 {
+                    continue;
+                }
                 if line_idx >= d.line && line_idx <= d.end_line {
                     let start_char = if d.line == line_idx { d.col } else { 0 };
-                    let end_char = if d.end_line == line_idx { d.end_col } else { char_count };
+                    let mut end_char = if d.end_line == line_idx { d.end_col } else { char_count };
+                    if start_char == end_char {
+                        end_char = (start_char + 1).min(char_count);
+                    }
                     
                     if start_char < end_char && start_char < char_count {
                         let start_col_clamped = start_char.max(ui.scroll_x);
@@ -520,8 +642,7 @@ pub fn draw_text_area(
                                 let color = match d.severity {
                                     1 => [0.95, 0.25, 0.25, 0.9], // Error: Red
                                     2 => [0.95, 0.6, 0.1, 0.9],   // Warning: Yellow/Orange
-                                    3 => [0.2, 0.6, 0.9, 0.7],    // Info: Blue
-                                    _ => [0.5, 0.5, 0.5, 0.7],    // Hint: Gray
+                                    _ => [0.5, 0.5, 0.5, 0.7],
                                 };
                                 let wave_y = row_y + ui.buffer_line_height - 3.0;
                                 let wave_height = 2.0f32;

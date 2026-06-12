@@ -90,7 +90,23 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
             if let Err(e) = buffer.load_file(path) {
                 log::warn!("Failed to load file '{}': {}. Starting with empty buffer.", path, e);
             }
-            Some(path.clone())
+            if path.starts_with("diagnostics://") {
+                Some(path.clone())
+            } else {
+                let path_buf = std::path::PathBuf::from(path);
+                let normalized = if path_buf.is_absolute() {
+                    let current_dir = std::env::current_dir().unwrap_or_default();
+                    if let Ok(rel) = path_buf.strip_prefix(&current_dir) {
+                        rel.to_path_buf()
+                    } else {
+                        path_buf
+                    }
+                } else {
+                    path_buf
+                };
+                let normalized = crate::editor::lsp::normalize_path(&normalized);
+                Some(normalized.to_string_lossy().to_string())
+            }
         } else {
             None
         };
@@ -115,6 +131,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     }
 
     let mut state = AppState::new(initial_tab, lsp_client);
+    if let Some(ref path) = state.tabs[0].path {
+        ui.selected_file = Some(std::path::PathBuf::from(path));
+    }
 
     // Track dynamic vertices and indices
     let mut vertices: Vec<Vertex> = Vec::new();

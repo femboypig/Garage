@@ -84,7 +84,62 @@ pub fn handle_cursor_moved(
                 let sb_x = size.width as f32 - scrollbar_width;
                 let minimap_x = sb_x - minimap_width;
                 
-                if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit - 14.0 {
+                let mut mouse_in_popup = false;
+                if let Some(diag) = &ui.hovered_diagnostic {
+                    if let Some((line_idx, col_idx)) = ui.hover_pos {
+                        let char_x = text_area_x + (col_idx as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
+                        let char_y = editor_top + (line_idx as isize - ui.scroll_y as isize) as f32 * ui.buffer_line_height;
+                        
+                        let label = match diag.severity {
+                            1 => "Syntax Error",
+                            2 => "Warning",
+                            _ => "Info",
+                        };
+                        let max_w = 400.0f32;
+                        let max_chars_per_line = (max_w / ui.ui_char_width).floor() as usize;
+                        let full_message = if diag.message.is_empty() { label.to_string() } else { format!("{}: {}", label, diag.message) };
+                        
+                        let mut lines = Vec::new();
+                        let words: Vec<&str> = full_message.split_whitespace().collect();
+                        let mut current_line = String::new();
+                        for word in words {
+                            if current_line.is_empty() {
+                                current_line = word.to_string();
+                            } else if (current_line.chars().count() + 1 + word.chars().count()) <= max_chars_per_line {
+                                current_line.push(' ');
+                                current_line.push_str(word);
+                            } else {
+                                lines.push(current_line);
+                                current_line = word.to_string();
+                            }
+                        }
+                        if !current_line.is_empty() { lines.push(current_line); }
+                        
+                        let line_count = lines.len();
+                        let popup_w = (lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f32 * ui.ui_char_width + 24.0 + 20.0).max(120.0);
+                        let popup_h = line_count as f32 * ui.ui_line_height + 16.0;
+                        
+                        let mut popup_x = char_x.round();
+                        let mut popup_y = (char_y + ui.buffer_line_height + 4.0).round();
+                        
+                        if popup_x + popup_w > minimap_x {
+                            popup_x = (minimap_x - popup_w - 10.0).max(text_area_x + 10.0);
+                        }
+                        let editor_bottom_limit = status_y;
+                        let editor_height = editor_bottom_limit - editor_top;
+                        if popup_y + popup_h > editor_top + editor_height {
+                            popup_y = (char_y - popup_h - 4.0).max(editor_top + 4.0);
+                        }
+                        
+                        if state.mouse_x >= popup_x && state.mouse_x < popup_x + popup_w && state.mouse_y >= popup_y && state.mouse_y < popup_y + popup_h {
+                            mouse_in_popup = true;
+                        }
+                    }
+                }
+
+                if mouse_in_popup {
+                    hover_reset = false;
+                } else if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit - 14.0 {
                     let line_idx = (((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y).min(active_tab.buffer.len().saturating_sub(1));
                     let col_idx = (((state.mouse_x - text_area_x) / ui.buffer_char_width).floor() as usize + ui.scroll_x).min(active_tab.buffer.lines()[line_idx].chars().count());
                     
@@ -153,13 +208,57 @@ pub fn handle_cursor_moved(
         let new_height = size.height as f32 - ui.status_height - target_y;
         ui.dock_height = new_height;
     } else if state.is_dragging_scroll {
+        let active_path = state.tabs[state.active_tab_idx].path.as_deref().unwrap_or("");
+        let is_diagnostics = active_path.starts_with("diagnostics://");
+
         let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
         let status_y = (size.height as f32 - ui.status_height).round();
-        let editor_height = status_y - editor_top - 14.0;
+
+        let show_horizontal_scrollbar = if is_diagnostics {
+            false
+        } else {
+            let max_line_len = ui.get_max_line_len(&state.tabs[state.active_tab_idx].buffer, Some(active_path), state.tabs[state.active_tab_idx].cursor.line);
+            let max_line_digits = state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3);
+            let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
+            let text_area_x = ui.sidebar_width + gutter_width;
+            let scrollbar_width = ui.scrollbar_width();
+            let minimap_width = ui.minimap_width();
+            let sb_x = size.width as f32 - scrollbar_width;
+            let minimap_x = sb_x - minimap_width;
+            let text_viewport_w = (minimap_x - text_area_x).max(10.0);
+            let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
+            max_line_len > visible_cols
+        };
+        let hs_height = if show_horizontal_scrollbar { 14.0 } else { 0.0 };
+        let editor_height = status_y - editor_top - hs_height;
         let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-        let ratio = visible_lines as f32 / state.tabs[state.active_tab_idx].buffer.len() as f32;
+
+        let virtual_len = if is_diagnostics {
+            let mut count = 0;
+            for (file_path, diags) in &ui.lsp_diagnostics_details {
+                if diags.is_empty() {
+                    continue;
+                }
+                let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
+                for diag in diags {
+                    let start_line = diag.line.saturating_sub(3);
+                    let end_line = if file_lines_len > 0 {
+                        (diag.line + 3).min(file_lines_len - 1)
+                    } else {
+                        diag.line + 3
+                    };
+                    let num_code_lines = end_line - start_line + 1;
+                    count += 1 + num_code_lines + 1; // Header + Code lines + Banner
+                }
+            }
+            count.max(1)
+        } else {
+            state.tabs[state.active_tab_idx].buffer.len()
+        };
+
+        let ratio = visible_lines as f32 / virtual_len as f32;
         let thumb_h = (editor_height * ratio).clamp(20.0, editor_height);
-        let max_scroll = (state.tabs[state.active_tab_idx].buffer.len() as isize - visible_lines as isize).max(0) as f32;
+        let max_scroll = (virtual_len as isize - visible_lines as isize).max(0) as f32;
         let relative_y = state.mouse_y - editor_top - state.scroll_drag_offset_y;
         let scroll_range = editor_height - thumb_h;
         let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
@@ -438,8 +537,6 @@ pub fn handle_mouse_input(
                             } else {
                                 size.height as f32 - ui.status_height
                             };
-                            let editor_height = editor_bottom_limit - editor_top - 14.0;
-                            
                             let is_diagnostics = state.tabs[active_tab_idx].path.as_deref().map_or(false, |p| p.starts_with("diagnostics://"));
                             let active_tab_len = state.tabs[active_tab_idx].buffer.len();
                             let max_line_digits = active_tab_len.to_string().len().max(3);
@@ -451,6 +548,39 @@ pub fn handle_mouse_input(
                             let minimap_x = sb_x - minimap_width;
                             let text_viewport_w = (minimap_x - text_area_x).max(10.0);
 
+                            let show_horizontal_scrollbar = if is_diagnostics {
+                                false
+                            } else {
+                                let max_line_len = ui.get_max_line_len(&state.tabs[active_tab_idx].buffer, state.tabs[active_tab_idx].path.as_deref(), state.tabs[active_tab_idx].cursor.line);
+                                let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
+                                max_line_len > visible_cols
+                            };
+                            let hs_height = if show_horizontal_scrollbar { 14.0 } else { 0.0 };
+                            let editor_height = editor_bottom_limit - editor_top - hs_height;
+
+                            let virtual_len = if is_diagnostics {
+                                let mut count = 0;
+                                for (file_path, diags) in &ui.lsp_diagnostics_details {
+                                    if diags.is_empty() {
+                                        continue;
+                                    }
+                                    let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
+                                    for diag in diags {
+                                        let start_line = diag.line.saturating_sub(3);
+                                        let end_line = if file_lines_len > 0 {
+                                            (diag.line + 3).min(file_lines_len - 1)
+                                        } else {
+                                            diag.line + 3
+                                        };
+                                        let num_code_lines = end_line - start_line + 1;
+                                        count += 1 + num_code_lines + 1; // Header + Code lines + Banner
+                                    }
+                                }
+                                count.max(1)
+                            } else {
+                                active_tab_len
+                            };
+                            
                             // 1. Check if click is on minimap
                             if !is_diagnostics && state.mouse_x >= minimap_x && state.mouse_x < sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit {
                                 state.is_dragging_minimap = true;
@@ -483,9 +613,9 @@ pub fn handle_mouse_input(
                             else if state.mouse_x >= sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit {
                                 state.is_dragging_scroll = true;
                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-                                let ratio = visible_lines as f32 / active_tab_len as f32;
+                                let ratio = visible_lines as f32 / virtual_len as f32;
                                 let thumb_h = (editor_height * ratio).clamp(20.0, editor_height);
-                                let max_scroll = (active_tab_len as isize - visible_lines as isize).max(0) as f32;
+                                let max_scroll = (virtual_len as isize - visible_lines as isize).max(0) as f32;
                                 
                                 let scroll_ratio = if max_scroll > 0.0 { ui.scroll_y as f32 / max_scroll } else { 0.0 };
                                 let thumb_y = editor_top + scroll_ratio * (editor_height - thumb_h);
@@ -827,11 +957,55 @@ pub fn handle_mouse_wheel(
         MouseScrollDelta::PixelDelta(pos) => ((pos.y / (ui.buffer_line_height as f64)) * 3.0) as isize * -1,
     };
  
+    let active_path = state.tabs[state.active_tab_idx].path.as_deref().unwrap_or("");
+    let is_diagnostics = active_path.starts_with("diagnostics://");
+
     let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
     let status_y = (window.inner_size().height as f32 - ui.status_height).round();
-    let editor_height = status_y - editor_top - 14.0;
+
+    let show_horizontal_scrollbar = if is_diagnostics {
+        false
+    } else {
+        let max_line_len = ui.get_max_line_len(&state.tabs[state.active_tab_idx].buffer, Some(active_path), state.tabs[state.active_tab_idx].cursor.line);
+        let max_line_digits = state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3);
+        let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
+        let text_area_x = ui.sidebar_width + gutter_width;
+        let scrollbar_width = ui.scrollbar_width();
+        let minimap_width = ui.minimap_width();
+        let sb_x = size.width as f32 - scrollbar_width;
+        let minimap_x = sb_x - minimap_width;
+        let text_viewport_w = (minimap_x - text_area_x).max(10.0);
+        let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
+        max_line_len > visible_cols
+    };
+    let hs_height = if show_horizontal_scrollbar { 14.0 } else { 0.0 };
+    let editor_height = status_y - editor_top - hs_height;
     let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-    let max_scroll = (state.tabs[state.active_tab_idx].buffer.len() as isize - visible_lines as isize).max(0);
+
+    let virtual_len = if is_diagnostics {
+        let mut count = 0;
+        for (file_path, diags) in &ui.lsp_diagnostics_details {
+            if diags.is_empty() {
+                continue;
+            }
+            let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
+            for diag in diags {
+                let start_line = diag.line.saturating_sub(3);
+                let end_line = if file_lines_len > 0 {
+                    (diag.line + 3).min(file_lines_len - 1)
+                } else {
+                    diag.line + 3
+                };
+                let num_code_lines = end_line - start_line + 1;
+                count += 1 + num_code_lines + 1; // Header + Code lines + Banner
+            }
+        }
+        count.max(1)
+    } else {
+        state.tabs[state.active_tab_idx].buffer.len()
+    };
+
+    let max_scroll = (virtual_len as isize - visible_lines as isize).max(0);
  
     let new_scroll = ui.scroll_y as isize + scroll_lines;
     ui.scroll_y = new_scroll.clamp(0, max_scroll) as usize;

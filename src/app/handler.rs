@@ -20,8 +20,38 @@ pub fn handle_action(
 ) {
     match action {
         UiAction::OpenFile(path) => {
+            let current_dir = std::env::current_dir().unwrap_or_default();
             let path_str = path.to_string_lossy().to_string();
-            let _is_new = if let Some(existing_idx) = state.tabs.iter().position(|t| t.path.as_ref() == Some(&path_str)) {
+            let path_str = if path_str.starts_with("diagnostics://") {
+                path_str
+            } else {
+                let normalized_path = if path.is_absolute() {
+                    if let Ok(rel) = path.strip_prefix(&current_dir) {
+                        rel.to_path_buf()
+                    } else {
+                        path.clone()
+                    }
+                } else {
+                    path.clone()
+                };
+                let normalized_path = crate::editor::lsp::normalize_path(&normalized_path);
+                normalized_path.to_string_lossy().to_string()
+            };
+            let _is_new = if let Some(existing_idx) = state.tabs.iter().position(|t| {
+                t.path.as_ref().map_or(false, |p| {
+                    if p.starts_with("diagnostics://") {
+                        p == &path_str
+                    } else {
+                        let p_buf = std::path::PathBuf::from(p);
+                        let p_norm = if p_buf.is_absolute() {
+                            p_buf.strip_prefix(&current_dir).map(|r| r.to_path_buf()).unwrap_or(p_buf)
+                        } else {
+                            p_buf
+                        };
+                        crate::editor::lsp::normalize_path(&p_norm).to_string_lossy().to_string() == path_str
+                    }
+                })
+            }) {
                 state.tabs[state.active_tab_idx].scroll_x = ui.scroll_x;
                 state.tabs[state.active_tab_idx].scroll_y = ui.scroll_y;
                 state.active_tab_idx = existing_idx;
@@ -48,6 +78,7 @@ pub fn handle_action(
                 true
             };
             if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
+                ui.selected_file = Some(std::path::PathBuf::from(active_path));
                 if !active_path.starts_with("diagnostics://") {
                     ui.update_git_diff(Some(active_path));
                     ui.update_git_file_blame(Some(active_path));
@@ -61,6 +92,8 @@ pub fn handle_action(
                         lsp.notify_active_file("");
                     }
                 }
+            } else {
+                ui.selected_file = None;
             }
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
@@ -217,6 +250,11 @@ pub fn handle_action(
             state.active_tab_idx = idx;
             ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
             ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
+            if let Some(ref path) = state.tabs[idx].path {
+                ui.selected_file = Some(std::path::PathBuf::from(path));
+            } else {
+                ui.selected_file = None;
+            }
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
             ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
@@ -251,6 +289,11 @@ pub fn handle_action(
                 state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
                 ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
                 ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
+                if let Some(ref path) = state.tabs[state.active_tab_idx].path {
+                    ui.selected_file = Some(std::path::PathBuf::from(path));
+                } else {
+                    ui.selected_file = None;
+                }
                 let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
                 let size = window.inner_size();
                 ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
@@ -277,6 +320,11 @@ pub fn handle_action(
             state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
             ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
             ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
+            if let Some(ref path) = state.tabs[state.active_tab_idx].path {
+                ui.selected_file = Some(std::path::PathBuf::from(path));
+            } else {
+                ui.selected_file = None;
+            }
             ui.tab_to_close = None;
             ui.active_modal = None;
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
@@ -316,6 +364,11 @@ pub fn handle_action(
             state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
             ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
             ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
+            if let Some(ref path) = state.tabs[state.active_tab_idx].path {
+                ui.selected_file = Some(std::path::PathBuf::from(path));
+            } else {
+                ui.selected_file = None;
+            }
             ui.tab_to_close = None;
             ui.active_modal = None;
             ui.rebuild_tree();
