@@ -104,7 +104,9 @@ pub struct UiState {
     pub diagnostics_click_targets: Vec<(f32, f32, f32, f32, String, usize, usize, String)>,
     pub diagnostics_file_cache: std::collections::HashMap<String, Vec<String>>,
     pub collapsed_diagnostics: std::collections::HashSet<String>,
+    pub diagnostics_changed: bool,
 }
+
 
 impl UiState {
     pub fn new(
@@ -239,6 +241,7 @@ impl UiState {
             diagnostics_click_targets: Vec::new(),
             diagnostics_file_cache: std::collections::HashMap::new(),
             collapsed_diagnostics: std::collections::HashSet::new(),
+            diagnostics_changed: true,
         };
 
         state.rebuild_tree();
