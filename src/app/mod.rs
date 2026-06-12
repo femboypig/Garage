@@ -221,6 +221,15 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                     let size = window.inner_size();
                     
+                    // Sync active tab buffers to diagnostics file cache
+                    for tab in &state.tabs {
+                        if let Some(ref path) = tab.path {
+                            if !path.starts_with("diagnostics://") {
+                                ui.diagnostics_file_cache.insert(path.clone(), tab.buffer.lines().to_vec());
+                            }
+                        }
+                    }
+
                     let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
                     let tab_modified: Vec<bool> = state.tabs.iter().map(|t| t.buffer.is_modified).collect();
 
