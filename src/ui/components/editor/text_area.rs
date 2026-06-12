@@ -224,11 +224,13 @@ pub fn draw_text_area(
                     
                     // 2. Draw unsaved changes dot or empty space
                     let mut is_modified = false;
+                    let target_path = std::path::PathBuf::from(path);
+                    let target_path_canon = target_path.canonicalize().unwrap_or(target_path);
                     for (i, p_opt) in tab_paths.iter().enumerate() {
                         if let Some(p) = p_opt {
-                            let abs_p = crate::editor::lsp::get_absolute_path(p);
-                            let abs_path = crate::editor::lsp::get_absolute_path(path);
-                            if abs_p == abs_path {
+                            let p_buf = std::path::PathBuf::from(p);
+                            let p_canon = p_buf.canonicalize().unwrap_or(p_buf);
+                            if p_canon == target_path_canon {
                                 is_modified = tab_modified.get(i).copied().unwrap_or(false);
                                 break;
                             }
@@ -593,35 +595,40 @@ pub fn draw_text_area(
         let char_count = line_text.chars().count();
         let mut char_colors = vec![default_color; char_count];
 
+        let mut has_tokens = false;
         if let Some(tokens) = tokens_opt {
-            for token in tokens {
-                if token.line == line_idx {
-                    let start = token.start_col;
-                    let end = (token.start_col + token.length).min(char_count);
-                    
-                    let token_color = match token.token_type.as_str() {
-                        "keyword" | "modifier" => ui.config.theme.syntax_keyword,
-                        "string" => ui.config.theme.syntax_string,
-                        "comment" => ui.config.theme.syntax_comment,
-                        "number" => ui.config.theme.syntax_number,
-                        "type" | "class" | "struct" | "interface" | "enum" | "typeParameter" => ui.config.theme.syntax_type,
-                        "function" | "method" => ui.config.theme.syntax_attribute,
-                        "macro" => ui.config.theme.syntax_macro,
-                        "namespace" => ui.config.theme.syntax_namespace,
-                        "enumMember" => ui.config.theme.syntax_enum_member,
-                        "parameter" => ui.config.theme.syntax_parameter,
-                        "variable" => ui.config.theme.syntax_variable,
-                        "property" => ui.config.theme.syntax_property,
-                        "operator" => ui.config.theme.syntax_operator,
-                        _ => default_color,
-                    };
-                    
-                    for c_idx in start..end {
-                        char_colors[c_idx] = token_color;
+            if !tokens.is_empty() {
+                has_tokens = true;
+                for token in tokens {
+                    if token.line == line_idx {
+                        let start = token.start_col;
+                        let end = (token.start_col + token.length).min(char_count);
+                        
+                        let token_color = match token.token_type.as_str() {
+                            "keyword" | "modifier" => ui.config.theme.syntax_keyword,
+                            "string" => ui.config.theme.syntax_string,
+                            "comment" => ui.config.theme.syntax_comment,
+                            "number" => ui.config.theme.syntax_number,
+                            "type" | "class" | "struct" | "interface" | "enum" | "typeParameter" => ui.config.theme.syntax_type,
+                            "function" | "method" => ui.config.theme.syntax_attribute,
+                            "macro" => ui.config.theme.syntax_macro,
+                            "namespace" => ui.config.theme.syntax_namespace,
+                            "enumMember" => ui.config.theme.syntax_enum_member,
+                            "parameter" => ui.config.theme.syntax_parameter,
+                            "variable" => ui.config.theme.syntax_variable,
+                            "property" => ui.config.theme.syntax_property,
+                            "operator" => ui.config.theme.syntax_operator,
+                            _ => default_color,
+                        };
+                        
+                        for c_idx in start..end {
+                            char_colors[c_idx] = token_color;
+                        }
                     }
                 }
             }
-        } else {
+        }
+        if !has_tokens {
             char_colors = ui.get_line_char_colors(line_text);
         }
         
