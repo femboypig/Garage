@@ -99,6 +99,18 @@ pub fn draw_scrollbars(
             white_uv,
             thumb_color,
         );
+    } else {
+        // Draw editor background in scrollbar area to avoid a black gap when scrollbar is hidden
+        ui.push_quad(
+            vertices,
+            indices,
+            sb_x - 1.0,
+            editor_y,
+            scrollbar_width + 1.0,
+            total_editor_height,
+            white_uv,
+            ui.config.theme.editor_bg,
+        );
     }
 
     // --- 2. Draw Horizontal Scrollbar ---
