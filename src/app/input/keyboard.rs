@@ -9,6 +9,8 @@ use crate::ui::{UiState, UiAction};
 use crate::renderer::atlas::FontAtlas;
 use crate::app::state::AppState;
 use crate::app::handler::handle_action;
+use crate::editor::buffer::Buffer;
+use crate::editor::cursor::Cursor;
 use super::mouse::update_cursor_icon;
 
 
@@ -63,6 +65,23 @@ pub fn handle_keyboard_input(
         return;
     }
  
+    let (active_path_start, old_content) = {
+        if state.active_tab_idx < state.tabs.len() {
+            let active_tab = &state.tabs[state.active_tab_idx];
+            if let Some(ref path) = active_tab.path {
+                if !path.starts_with("diagnostics://") {
+                    (Some(path.clone()), Some(active_tab.buffer.lines().to_vec()))
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        }
+    };
+
     let ctrl = state.modifiers.control_key();
     let shift = state.modifiers.shift_key();
     let alt = state.modifiers.alt_key();
@@ -131,6 +150,227 @@ pub fn handle_keyboard_input(
         return;
     }
  
+    // Diagnostics tab input routing
+    if state.tabs[state.active_tab_idx].path.as_deref() == Some("diagnostics://project") {
+        if let Some(action) = crate::editor::keymap::map_key(&logical_key, physical_key, ctrl, shift, alt) {
+            let is_editing_action = match &action {
+                crate::editor::actions::Action::InsertChar(_) |
+                crate::editor::actions::Action::InsertTab |
+                crate::editor::actions::Action::InsertNewLine |
+                crate::editor::actions::Action::DeleteLeft |
+                crate::editor::actions::Action::DeleteRight |
+                crate::editor::actions::Action::Cut |
+                crate::editor::actions::Action::Paste |
+                crate::editor::actions::Action::Undo |
+                crate::editor::actions::Action::Redo |
+                crate::editor::actions::Action::SaveFile => true,
+                _ => false,
+            };
+
+            let is_navigation_action = match &action {
+                crate::editor::actions::Action::MoveUp { .. } |
+                crate::editor::actions::Action::MoveDown { .. } |
+                crate::editor::actions::Action::MoveLeft { .. } |
+                crate::editor::actions::Action::MoveRight { .. } |
+                crate::editor::actions::Action::MoveToLineStart { .. } |
+                crate::editor::actions::Action::MoveToLineEnd { .. } => true,
+                _ => false,
+            };
+
+            if is_navigation_action {
+                match &action {
+                    crate::editor::actions::Action::MoveUp { .. } => {
+                        let active_tab = &mut state.tabs[state.active_tab_idx];
+                        active_tab.cursor.clear_selection();
+                        let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                        if active_tab.cursor.line > 0 {
+                            active_tab.cursor.line -= 1;
+                        }
+                        let line_len = visual_lines.get(active_tab.cursor.line).map_or(0, |vl| match vl {
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+                        });
+                        active_tab.cursor.col = active_tab.cursor.col.min(line_len);
+                        active_tab.cursor.intended_col = active_tab.cursor.col;
+                    }
+                    crate::editor::actions::Action::MoveDown { .. } => {
+                        let active_tab = &mut state.tabs[state.active_tab_idx];
+                        active_tab.cursor.clear_selection();
+                        let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                        if !visual_lines.is_empty() && active_tab.cursor.line < visual_lines.len() - 1 {
+                            active_tab.cursor.line += 1;
+                        }
+                        let line_len = visual_lines.get(active_tab.cursor.line).map_or(0, |vl| match vl {
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+                        });
+                        active_tab.cursor.col = active_tab.cursor.col.min(line_len);
+                        active_tab.cursor.intended_col = active_tab.cursor.col;
+                    }
+                    crate::editor::actions::Action::MoveLeft { .. } => {
+                        let active_tab = &mut state.tabs[state.active_tab_idx];
+                        active_tab.cursor.clear_selection();
+                        if active_tab.cursor.col > 0 {
+                            active_tab.cursor.col -= 1;
+                        } else if active_tab.cursor.line > 0 {
+                            active_tab.cursor.line -= 1;
+                            let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                            let line_len = visual_lines.get(active_tab.cursor.line).map_or(0, |vl| match vl {
+                                crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                                _ => 0,
+                            });
+                            active_tab.cursor.col = line_len;
+                        }
+                        active_tab.cursor.intended_col = active_tab.cursor.col;
+                    }
+                    crate::editor::actions::Action::MoveRight { .. } => {
+                        let active_tab = &mut state.tabs[state.active_tab_idx];
+                        active_tab.cursor.clear_selection();
+                        let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                        let line_len = visual_lines.get(active_tab.cursor.line).map_or(0, |vl| match vl {
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+                        });
+                        if active_tab.cursor.col < line_len {
+                            active_tab.cursor.col += 1;
+                        } else if active_tab.cursor.line < visual_lines.len().saturating_sub(1) {
+                            active_tab.cursor.line += 1;
+                            active_tab.cursor.col = 0;
+                        }
+                        active_tab.cursor.intended_col = active_tab.cursor.col;
+                    }
+                    crate::editor::actions::Action::MoveToLineStart { .. } => {
+                        let active_tab = &mut state.tabs[state.active_tab_idx];
+                        active_tab.cursor.clear_selection();
+                        active_tab.cursor.col = 0;
+                        active_tab.cursor.intended_col = 0;
+                    }
+                    crate::editor::actions::Action::MoveToLineEnd { .. } => {
+                        let active_tab = &mut state.tabs[state.active_tab_idx];
+                        active_tab.cursor.clear_selection();
+                        let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                        let line_len = visual_lines.get(active_tab.cursor.line).map_or(0, |vl| match vl {
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+                        });
+                        active_tab.cursor.col = line_len;
+                        active_tab.cursor.intended_col = line_len;
+                    }
+                    _ => {}
+                }
+                window.request_redraw();
+                return;
+            }
+
+            if is_editing_action {
+                if matches!(action, crate::editor::actions::Action::SaveFile) {
+                    // Save all modified tabs in memory
+                    for tab in &mut state.tabs {
+                        if let Some(ref p) = tab.path {
+                            if !p.starts_with("diagnostics://") && tab.buffer.is_modified {
+                                let _ = tab.buffer.save_file(p);
+                                if let Some(ref lsp) = state.lsp_client {
+                                    lsp.notify_save(p);
+                                }
+                            }
+                        }
+                    }
+                    window.request_redraw();
+                    return;
+                }
+
+                let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                let current_visual_line = {
+                    let active_tab = &state.tabs[state.active_tab_idx];
+                    visual_lines.get(active_tab.cursor.line).cloned()
+                };
+
+                if let Some(crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { path, line_idx, line_content, .. }) = current_visual_line {
+                    // Get or create target tab index
+                    let target_tab_idx = if let Some(idx) = state.tabs.iter().position(|t| t.path.as_deref() == Some(&path)) {
+                        idx
+                    } else {
+                        let mut new_buf = Buffer::new();
+                        if let Err(e) = new_buf.load_file(&path) {
+                            log::warn!("Failed to load file '{}' in diagnostics view: {}", path, e);
+                        }
+                        state.tabs.push(crate::app::Tab {
+                            path: Some(path.clone()),
+                            buffer: new_buf,
+                            cursor: Cursor::new(),
+                            scroll_x: 0,
+                            scroll_y: 0,
+                        });
+                        state.tabs.len() - 1
+                    };
+
+                    let target_line = line_idx.min(state.tabs[target_tab_idx].buffer.len().saturating_sub(1));
+                    let line_len = state.tabs[target_tab_idx].buffer.lines().get(target_line).map_or(0, |l| l.chars().count());
+                    let target_col = {
+                        let active_tab = &state.tabs[state.active_tab_idx];
+                        active_tab.cursor.col.min(line_content.chars().count()).min(line_len)
+                    };
+
+                    state.tabs[target_tab_idx].cursor.line = target_line;
+                    state.tabs[target_tab_idx].cursor.col = target_col;
+                    state.tabs[target_tab_idx].cursor.intended_col = target_col;
+                    state.tabs[target_tab_idx].cursor.selection_anchor = None;
+
+                    // Temporarily set active tab to target tab and execute handler
+                    let original_active_tab_idx = state.active_tab_idx;
+                    state.active_tab_idx = target_tab_idx;
+
+                    // Execute key input handling on target tab
+                    handle_keyboard_input(ui, state, window, elwt, gpu, atlas, font_bytes, logical_key.clone(), physical_key);
+
+                    // Update diagnostics cache in memory immediately so it redraws with correct text
+                    let new_line = state.tabs[target_tab_idx].cursor.line;
+                    let new_col = state.tabs[target_tab_idx].cursor.col;
+                    let target_lines = state.tabs[target_tab_idx].buffer.lines().to_vec();
+                    
+                    // Notify LSP of target file change
+                    if let Some(ref lsp) = state.lsp_client {
+                        lsp.notify_change(&path, target_lines.join("\n"));
+                    }
+                    
+                    ui.diagnostics_file_cache.insert(path.clone(), target_lines);
+
+                    // Restore diagnostics tab
+                    state.active_tab_idx = original_active_tab_idx;
+
+                    // Re-calculate the visual lines after the edit
+                    let visual_lines_new = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+
+                    // Find new virtual line/col position
+                    let active_tab = &mut state.tabs[state.active_tab_idx];
+                    if new_line == line_idx {
+                        active_tab.cursor.col = new_col;
+                        active_tab.cursor.intended_col = new_col;
+                    } else {
+                        if let Some(new_v_idx) = visual_lines_new.iter().position(|vl| {
+                            match vl {
+                                crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { path: p, line_idx: li, .. } => {
+                                    p == &path && *li == new_line
+                                }
+                                _ => false
+                            }
+                        }) {
+                            active_tab.cursor.line = new_v_idx;
+                            active_tab.cursor.col = new_col;
+                            active_tab.cursor.intended_col = new_col;
+                        }
+                    }
+                    window.request_redraw();
+                }
+                return;
+            }
+        }
+    }
+
     // 3. Otherwise map key input to Action
     if let Some(action) = crate::editor::keymap::map_key(&logical_key, physical_key, ctrl, shift, alt) {
         match action {
@@ -202,15 +442,27 @@ pub fn handle_keyboard_input(
                 active_tab.cursor.intended_col = active_tab.cursor.col;
             }
             crate::editor::actions::Action::Copy => {
-                let active_tab = &state.tabs[state.active_tab_idx];
-                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                    state.internal_clipboard = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
+                let text = {
+                    let active_tab = &state.tabs[state.active_tab_idx];
+                    active_tab.cursor.selection_range().map(|(s_l, s_c, e_l, e_c)| {
+                        active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c)
+                    })
+                };
+                if let Some(text) = text {
+                    state.copy_to_clipboard(text);
                 }
             }
             crate::editor::actions::Action::Cut => {
-                let active_tab = &mut state.tabs[state.active_tab_idx];
-                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                    state.internal_clipboard = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
+                let selection = {
+                    let active_tab = &state.tabs[state.active_tab_idx];
+                    active_tab.cursor.selection_range().map(|(s_l, s_c, e_l, e_c)| {
+                        let text = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
+                        (s_l, s_c, e_l, e_c, text)
+                    })
+                };
+                if let Some((s_l, s_c, e_l, e_c, text)) = selection {
+                    state.copy_to_clipboard(text);
+                    let active_tab = &mut state.tabs[state.active_tab_idx];
                     active_tab.buffer.start_transaction();
                     active_tab.buffer.delete(s_l, s_c, e_l, e_c);
                     active_tab.cursor.line = s_l;
@@ -221,7 +473,8 @@ pub fn handle_keyboard_input(
                 }
             }
             crate::editor::actions::Action::Paste => {
-                if !state.internal_clipboard.is_empty() {
+                let clipboard_text = state.paste_from_clipboard();
+                if !clipboard_text.is_empty() {
                     let active_tab = &mut state.tabs[state.active_tab_idx];
                     active_tab.buffer.start_transaction();
                     if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
@@ -230,11 +483,11 @@ pub fn handle_keyboard_input(
                         active_tab.cursor.col = s_c;
                         active_tab.cursor.clear_selection();
                     }
-                    active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &state.internal_clipboard);
+                    active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &clipboard_text);
  
-                    let parts = state.internal_clipboard.split('\n').collect::<Vec<&str>>();
+                    let parts = clipboard_text.split('\n').collect::<Vec<&str>>();
                     if parts.len() == 1 {
-                        active_tab.cursor.col += state.internal_clipboard.chars().count();
+                        active_tab.cursor.col += clipboard_text.chars().count();
                     } else {
                         active_tab.cursor.line += parts.len() - 1;
                         active_tab.cursor.col = parts.last().unwrap().chars().count();
@@ -421,6 +674,21 @@ pub fn handle_keyboard_input(
                             active_tab.buffer.commit_transaction();
                         }
                     }
+                }
+            }
+        }
+    }
+    
+    if let (Some(start_path), Some(old_lines)) = (active_path_start, old_content) {
+        if state.active_tab_idx < state.tabs.len() {
+            let active_tab = &state.tabs[state.active_tab_idx];
+            if active_tab.path.as_ref() == Some(&start_path) {
+                let new_lines = active_tab.buffer.lines();
+                if old_lines != new_lines {
+                    if let Some(ref lsp) = state.lsp_client {
+                        lsp.notify_change(&start_path, new_lines.join("\n"));
+                    }
+                    ui.diagnostics_file_cache.insert(start_path.clone(), new_lines.to_vec());
                 }
             }
         }
