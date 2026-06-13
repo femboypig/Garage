@@ -64,6 +64,14 @@ pub struct GpuContext {
 
 impl GpuContext {
     pub async fn new(window: Arc<Window>, forced_backend: Option<wgpu::Backends>) -> Self {
+        Self::new_with_instance(window, forced_backend, None).await
+    }
+
+    pub async fn new_with_instance(
+        window: Arc<Window>,
+        forced_backend: Option<wgpu::Backends>,
+        instance: Option<Arc<wgpu::Instance>>,
+    ) -> Self {
         let size = window.inner_size();
 
         // Helper to try creating surface, adapter, device, queue for a given instance and backend
@@ -71,12 +79,16 @@ impl GpuContext {
             window: &Arc<Window>,
             backends: wgpu::Backends,
             flags: wgpu::InstanceFlags,
+            instance: Option<&Arc<wgpu::Instance>>,
         ) -> Option<(wgpu::Surface<'static>, wgpu::Device, wgpu::Queue, wgpu::Adapter)> {
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                backends,
-                flags,
-                ..Default::default()
-            });
+            let instance: Arc<wgpu::Instance> = match instance {
+                Some(inst) => (*inst).clone(),
+                None => Arc::new(wgpu::Instance::new(wgpu::InstanceDescriptor {
+                    backends,
+                    flags,
+                    ..Default::default()
+                })),
+            };
 
             let surface = match instance.create_surface(window.clone()) {
                 Ok(s) => s,
@@ -177,6 +189,7 @@ impl GpuContext {
         async fn try_create_gl(
             window: &Arc<Window>,
             flags: wgpu::InstanceFlags,
+            instance: Option<&Arc<wgpu::Instance>>,
         ) -> Option<(wgpu::Surface<'static>, wgpu::Device, wgpu::Queue, wgpu::Adapter)> {
             // Save current environment variables
             let orig_wgpu_backend = std::env::var("WGPU_GL_BACKEND").ok();
@@ -192,7 +205,7 @@ impl GpuContext {
             }
 
             // 1. Try default OpenGL settings (usually EGL hardware)
-            if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+            if let Some(res) = try_create(window, wgpu::Backends::GL, flags, instance).await {
                 restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
                 return Some(res);
             }
@@ -200,7 +213,7 @@ impl GpuContext {
             // 2. Try forcing GLX hardware
             log::warn!("OpenGL with default EGL failed. Retrying OpenGL with GLX backend...");
             unsafe { std::env::set_var("WGPU_GL_BACKEND", "glx"); }
-            if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+            if let Some(res) = try_create(window, wgpu::Backends::GL, flags, instance).await {
                 restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
                 return Some(res);
             }
@@ -211,7 +224,7 @@ impl GpuContext {
                 std::env::set_var("WGPU_GL_BACKEND", "egl");
                 std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
             }
-            if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+            if let Some(res) = try_create(window, wgpu::Backends::GL, flags, instance).await {
                 restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
                 return Some(res);
             }
@@ -222,7 +235,7 @@ impl GpuContext {
                 std::env::set_var("WGPU_GL_BACKEND", "glx");
                 std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
             }
-            if let Some(res) = try_create(window, wgpu::Backends::GL, flags).await {
+            if let Some(res) = try_create(window, wgpu::Backends::GL, flags, instance).await {
                 restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
                 return Some(res);
             }
@@ -233,12 +246,13 @@ impl GpuContext {
         }
 
         let mut creation_result = None;
+        let instance_ref = instance.as_ref();
 
         if let Some(backend) = forced_backend {
             if backend == wgpu::Backends::GL {
                 log::warn!("Trying forced OpenGL/GL backend...");
                 let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
-                creation_result = try_create_gl(&window, flags).await;
+                creation_result = try_create_gl(&window, flags, instance_ref).await;
             } else if backend == wgpu::Backends::VULKAN {
                 log::warn!("Trying forced Vulkan backend (allowing non-compliant)...");
                 let flags = (wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
@@ -247,6 +261,7 @@ impl GpuContext {
                     &window,
                     wgpu::Backends::VULKAN,
                     flags,
+                    instance_ref,
                 ).await;
             }
         }
@@ -261,11 +276,12 @@ impl GpuContext {
                     &window,
                     wgpu::Backends::VULKAN,
                     flags,
+                    instance_ref,
                 ).await;
             } else {
                 log::warn!("Forced Vulkan failed. Trying OpenGL/GL fallback...");
                 let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
-                creation_result = try_create_gl(&window, flags).await;
+                creation_result = try_create_gl(&window, flags, instance_ref).await;
             }
         }
 
@@ -277,6 +293,7 @@ impl GpuContext {
                 &window,
                 wgpu::Backends::all(),
                 flags,
+                instance_ref,
             ).await;
         }
 
