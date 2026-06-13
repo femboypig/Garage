@@ -115,7 +115,6 @@ pub fn handle_action(
         }
         UiAction::SaveFile => {
             let active_tab = &mut state.tabs[state.active_tab_idx];
-            let was_untitled = active_tab.path.is_none();
             let path_to_save = active_tab.path.clone().unwrap_or_else(|| {
                 let default_path = "./untitled.txt".to_string();
                 active_tab.path = Some(default_path.clone());
