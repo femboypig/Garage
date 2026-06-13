@@ -56,9 +56,4 @@ pub struct FileNode {
     pub depth: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum GitDiffHunk {
-    Added { line: usize, count: usize },
-    Modified { line: usize, count: usize },
-    Deleted { line: usize },
-}
+pub use crate::git::GitDiffHunk;
