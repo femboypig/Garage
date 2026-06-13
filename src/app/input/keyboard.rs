@@ -365,7 +365,8 @@ pub fn handle_keyboard_input(
                             lsp.notify_change(&path, target_lines.join("\n"));
                         }
                         
-                        ui.diagnostics_file_cache.insert(path.clone(), target_lines);
+                        let abs_path = crate::editor::lsp::get_absolute_path(&path);
+                        ui.diagnostics_file_cache.insert(abs_path, target_lines);
 
                         // Restore diagnostics tab
                         state.active_tab_idx = original_active_tab_idx;
@@ -717,7 +718,8 @@ pub fn handle_keyboard_input(
                     if let Some(ref lsp) = state.lsp_client {
                         lsp.notify_change(&start_path, new_lines.join("\n"));
                     }
-                    ui.diagnostics_file_cache.insert(start_path.clone(), new_lines.to_vec());
+                    let abs_path = crate::editor::lsp::get_absolute_path(&start_path);
+                    ui.diagnostics_file_cache.insert(abs_path, new_lines.to_vec());
                 }
             }
         }
