@@ -418,7 +418,7 @@ pub fn draw_dock(
             );
 
             let total_lines = (grid.rows + grid.scrollback.len()) as f32;
-            let thumb_h = ((grid.rows as f32 / total_lines) * content_h).clamp(15.0, content_h);
+            let thumb_h = ((grid.rows as f32 / total_lines) * content_h).clamp(15.0_f32.min(content_h), content_h);
             let max_scroll = grid.scrollback.len() as f32;
             let scroll_ratio = 1.0 - (grid.scroll_offset as f32 / max_scroll);
             let thumb_y = content_y + scroll_ratio * (content_h - thumb_h);
