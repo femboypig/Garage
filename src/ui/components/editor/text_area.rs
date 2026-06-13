@@ -27,12 +27,20 @@ pub fn get_visual_diagnostic_lines(ui: &mut UiState) -> Vec<VisualDiagnosticLine
             
             // Cache the file lines if not present
             if !ui.diagnostics_file_cache.contains_key(file_path) {
-                if let Ok(content) = std::fs::read_to_string(file_path) {
-                    let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-                    ui.diagnostics_file_cache.insert(file_path.clone(), lines);
-                } else {
-                    ui.diagnostics_file_cache.insert(file_path.clone(), Vec::new());
-                }
+                // Insert placeholder empty vector immediately to avoid spawning multiple threads
+                ui.diagnostics_file_cache.insert(file_path.clone(), Vec::new());
+                
+                let file_path_clone = file_path.clone();
+                let tx = ui.diagnostics_file_tx.clone();
+                let proxy = ui.event_loop_proxy.clone();
+                
+                std::thread::spawn(move || {
+                    if let Ok(content) = std::fs::read_to_string(&file_path_clone) {
+                        let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                        let _ = tx.send((file_path_clone, lines));
+                        let _ = proxy.send_event(());
+                    }
+                });
             }
             
             let file_lines = ui.diagnostics_file_cache.get(file_path).cloned().unwrap_or_default();
