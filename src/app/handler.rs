@@ -51,7 +51,7 @@ pub fn handle_action(
                 } else {
                     path.clone()
                 };
-                let normalized_path = crate::editor::lsp::normalize_path(&normalized_path);
+                let normalized_path = crate::editor::normalize_path(&normalized_path);
                 normalized_path.to_string_lossy().to_string()
             };
             let _is_new = if let Some(existing_idx) = state.tabs.iter().position(|t| {
@@ -65,7 +65,7 @@ pub fn handle_action(
                         } else {
                             p_buf
                         };
-                        crate::editor::lsp::normalize_path(&p_norm).to_string_lossy().to_string() == path_str
+                        crate::editor::normalize_path(&p_norm).to_string_lossy().to_string() == path_str
                     }
                 })
             }) {
@@ -99,19 +99,12 @@ pub fn handle_action(
             if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
                 ui.selected_file = Some(std::path::PathBuf::from(active_path));
                 if !active_path.starts_with("diagnostics://") {
-                    let abs_path = crate::editor::lsp::get_absolute_path(active_path);
+                    let abs_path = crate::editor::get_absolute_path(active_path);
                     ui.diagnostics_file_cache.insert(abs_path, state.tabs[state.active_tab_idx].buffer.lines().to_vec());
                     ui.update_git_diff(Some(active_path));
                     ui.update_git_file_blame(Some(active_path));
                     ui.update_git_statuses();
-                    if let Some(ref lsp) = state.lsp_client {
-                        lsp.notify_open(active_path, state.tabs[state.active_tab_idx].buffer.lines().join("\n"));
-                        lsp.notify_active_file(active_path);
-                    }
                 } else {
-                    if let Some(ref lsp) = state.lsp_client {
-                        lsp.notify_active_file("");
-                    }
                 }
             } else {
                 ui.selected_file = None;
@@ -136,12 +129,7 @@ pub fn handle_action(
                 ui.update_git_diff(Some(&path_to_save));
                 ui.update_git_file_blame(Some(&path_to_save));
                 ui.update_git_statuses();
-                if let Some(ref lsp) = state.lsp_client {
-                    if was_untitled {
-                        lsp.notify_open(&path_to_save, active_tab.buffer.lines().join("\n"));
-                    }
-                    lsp.notify_save(&path_to_save);
-                }
+
             }
         }
         UiAction::Undo => {
@@ -279,19 +267,7 @@ pub fn handle_action(
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
             ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
-            if let Some(ref lsp) = state.lsp_client {
-                if let Some(ref path) = state.tabs[idx].path {
-                    if !path.starts_with("diagnostics://") {
-                        lsp.notify_open(path, state.tabs[idx].buffer.lines().join("\n"));
-                        lsp.notify_active_file(path);
-                    } else {
-                        lsp.notify_active_file("");
-                        lsp.trigger_flycheck("rust");
-                    }
-                } else {
-                    lsp.notify_active_file("");
-                }
-            }
+
         }
         UiAction::CloseTab(idx) => {
             if state.tabs[idx].buffer.is_modified {
@@ -319,13 +295,7 @@ pub fn handle_action(
                 let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
                 let size = window.inner_size();
                 ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
-                if let Some(ref lsp) = state.lsp_client {
-                    if let Some(ref path) = state.tabs[state.active_tab_idx].path {
-                        lsp.notify_active_file(path);
-                    } else {
-                        lsp.notify_active_file("");
-                    }
-                }
+
             }
         }
         UiAction::ForceCloseTab(idx) => {
@@ -352,13 +322,7 @@ pub fn handle_action(
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
             ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
-            if let Some(ref lsp) = state.lsp_client {
-                if let Some(ref path) = state.tabs[state.active_tab_idx].path {
-                    lsp.notify_active_file(path);
-                } else {
-                    lsp.notify_active_file("");
-                }
-            }
+
         }
         UiAction::SaveAndCloseTab(idx) => {
             let tab_to_save = &mut state.tabs[idx];
@@ -397,13 +361,7 @@ pub fn handle_action(
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
             ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
-            if let Some(ref lsp) = state.lsp_client {
-                if let Some(ref path) = state.tabs[state.active_tab_idx].path {
-                    lsp.notify_active_file(path);
-                } else {
-                    lsp.notify_active_file("");
-                }
-            }
+
         }
         UiAction::MinimizeWindow => {
             window.set_minimized(true);
@@ -481,10 +439,7 @@ pub fn handle_action(
             if active_tab.path.as_ref() == Some(&start_path) {
                 let new_lines = active_tab.buffer.lines();
                 if old_lines != new_lines {
-                    if let Some(ref lsp) = state.lsp_client {
-                        lsp.notify_change(&start_path, new_lines.join("\n"));
-                    }
-                    let abs_path = crate::editor::lsp::get_absolute_path(&start_path);
+                    let abs_path = crate::editor::get_absolute_path(&start_path);
                     ui.diagnostics_file_cache.insert(abs_path, new_lines.to_vec());
                 }
             }
