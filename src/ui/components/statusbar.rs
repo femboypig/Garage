@@ -127,7 +127,7 @@ pub fn draw_statusbar(
     let mut line_diag_msg = String::new();
     let mut line_diag_color = [0.0, 0.0, 0.0, 0.0];
     if let Some(path) = active_path {
-        let abs_path_str = crate::editor::lsp::get_absolute_path(path);
+        let abs_path_str = crate::editor::get_absolute_path(path);
         if let Some(diags) = ui.lsp_diagnostics_details.get(&abs_path_str) {
             for d in diags {
                 if cursor.line >= d.line && cursor.line <= d.end_line {
@@ -217,7 +217,7 @@ pub fn draw_statusbar(
         });
 
     let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
-    let lsp_str = format!("LSP: {}", ui.lsp_status);
+    let lsp_str = "LSP: offline".to_string();
 
     let right_components = [
         cursor_str.as_str(),
