@@ -30,7 +30,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
             .with_title("Garage")
             .with_decorations(false)
             .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
-            .with_visible(false)
+            .with_visible(true)
             .build(&event_loop)?,
     );
     crate::experiments::startup::record_step("Window Creation");
@@ -141,6 +141,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
         elwt.set_control_flow(ControlFlow::Wait);
 
         match event {
+            Event::NewEvents(winit::event::StartCause::Init) => {
+                window.request_redraw();
+            }
+
             Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
                 WindowEvent::CloseRequested => elwt.exit(),
 
