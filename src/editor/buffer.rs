@@ -30,6 +30,7 @@ pub struct Buffer {
     pub is_modified: bool,
     max_line_len: usize,
     saved_undo_len: Option<usize>,
+    pub revision: usize,
 }
 
 impl Buffer {
@@ -43,6 +44,7 @@ impl Buffer {
             is_modified: false,
             max_line_len: 0,
             saved_undo_len: Some(0),
+            revision: 0,
         }
     }
 
@@ -50,15 +52,20 @@ impl Buffer {
         if text.is_empty() {
             return Self::new();
         }
+        let line_count = text.lines().count();
         let mut max_len = 0;
-        let mut lines = Vec::new();
+        let mut lines = Vec::with_capacity(line_count);
         for s in text.lines() {
             let line = if s.contains('\t') {
                 s.replace('\t', "    ")
             } else {
                 s.to_string()
             };
-            let count = line.chars().count();
+            let count = if line.is_ascii() {
+                line.len()
+            } else {
+                line.chars().count()
+            };
             if count > max_len {
                 max_len = count;
             }
@@ -72,6 +79,7 @@ impl Buffer {
             is_modified: false,
             max_line_len: max_len,
             saved_undo_len: Some(0),
+            revision: 0,
         }
     }
 
@@ -94,8 +102,9 @@ impl Buffer {
         }
 
         let text = String::from_utf8_lossy(&bytes);
+        let line_count = bytes.iter().filter(|&&b| b == b'\n').count() + 1;
         let mut max_len = 0;
-        let mut loaded_lines = Vec::new();
+        let mut loaded_lines = Vec::with_capacity(line_count);
         for s in text.split('\n') {
             let mut s = s;
             if s.ends_with('\r') {
@@ -106,7 +115,11 @@ impl Buffer {
             } else {
                 s.to_string()
             };
-            let count = line.chars().count();
+            let count = if line.is_ascii() {
+                line.len()
+            } else {
+                line.chars().count()
+            };
             if count > max_len {
                 max_len = count;
             }
@@ -124,6 +137,7 @@ impl Buffer {
         self.is_modified = false;
         self.saved_undo_len = Some(0);
         self.max_line_len = max_len;
+        self.revision = self.revision.wrapping_add(1);
         Ok(())
     }
 
@@ -201,6 +215,7 @@ impl Buffer {
 
     /// Perform raw insertion without touching undo/redo stacks.
     fn insert_raw(&mut self, line: usize, col: usize, text: &str) {
+        self.revision = self.revision.wrapping_add(1);
         let cur_line = &mut self.lines[line];
         
         // Clamp column to line boundaries
@@ -273,6 +288,7 @@ impl Buffer {
 
     /// Perform raw deletion without touching undo/redo stacks.
     fn delete_raw(&mut self, start_line: usize, start_col: usize, end_line: usize, end_col: usize) {
+        self.revision = self.revision.wrapping_add(1);
         if start_line >= self.lines.len() || end_line >= self.lines.len() {
             return;
         }
