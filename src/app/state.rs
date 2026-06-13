@@ -31,11 +31,10 @@ pub struct AppState {
     pub last_click_time: Option<Instant>,
     pub mouse_x: f32,
     pub mouse_y: f32,
-    pub lsp_client: Option<crate::editor::lsp::LspClient>,
 }
 
 impl AppState {
-    pub fn new(initial_tab: Tab, lsp_client: Option<crate::editor::lsp::LspClient>) -> Self {
+    pub fn new(initial_tab: Tab) -> Self {
         Self {
             tabs: vec![initial_tab],
             active_tab_idx: 0,
@@ -55,7 +54,6 @@ impl AppState {
             last_click_time: None,
             mouse_x: 0.0,
             mouse_y: 0.0,
-            lsp_client,
         }
     }
 
