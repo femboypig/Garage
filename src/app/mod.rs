@@ -239,9 +239,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     for tab in &state.tabs {
                         if let Some(ref path) = tab.path {
                             if !path.starts_with("diagnostics://") {
+                                let abs_path = crate::editor::lsp::get_absolute_path(path);
                                 let tab_lines = tab.buffer.lines();
                                 let mut needs_update = false;
-                                if let Some(cached) = ui.diagnostics_file_cache.get(path) {
+                                if let Some(cached) = ui.diagnostics_file_cache.get(&abs_path) {
                                     if cached.len() != tab_lines.len() || cached != tab_lines {
                                         needs_update = true;
                                     }
@@ -249,7 +250,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                     needs_update = true;
                                 }
                                 if needs_update {
-                                    ui.diagnostics_file_cache.insert(path.clone(), tab_lines.to_vec());
+                                    ui.diagnostics_file_cache.insert(abs_path, tab_lines.to_vec());
                                     ui.diagnostics_changed = true;
                                 }
                             }
@@ -378,7 +379,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         if !state.terminal_focus {
                             let active_tab = &state.tabs[state.active_tab_idx];
                             if let Some(ref path) = active_tab.path {
-                                ui.diagnostics_file_cache.insert(path.clone(), active_tab.buffer.lines().to_vec());
+                                let abs_path = crate::editor::lsp::get_absolute_path(path);
+                                ui.diagnostics_file_cache.insert(abs_path, active_tab.buffer.lines().to_vec());
                                 if let Some(ref lsp) = state.lsp_client {
                                     lsp.notify_change(path, active_tab.buffer.lines().join("\n"));
                                 }
