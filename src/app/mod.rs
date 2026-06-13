@@ -348,51 +348,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     window.request_redraw();
                 }
                 
-                let mut scheduled_wakeup = false;
-                if ui.hover_start.is_some() && ui.hovered_diagnostic.is_none() {
-                    let start = ui.hover_start.unwrap();
-                    let elapsed = start.elapsed();
-                    if elapsed >= std::time::Duration::from_millis(300) {
-                        if !state.tabs.is_empty() && state.active_tab_idx < state.tabs.len() {
-                            if let Some(ref path) = state.tabs[state.active_tab_idx].path {
-                                let abs_path = crate::editor::get_absolute_path(path);
-                                if let Some(diags) = ui.lsp_diagnostics_details.get(&abs_path) {
-                                    if let Some((line_idx, col_idx)) = ui.hover_pos {
-                                        let mut found_diag = None;
-                                        for d in diags {
-                                            if line_idx == d.line {
-                                                if col_idx >= d.col && col_idx <= d.end_col {
-                                                    found_diag = Some(d.clone());
-                                                    break;
-                                                }
-                                            } else if line_idx > d.line && line_idx < d.end_line {
-                                                found_diag = Some(d.clone());
-                                                break;
-                                            } else if line_idx == d.end_line {
-                                                if col_idx <= d.end_col {
-                                                    found_diag = Some(d.clone());
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                        if let Some(diag) = found_diag {
-                                            ui.hovered_diagnostic = Some(diag);
-                                            window.request_redraw();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        let remaining = std::time::Duration::from_millis(300).saturating_sub(elapsed);
-                        if !remaining.is_zero() {
-                            elwt.set_control_flow(ControlFlow::WaitUntil(
-                                std::time::Instant::now() + remaining
-                            ));
-                            scheduled_wakeup = true;
-                        }
-                    }
-                }
+                let scheduled_wakeup = false;
 
                 if !scheduled_wakeup {
                     if state.terminal_focus {
