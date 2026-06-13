@@ -23,6 +23,7 @@ pub struct Buffer {
     current_transaction: Option<Vec<Action>>,
     pub is_modified: bool,
     initial_lines: Vec<String>,
+    max_line_len: usize,
 }
 
 impl Buffer {
@@ -35,24 +36,27 @@ impl Buffer {
             current_transaction: None,
             is_modified: false,
             initial_lines: vec![String::new()],
+            max_line_len: 0,
         }
     }
 
-    /// Create a Buffer from string content.
     pub fn from_text(text: &str) -> Self {
         let lines: Vec<String> = if text.is_empty() {
             vec![String::new()]
         } else {
             text.lines().map(|s| s.replace('\t', "    ")).collect()
         };
-        Self {
+        let mut buffer = Self {
             lines: lines.clone(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             current_transaction: None,
             is_modified: false,
             initial_lines: lines,
-        }
+            max_line_len: 0,
+        };
+        buffer.recalculate_max_line_len();
+        buffer
     }
 
     /// Load a file into the buffer.
@@ -83,6 +87,7 @@ impl Buffer {
         self.redo_stack.clear();
         self.current_transaction = None;
         self.is_modified = false;
+        self.recalculate_max_line_len();
         Ok(())
     }
 
@@ -194,6 +199,7 @@ impl Buffer {
             self.lines.insert(insert_idx, last_line);
         }
         self.is_modified = self.lines != self.initial_lines;
+        self.recalculate_max_line_len();
     }
 
     /// Delete text from start coordinates to end coordinates.
@@ -217,6 +223,7 @@ impl Buffer {
         }
 
         self.delete_raw(s_line, s_col, e_line, e_col);
+        self.recalculate_max_line_len();
         deleted_text
     }
 
@@ -286,6 +293,7 @@ impl Buffer {
                 }
             }
             self.push_redo(redo_tx);
+            self.recalculate_max_line_len();
             edit_pos
         } else {
             None
@@ -328,6 +336,7 @@ impl Buffer {
                 }
             }
             self.push_undo(undo_tx);
+            self.recalculate_max_line_len();
             edit_pos
         } else {
             None
@@ -403,6 +412,14 @@ impl Buffer {
             result.push_str(&self.lines[e_line][..e_byte]);
             result
         }
+    }
+
+    pub fn max_line_len(&self) -> usize {
+        self.max_line_len
+    }
+
+    fn recalculate_max_line_len(&mut self) {
+        self.max_line_len = self.lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
     }
 }
 
