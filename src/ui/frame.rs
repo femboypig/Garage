@@ -7,21 +7,18 @@ use super::{UiState, UiAction, ModalType};
 
 impl UiState {
     pub fn get_max_line_len(&mut self, buffer: &Buffer, active_file_path: Option<&str>, cursor_line: usize) -> usize {
-        let mut max_len = 0;
-        for (line_idx, line) in buffer.lines().iter().enumerate() {
-            let mut len = line.chars().count();
-            if self.config.show_git_blame && line_idx == cursor_line {
-                if let Some(blame_str) = self.get_or_update_blame(active_file_path, line_idx) {
-                    if blame_str != "Loading blame..." && !blame_str.is_empty() {
-                        len += 4 + blame_str.chars().count();
+        let mut raw_max = buffer.max_line_len();
+        if self.config.show_git_blame {
+            if let Some(blame_str) = self.get_or_update_blame(active_file_path, cursor_line) {
+                if blame_str != "Loading blame..." && !blame_str.is_empty() {
+                    let cursor_line_len = buffer.lines().get(cursor_line).map_or(0, |l| l.chars().count()) + 4 + blame_str.chars().count();
+                    if cursor_line_len > raw_max {
+                        raw_max = cursor_line_len;
                     }
                 }
             }
-            if len > max_len {
-                max_len = len;
-            }
         }
-        max_len
+        raw_max
     }
 
     /// Push a solid rectangle (quad) into the vertex and index vectors
