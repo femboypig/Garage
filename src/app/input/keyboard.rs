@@ -486,6 +486,7 @@ pub fn handle_keyboard_input(
                 if let Some((s_l, s_c, e_l, e_c, text)) = selection {
                     state.copy_to_clipboard(text);
                     let active_tab = &mut state.tabs[state.active_tab_idx];
+                    active_tab.buffer.commit_transaction();
                     active_tab.buffer.start_transaction();
                     active_tab.buffer.delete(s_l, s_c, e_l, e_c);
                     active_tab.cursor.line = s_l;
@@ -499,6 +500,7 @@ pub fn handle_keyboard_input(
                 let clipboard_text = state.paste_from_clipboard();
                 if !clipboard_text.is_empty() {
                     let active_tab = &mut state.tabs[state.active_tab_idx];
+                    active_tab.buffer.commit_transaction();
                     active_tab.buffer.start_transaction();
                     if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                         active_tab.buffer.delete(s_l, s_c, e_l, e_c);
@@ -529,6 +531,7 @@ pub fn handle_keyboard_input(
             }
             crate::editor::actions::Action::DeleteLeft => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
+                active_tab.buffer.commit_transaction();
                 if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                     active_tab.buffer.start_transaction();
                     active_tab.buffer.delete(s_l, s_c, e_l, e_c);
@@ -566,6 +569,7 @@ pub fn handle_keyboard_input(
             }
             crate::editor::actions::Action::DeleteRight => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
+                active_tab.buffer.commit_transaction();
                 if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                     active_tab.buffer.start_transaction();
                     active_tab.buffer.delete(s_l, s_c, e_l, e_c);
@@ -603,6 +607,7 @@ pub fn handle_keyboard_input(
             }
             crate::editor::actions::Action::InsertTab => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
+                active_tab.buffer.commit_transaction();
                 if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
                     active_tab.buffer.start_transaction();
                     active_tab.buffer.delete(s_l, s_c, e_l, e_c);
@@ -618,6 +623,7 @@ pub fn handle_keyboard_input(
             }
             crate::editor::actions::Action::InsertChar(c) => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
+                let had_selection = active_tab.cursor.selection_range().is_some();
                 let step_over = if active_tab.cursor.selection_range().is_none() && (c == ')' || c == ']' || c == '}' || c == '"' || c == '\'') {
                     let line_chars: Vec<char> = active_tab.buffer.lines()[active_tab.cursor.line].chars().collect();
                     if active_tab.cursor.col < line_chars.len() && line_chars[active_tab.cursor.col] == c {
@@ -640,6 +646,7 @@ pub fn handle_keyboard_input(
                         };
  
                         if let Some(close_char) = matching_close {
+                            active_tab.buffer.commit_transaction();
                             active_tab.buffer.start_transaction();
                             active_tab.buffer.insert(s_l, s_c, &c.to_string());
                             let adjusted_e_c = if s_l == e_l { e_c + 1 } else { e_c };
@@ -672,13 +679,34 @@ pub fn handle_keyboard_input(
                             };
  
                             if let Some(close_char) = matching_close {
-                                active_tab.buffer.start_transaction();
-                                let pair_str = format!("{}{}", c, close_char);
-                                active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &pair_str);
-                                active_tab.cursor.col += 1;
-                                active_tab.cursor.intended_col = active_tab.cursor.col;
-                                active_tab.buffer.commit_transaction();
-                                true
+                                let should_pair = match c {
+                                    '(' | '[' | '{' => true,
+                                    '"' | '\'' => {
+                                        let line_chars: Vec<char> = active_tab.buffer.lines()[active_tab.cursor.line].chars().collect();
+                                        let preceded_by_alpha = if active_tab.cursor.col > 0 {
+                                            line_chars[active_tab.cursor.col - 1].is_alphanumeric()
+                                        } else {
+                                            false
+                                        };
+                                        let followed_by_alpha = if active_tab.cursor.col < line_chars.len() {
+                                            line_chars[active_tab.cursor.col].is_alphanumeric()
+                                        } else {
+                                            false
+                                        };
+                                        !preceded_by_alpha && !followed_by_alpha
+                                    }
+                                    _ => false,
+                                };
+
+                                if should_pair {
+                                    active_tab.buffer.start_transaction();
+                                    let pair_str = format!("{}{}", c, close_char);
+                                    active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &pair_str);
+                                    active_tab.cursor.col += 1;
+                                    active_tab.cursor.intended_col = active_tab.cursor.col;
+                                    active_tab.buffer.commit_transaction();
+                                    true
+                                } else { false }
                             } else { false }
                         } else { false };
  
@@ -694,7 +722,9 @@ pub fn handle_keyboard_input(
                             active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &c.to_string());
                             active_tab.cursor.col += 1;
                             active_tab.cursor.intended_col = active_tab.cursor.col;
-                            active_tab.buffer.commit_transaction();
+                            if c.is_whitespace() || c.is_ascii_punctuation() || had_selection {
+                                active_tab.buffer.commit_transaction();
+                            }
                         }
                     }
                 }
