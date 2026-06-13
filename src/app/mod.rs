@@ -171,6 +171,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         }
                     }
 
+                    // Drain diagnostics file channel
+                    if let Some(ref rx) = ui.diagnostics_file_rx {
+                        while let Ok((path, lines)) = rx.try_recv() {
+                            ui.diagnostics_file_cache.insert(path, lines);
+                            window.request_redraw();
+                        }
+                    }
+
                     // Read data from PTY channels for all terminals and parse ANSI sequences using persistent parser
                     for term in &mut state.dock_terminals {
                         while let Ok(bytes) = term.rx.try_recv() {
