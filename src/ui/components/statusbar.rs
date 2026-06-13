@@ -119,12 +119,10 @@ pub fn draw_statusbar(
         });
 
     let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
-    let lsp_str = "LSP: offline".to_string();
 
     let right_components = [
         cursor_str.as_str(),
         language.as_str(),
-        lsp_str.as_str(),
         "UTF-8",
         "LF",
     ];
