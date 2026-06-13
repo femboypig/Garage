@@ -18,7 +18,7 @@ pub fn draw_tab_bar(
 ) {
     let white_uv = atlas.white_pixel_uv();
     let tabbar_start_x = activity_bar_width + ui.sidebar_width;
-    let visible_width = width - tabbar_start_x;
+    let visible_width = (width - tabbar_start_x).max(0.0);
     
     // Tab Bar background (gray)
     ui.push_quad(
@@ -400,7 +400,7 @@ pub fn draw_tab_bar(
             
             // Thumb
             let ratio = visible_width / total_tabs_width;
-            let thumb_w = (visible_width * ratio).clamp(20.0, visible_width);
+            let thumb_w = (visible_width * ratio).clamp(20.0_f32.min(visible_width), visible_width);
             let scroll_ratio_x = if max_scroll_x > 0.0 { ui.tab_scroll_x / max_scroll_x } else { 0.0 };
             let thumb_x = tabbar_start_x + scroll_ratio_x * (visible_width - thumb_w);
             
