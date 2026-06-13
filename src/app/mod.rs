@@ -378,14 +378,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-fn is_hidden(path: &std::path::Path) -> bool {
-    path.components().any(|comp| {
-        if let std::path::Component::Normal(name) = comp {
-            name.to_string_lossy().starts_with('.')
-        } else {
-            false
-        }
-    })
-}
+
 
 
