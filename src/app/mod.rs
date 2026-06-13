@@ -30,7 +30,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
             .with_title("Garage")
             .with_decorations(false)
             .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
-            // .with_visible(false)
+            .with_visible(false)
             .build(&event_loop)?,
     );
 
@@ -127,6 +127,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let mut vertices: Vec<Vertex> = Vec::new();
     let mut indices: Vec<u16> = Vec::new();
     let mut first_frame_rendered = false;
+
+    window.set_visible(true);
 
     // Run the event loop reactively to save power/CPU/GPU cycles when idle
     event_loop.run(move |event, elwt| {
