@@ -397,7 +397,7 @@ pub fn draw_sidebar(
         );
 
         let ratio = visible_rows as f32 / total_rows as f32;
-        let thumb_h = (track_h * ratio).clamp(15.0, track_h);
+        let thumb_h = (track_h * ratio).clamp(15.0_f32.min(track_h), track_h);
         let max_scroll_f = max_scroll as f32;
         let scroll_ratio = if max_scroll_f > 0.0 {
             sidebar_scroll as f32 / max_scroll_f
