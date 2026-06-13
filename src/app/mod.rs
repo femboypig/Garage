@@ -33,10 +33,12 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
             .with_visible(false)
             .build(&event_loop)?,
     );
+    crate::experiments::startup::record_step("Window Creation");
 
     // Initialize wgpu rendering context and pipeline synchronously
     // Load configuration at startup
     let mut config = crate::editor::config::AppConfig::load();
+    crate::experiments::startup::record_step("Config Load");
 
     // Select backend based on config
     let initial_backends = match config.backend.as_str() {
@@ -47,6 +49,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
     // Initialize wgpu rendering context and pipeline synchronously
     let mut gpu = Some(pollster::block_on(GpuContext::new(window.clone(), initial_backends)));
+    crate::experiments::startup::record_step("WGPU Context Creation");
     // window.set_visible(true);
 
     let actual_backend_str = match gpu.as_ref().unwrap().backend {
@@ -72,13 +75,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
     // Update bind group to use actual font texture and sampler
     gpu.as_mut().unwrap().update_bind_group(&atlas.texture, &atlas.sampler);
-
+    crate::experiments::startup::record_step("Font Atlas & Texture upload");
 
     let proxy = event_loop.create_proxy();
 
     // Initialize layout and state
     let mut ui = UiState::new(&mut atlas, &gpu.as_ref().unwrap().queue, config, proxy.clone());
     ui.active_device_name = gpu.as_ref().unwrap().device_name.clone();
+    crate::experiments::startup::record_step("UI State Initialization");
 
     // Load initial file or start with empty tab
     let initial_tab = {
@@ -122,6 +126,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     if let Some(ref path) = state.tabs[0].path {
         ui.selected_file = Some(std::path::PathBuf::from(path));
     }
+    crate::experiments::startup::record_step("Initial File Load & State Setup");
 
     // Track dynamic vertices and indices
     let mut vertices: Vec<Vertex> = Vec::new();
@@ -129,6 +134,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let mut first_frame_rendered = false;
 
     window.set_visible(true);
+    crate::experiments::startup::record_step("Window Visibility Set");
 
     // Run the event loop reactively to save power/CPU/GPU cycles when idle
     event_loop.run(move |event, elwt| {
