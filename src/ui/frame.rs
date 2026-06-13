@@ -219,116 +219,21 @@ impl UiState {
 
 
     pub fn update_git_branch(&mut self) {
-        let tx = self.git_branch_tx.clone();
-        let proxy = self.event_loop_proxy.clone();
-        std::thread::spawn(move || {
-            let output = std::process::Command::new("git")
-                .args(&["rev-parse", "--abbrev-ref", "HEAD"])
-                .output();
-            
-            if let Ok(out) = output {
-                if out.status.success() {
-                    let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if !branch.is_empty() {
-                        let _ = tx.send(branch);
-                        let _ = proxy.send_event(());
-                    }
-                }
-            }
-        });
+        crate::git::update_git_branch(self.git_branch_tx.clone(), self.event_loop_proxy.clone());
     }
 
     pub fn update_git_statuses(&mut self) {
-        let tx = self.git_status_tx.clone();
-        let proxy = self.event_loop_proxy.clone();
-        std::thread::spawn(move || {
-            let output = std::process::Command::new("git")
-                .args(&["status", "--porcelain"])
-                .output();
-            
-            if let Ok(out) = output {
-                if out.status.success() {
-                    let stdout = String::from_utf8_lossy(&out.stdout);
-                    let mut map = std::collections::HashMap::new();
-                    for line in stdout.lines() {
-                        if line.len() > 3 {
-                            let status = line[0..2].to_string();
-                            let file_path = std::path::PathBuf::from(line[3..].trim().to_string());
-                            map.insert(file_path, status);
-                        }
-                    }
-                    let _ = tx.send(map);
-                    let _ = proxy.send_event(());
-                }
-            }
-        });
+        crate::git::update_git_statuses(self.git_status_tx.clone(), self.event_loop_proxy.clone());
     }
 
     pub fn update_git_diff(&mut self, file_path: Option<&str>) {
-        let file_path = match file_path {
-            Some(p) => p.to_string(),
-            None => return,
-        };
-        let tx = self.git_diff_tx.clone();
-        let proxy = self.event_loop_proxy.clone();
-        std::thread::spawn(move || {
-            let output = std::process::Command::new("git")
-                .args(&["diff", "--no-ext-diff", "-U0", "--", &file_path])
-                .output();
-            
-            if let Ok(out) = output {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                let mut hunks = Vec::new();
-                
-                for line in stdout.lines() {
-                    if line.starts_with("@@ ") {
-                        let parts: Vec<&str> = line.split("@@").collect();
-                        if parts.len() >= 2 {
-                            let header = parts[1].trim();
-                            let specs: Vec<&str> = header.split_whitespace().collect();
-                            if specs.len() >= 2 {
-                                let new_spec = specs[1];
-                                if new_spec.starts_with('+') {
-                                    let content = &new_spec[1..];
-                                    let subparts: Vec<&str> = content.split(',').collect();
-                                    if !subparts.is_empty() {
-                                        let line_idx = subparts[0].parse::<usize>().unwrap_or(1).saturating_sub(1);
-                                        let count = if subparts.len() >= 2 {
-                                            subparts[1].parse::<usize>().unwrap_or(1)
-                                        } else {
-                                            1
-                                        };
-                                        
-                                        let old_spec = specs[0];
-                                        let old_count = if old_spec.starts_with('-') {
-                                            let old_content = &old_spec[1..];
-                                            let old_subparts: Vec<&str> = old_content.split(',').collect();
-                                            if old_subparts.len() >= 2 {
-                                                old_subparts[1].parse::<usize>().unwrap_or(1)
-                                            } else {
-                                                1
-                                            }
-                                        } else {
-                                            1
-                                        };
-
-                                        if old_count == 0 {
-                                            hunks.push(crate::ui::types::GitDiffHunk::Added { line: line_idx, count });
-                                        } else if count == 0 {
-                                            hunks.push(crate::ui::types::GitDiffHunk::Deleted { line: line_idx });
-                                        } else {
-                                            hunks.push(crate::ui::types::GitDiffHunk::Modified { line: line_idx, count });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                let _ = tx.send((file_path, hunks));
-                let _ = proxy.send_event(());
-            }
-        });
+        if let Some(path) = file_path {
+            crate::git::update_git_diff(
+                path.to_string(),
+                self.git_diff_tx.clone(),
+                self.event_loop_proxy.clone(),
+            );
+        }
     }
 
     pub fn get_or_update_blame(&self, file_path: Option<&str>, line_idx: usize) -> Option<String> {
@@ -341,112 +246,13 @@ impl UiState {
     }
 
     pub fn update_git_file_blame(&mut self, file_path: Option<&str>) {
-        let file_path = match file_path {
-            Some(p) => p.to_string(),
-            None => return,
-        };
-        let tx = self.git_blame_file_tx.clone();
-        let proxy = self.event_loop_proxy.clone();
-        std::thread::spawn(move || {
-            let output = std::process::Command::new("git")
-                .args(&["blame", "--porcelain", &file_path])
-                .output();
-
-            if let Ok(out) = output {
-                if out.status.success() {
-                    let stdout = String::from_utf8_lossy(&out.stdout);
-                    
-                    struct CommitInfo {
-                        author: String,
-                        time: u64,
-                        summary: String,
-                    }
-
-                    let mut commits = std::collections::HashMap::<String, CommitInfo>::new();
-                    let mut line_commits = std::collections::HashMap::<usize, String>::new();
-                    
-                    let mut lines = stdout.lines();
-                    while let Some(line) = lines.next() {
-                        if line.starts_with('\t') {
-                            continue;
-                        }
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.is_empty() {
-                            continue;
-                        }
-                        let first_part = parts[0];
-                        if first_part.len() == 40 && parts.len() >= 3 {
-                            let commit_hash = first_part.to_string();
-                            if let Ok(result_line) = parts[2].parse::<usize>() {
-                                line_commits.insert(result_line, commit_hash.clone());
-                                if !commits.contains_key(&commit_hash) {
-                                    let mut author = None;
-                                    let mut author_time = None;
-                                    let mut summary = None;
-                                    
-                                    while let Some(hdr_line) = lines.next() {
-                                        if hdr_line.starts_with('\t') {
-                                            break;
-                                        }
-                                        if hdr_line.starts_with("author ") {
-                                            author = Some(hdr_line["author ".len()..].trim().to_string());
-                                        } else if hdr_line.starts_with("author-time ") {
-                                            author_time = hdr_line["author-time ".len()..].trim().parse::<u64>().ok();
-                                        } else if hdr_line.starts_with("summary ") {
-                                            summary = Some(hdr_line["summary ".len()..].trim().to_string());
-                                        }
-                                    }
-                                    
-                                    if let (Some(auth), Some(time), Some(sum)) = (author, author_time, summary) {
-                                        commits.insert(commit_hash, CommitInfo {
-                                            author: auth,
-                                            time,
-                                            summary: sum,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    let mut file_blame_map = std::collections::HashMap::new();
-                    for (result_line, commit_hash) in line_commits {
-                        if let Some(info) = commits.get(&commit_hash) {
-                            let blame_str = if info.author == "Not Committed Yet" {
-                                "Not Committed Yet".to_string()
-                            } else {
-                                let now = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs();
-                                let diff = now.saturating_sub(info.time);
-                                let time_str = if diff < 60 {
-                                    "just now".to_string()
-                                } else if diff < 3600 {
-                                    format!("{}m ago", diff / 60)
-                                } else if diff < 86400 {
-                                    format!("{}h ago", diff / 3600)
-                                } else if diff < 2592000 {
-                                    let days = diff / 86400;
-                                    if days == 1 { "yesterday".to_string() } else { format!("{} days ago", days) }
-                                } else if diff < 31536000 {
-                                    let months = diff / 2592000;
-                                    if months == 1 { "1 month ago".to_string() } else { format!("{} months ago", months) }
-                                } else {
-                                    let years = diff / 31536000;
-                                    if years == 1 { "1 year ago".to_string() } else { format!("{} years ago", years) }
-                                };
-                                format!("{} • {} • {}", info.author, time_str, info.summary)
-                            };
-                            file_blame_map.insert(result_line - 1, blame_str);
-                        }
-                    }
-
-                    let _ = tx.send((file_path, file_blame_map));
-                    let _ = proxy.send_event(());
-                }
-            }
-        });
+        if let Some(path) = file_path {
+            crate::git::update_git_file_blame(
+                path.to_string(),
+                self.git_blame_file_tx.clone(),
+                self.event_loop_proxy.clone(),
+            );
+        }
     }
 
     pub fn get_all_commands(&self) -> Vec<(&'static str, &'static str)> {
