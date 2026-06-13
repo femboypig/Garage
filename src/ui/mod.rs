@@ -93,6 +93,8 @@ pub struct UiState {
 
     pub tree_rx: Option<std::sync::mpsc::Receiver<Vec<FileNode>>>,
     pub tree_tx: std::sync::mpsc::Sender<Vec<FileNode>>,
+    pub diagnostics_file_rx: Option<std::sync::mpsc::Receiver<(String, Vec<String>)>>,
+    pub diagnostics_file_tx: std::sync::mpsc::Sender<(String, Vec<String>)>,
     pub hovered_diagnostic: Option<crate::editor::DiagnosticDetail>,
     pub hover_start: Option<std::time::Instant>,
     pub hover_pos: Option<(usize, usize)>,
@@ -155,6 +157,7 @@ impl UiState {
         let (diff_tx, diff_rx) = std::sync::mpsc::channel();
         let (blame_file_tx, blame_file_rx) = std::sync::mpsc::channel();
         let (tree_tx, tree_rx) = std::sync::mpsc::channel();
+        let (diagnostics_file_tx, diagnostics_file_rx) = std::sync::mpsc::channel();
 
         let mut languages = std::collections::HashMap::new();
         if let Ok(content) = std::fs::read_to_string("assets/languages.json") {
@@ -215,6 +218,8 @@ impl UiState {
             git_diff_tx: diff_tx,
             tree_rx: Some(tree_rx),
             tree_tx,
+            diagnostics_file_rx: Some(diagnostics_file_rx),
+            diagnostics_file_tx,
             languages,
             lsp_diagnostics: std::collections::HashMap::new(),
             lsp_diagnostics_details: std::collections::HashMap::new(),
