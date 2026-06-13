@@ -22,7 +22,7 @@ pub fn record_step(name: &'static str) {
 pub fn report_startup_complete() {
     if let Some(start) = START_TIME.get() {
         let duration = start.elapsed();
-        println!("🚀 Startup complete! Total Time elapsed: {:.2?}", duration);
+        println!("Startup complete! Total Time elapsed: {:.2?}", duration);
         println!("Initialization breakdown:");
         if let Ok(steps) = STEPS.lock() {
             let mut last_time = *start;
