@@ -216,9 +216,319 @@ impl UiState {
     }
 
     /// Basic fallback syntax highlighting when no LSP semantic tokens are available
-    pub fn get_line_char_colors(&self, line_text: &str) -> Vec<[f32; 4]> {
-        vec![self.config.theme.syntax_default; line_text.chars().count()]
+    pub fn get_line_char_colors(&self, line_text: &str, path_opt: Option<&str>) -> Vec<[f32; 4]> {
+        let chars: Vec<char> = line_text.chars().collect();
+        let len = chars.len();
+        let mut colors = vec![self.config.theme.syntax_default; len];
+        if len == 0 {
+            return colors;
+        }
+
+        let ext = path_opt
+            .and_then(|p| std::path::Path::new(p).extension())
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+
+        match ext {
+            "toml" => {
+                let mut i = 0;
+                let mut in_value = false;
+                
+                let trimmed = line_text.trim();
+                if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                    for j in 0..len {
+                        colors[j] = self.config.theme.syntax_keyword;
+                    }
+                    return colors;
+                }
+
+                while i < len {
+                    if chars[i].is_whitespace() {
+                        i += 1;
+                        continue;
+                    }
+                    if chars[i] == '#' {
+                        for j in i..len {
+                            colors[j] = self.config.theme.syntax_comment;
+                        }
+                        break;
+                    }
+                    if chars[i] == '"' || chars[i] == '\'' {
+                        let quote = chars[i];
+                        colors[i] = self.config.theme.syntax_string;
+                        let mut j = i + 1;
+                        while j < len {
+                            colors[j] = self.config.theme.syntax_string;
+                            if chars[j] == quote && (j == 0 || chars[j - 1] != '\\') {
+                                break;
+                            }
+                            j += 1;
+                        }
+                        i = j + 1;
+                        continue;
+                    }
+                    if chars[i] == '=' {
+                        colors[i] = self.config.theme.syntax_operator;
+                        in_value = true;
+                        i += 1;
+                        continue;
+                    }
+                    if !in_value {
+                        let start = i;
+                        while i < len && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '-') {
+                            colors[i] = self.config.theme.syntax_property;
+                            i += 1;
+                        }
+                        if start == i {
+                            i += 1;
+                        }
+                    } else {
+                        if chars[i].is_ascii_digit() || chars[i] == '-' || chars[i] == '+' {
+                            while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '.' || chars[i] == '_' || chars[i] == '-') {
+                                colors[i] = self.config.theme.syntax_number;
+                                i += 1;
+                            }
+                            continue;
+                        }
+                        if chars[i].is_alphabetic() {
+                            let start = i;
+                            while i < len && chars[i].is_alphabetic() {
+                                i += 1;
+                            }
+                            let word: String = chars[start..i].iter().collect();
+                            let color = match word.as_str() {
+                                "true" | "false" => self.config.theme.syntax_keyword,
+                                _ => self.config.theme.syntax_default,
+                            };
+                            for j in start..i {
+                                colors[j] = color;
+                            }
+                            continue;
+                        }
+                        i += 1;
+                    }
+                }
+            }
+            "json" => {
+                let mut i = 0;
+                while i < len {
+                    if chars[i].is_whitespace() {
+                        i += 1;
+                        continue;
+                    }
+                    if chars[i] == '"' {
+                        let mut j = i + 1;
+                        while j < len {
+                            if chars[j] == '"' && (j == 0 || chars[j - 1] != '\\') {
+                                break;
+                            }
+                            j += 1;
+                        }
+                        let mut next = j + 1;
+                        while next < len && chars[next].is_whitespace() {
+                            next += 1;
+                        }
+                        let is_key = next < len && chars[next] == ':';
+                        let color = if is_key { self.config.theme.syntax_property } else { self.config.theme.syntax_string };
+                        for k in i..=(j.min(len - 1)) {
+                            colors[k] = color;
+                        }
+                        i = j + 1;
+                        continue;
+                    }
+                    if chars[i] == ':' || chars[i] == ',' || chars[i] == '{' || chars[i] == '}' || chars[i] == '[' || chars[i] == ']' {
+                        colors[i] = self.config.theme.syntax_operator;
+                        i += 1;
+                        continue;
+                    }
+                    if chars[i].is_ascii_digit() || chars[i] == '-' {
+                        while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '.' || chars[i] == '-' || chars[i] == '+') {
+                            colors[i] = self.config.theme.syntax_number;
+                            i += 1;
+                        }
+                        continue;
+                    }
+                    if chars[i].is_alphabetic() {
+                        let start = i;
+                        while i < len && chars[i].is_alphabetic() {
+                            i += 1;
+                        }
+                        let word: String = chars[start..i].iter().collect();
+                        let color = match word.as_str() {
+                            "true" | "false" | "null" => self.config.theme.syntax_keyword,
+                            _ => self.config.theme.syntax_default,
+                        };
+                        for j in start..i {
+                            colors[j] = color;
+                        }
+                        continue;
+                    }
+                    i += 1;
+                }
+            }
+            "md" | "markdown" => {
+                if line_text.starts_with('#') {
+                    for j in 0..len {
+                        colors[j] = self.config.theme.syntax_keyword;
+                    }
+                    return colors;
+                }
+                let mut i = 0;
+                while i < len {
+                    if chars[i] == '`' {
+                        let mut j = i + 1;
+                        while j < len && chars[j] != '`' {
+                            j += 1;
+                        }
+                        let end = (j + 1).min(len);
+                        for k in i..end {
+                            colors[k] = self.config.theme.syntax_attribute;
+                        }
+                        i = end;
+                        continue;
+                    }
+                    if chars[i] == '[' {
+                        let mut j = i + 1;
+                        while j < len && chars[j] != ']' {
+                            j += 1;
+                        }
+                        if j < len {
+                            colors[i] = self.config.theme.syntax_operator;
+                            colors[j] = self.config.theme.syntax_operator;
+                            for k in (i+1)..j {
+                                colors[k] = self.config.theme.syntax_string;
+                            }
+                            i = j + 1;
+                            continue;
+                        }
+                    }
+                    if chars[i] == '(' {
+                        let mut j = i + 1;
+                        while j < len && chars[j] != ')' {
+                            j += 1;
+                        }
+                        if j < len {
+                            colors[i] = self.config.theme.syntax_operator;
+                            colors[j] = self.config.theme.syntax_operator;
+                            for k in (i+1)..j {
+                                colors[k] = self.config.theme.syntax_type;
+                            }
+                            i = j + 1;
+                            continue;
+                        }
+                    }
+                    i += 1;
+                }
+            }
+            _ => {
+                let is_python = ext == "py" || ext == "python";
+                let mut i = 0;
+                while i < len {
+                    if is_python && chars[i] == '#' {
+                        for j in i..len {
+                            colors[j] = self.config.theme.syntax_comment;
+                        }
+                        break;
+                    }
+                    if !is_python && i + 1 < len && chars[i] == '/' && chars[i + 1] == '/' {
+                        for j in i..len {
+                            colors[j] = self.config.theme.syntax_comment;
+                        }
+                        break;
+                    }
+                    if chars[i] == '"' || chars[i] == '\'' {
+                        let quote = chars[i];
+                        colors[i] = self.config.theme.syntax_string;
+                        let mut j = i + 1;
+                        while j < len {
+                            colors[j] = self.config.theme.syntax_string;
+                            if chars[j] == quote && (j == 0 || chars[j - 1] != '\\') {
+                                break;
+                            }
+                            j += 1;
+                        }
+                        i = j + 1;
+                        continue;
+                    }
+                    if chars[i].is_ascii_digit() && (i == 0 || !chars[i - 1].is_alphanumeric() && chars[i - 1] != '_') {
+                        while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '_' || chars[i] == '.' || chars[i] == 'x' || chars[i] == 'b' || chars[i] == 'o') {
+                            colors[i] = self.config.theme.syntax_number;
+                            i += 1;
+                        }
+                        continue;
+                    }
+                    if chars[i].is_alphabetic() || chars[i] == '_' {
+                        let start = i;
+                        while i < len && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                            i += 1;
+                        }
+                        let word: String = chars[start..i].iter().collect();
+                        let color = match word.as_str() {
+                            "fn" | "let" | "mut" | "const" | "static" | "if" | "else" | "match" | "for" |
+                            "while" | "loop" | "break" | "continue" | "return" | "pub" | "mod" | "use" |
+                            "struct" | "enum" | "impl" | "trait" | "type" | "where" | "as" | "in" |
+                            "ref" | "self" | "Self" | "super" | "crate" | "async" | "await" | "move" |
+                            "dyn" | "unsafe" | "extern" | "true" | "false" |
+                            "def" | "class" | "import" | "from" | "elif" | "try" | "except" | "finally" |
+                            "with" | "pass" | "lambda" | "is" | "and" | "or" | "not" | "yield" | "global" |
+                            "var" | "function" | "const_cast" | "dynamic_cast" | "reinterpret_cast" |
+                            "static_cast" | "typename" | "namespace" | "using" | "template" | "inline" |
+                            "virtual" | "override" | "final" | "package" | "import_path" | "go" | "chan" |
+                            "select" | "nil" | "null" | "True" | "False" => self.config.theme.syntax_keyword,
+                            
+                            "String" | "Vec" | "Option" | "Result" | "Box" | "Arc" | "Mutex" | "HashMap" |
+                            "HashSet" | "PathBuf" | "Path" | "Rc" | "Cell" | "RefCell" | "Cow" |
+                            "u8" | "u16" | "u32" | "u64" | "u128" | "usize" |
+                            "i8" | "i16" | "i32" | "i64" | "i128" | "isize" |
+                            "f32" | "f64" | "bool" | "char" | "str" |
+                            "int" | "float" | "double" | "void" | "string" | "boolean" | "number" |
+                            "object" | "any" | "unknown" | "never" => self.config.theme.syntax_type,
+                            
+                            "Some" | "None" | "Ok" | "Err" => self.config.theme.syntax_enum_member,
+                            _ => {
+                                let mut next = i;
+                                while next < len && chars[next].is_whitespace() {
+                                    next += 1;
+                                }
+                                if next < len && chars[next] == '(' {
+                                    self.config.theme.syntax_attribute
+                                } else if chars[start].is_uppercase() {
+                                    self.config.theme.syntax_type
+                                } else {
+                                    self.config.theme.syntax_default
+                                }
+                            }
+                        };
+                        for j in start..i {
+                            colors[j] = color;
+                        }
+                        continue;
+                    }
+                    if chars[i] == '#' && !is_python {
+                        while i < len && !chars[i].is_whitespace() && chars[i] != ';' {
+                            colors[i] = self.config.theme.syntax_attribute;
+                            i += 1;
+                        }
+                        continue;
+                    }
+                    if chars[i] == '@' && is_python {
+                        while i < len && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '@') {
+                            colors[i] = self.config.theme.syntax_attribute;
+                            i += 1;
+                        }
+                        continue;
+                    }
+                    if chars[i] == '+' || chars[i] == '-' || chars[i] == '*' || chars[i] == '/' || chars[i] == '=' || chars[i] == '!' || chars[i] == '<' || chars[i] == '>' || chars[i] == '&' || chars[i] == '|' || chars[i] == '^' || chars[i] == '%' {
+                        colors[i] = self.config.theme.syntax_operator;
+                    }
+                    i += 1;
+                }
+            }
+        }
+
+        colors
     }
+
 
     pub fn update_git_branch(&mut self) {
         let tx = self.git_branch_tx.clone();
