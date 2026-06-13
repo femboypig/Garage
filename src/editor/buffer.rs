@@ -22,8 +22,8 @@ pub struct Buffer {
     redo_stack: Vec<Vec<Action>>,
     current_transaction: Option<Vec<Action>>,
     pub is_modified: bool,
-    initial_lines: Vec<String>,
     max_line_len: usize,
+    saved_undo_len: Option<usize>,
 }
 
 impl Buffer {
@@ -35,8 +35,8 @@ impl Buffer {
             redo_stack: Vec::new(),
             current_transaction: None,
             is_modified: false,
-            initial_lines: vec![String::new()],
             max_line_len: 0,
+            saved_undo_len: Some(0),
         }
     }
 
@@ -47,13 +47,13 @@ impl Buffer {
             text.lines().map(|s| s.replace('\t', "    ")).collect()
         };
         let mut buffer = Self {
-            lines: lines.clone(),
+            lines,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             current_transaction: None,
             is_modified: false,
-            initial_lines: lines,
             max_line_len: 0,
+            saved_undo_len: Some(0),
         };
         buffer.recalculate_max_line_len();
         buffer
@@ -82,18 +82,18 @@ impl Buffer {
         }
 
         self.lines = loaded_lines;
-        self.initial_lines = self.lines.clone();
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.current_transaction = None;
         self.is_modified = false;
+        self.saved_undo_len = Some(0);
         self.recalculate_max_line_len();
         Ok(())
     }
 
     /// Mark the buffer as saved by syncing the initial lines.
     pub fn mark_saved(&mut self) {
-        self.initial_lines = self.lines.clone();
+        self.saved_undo_len = Some(self.undo_stack.len());
         self.is_modified = false;
     }
 
@@ -198,8 +198,17 @@ impl Buffer {
             }
             self.lines.insert(insert_idx, last_line);
         }
-        self.is_modified = self.lines != self.initial_lines;
-        self.recalculate_max_line_len();
+        self.is_modified = true;
+
+        // Incremental max line length check
+        let mut max_new_len = 0;
+        for i in 0..parts.len() {
+            let l_idx = line + i;
+            if l_idx < self.lines.len() {
+                max_new_len = max_new_len.max(self.lines[l_idx].chars().count());
+            }
+        }
+        self.max_line_len = self.max_line_len.max(max_new_len);
     }
 
     /// Delete text from start coordinates to end coordinates.
@@ -223,7 +232,6 @@ impl Buffer {
         }
 
         self.delete_raw(s_line, s_col, e_line, e_col);
-        self.recalculate_max_line_len();
         deleted_text
     }
 
@@ -231,6 +239,14 @@ impl Buffer {
     fn delete_raw(&mut self, start_line: usize, start_col: usize, end_line: usize, end_col: usize) {
         if start_line >= self.lines.len() || end_line >= self.lines.len() {
             return;
+        }
+
+        let mut was_max = false;
+        for i in start_line..=end_line {
+            if self.lines[i].chars().count() >= self.max_line_len {
+                was_max = true;
+                break;
+            }
         }
 
         let start_byte = self.char_to_byte_idx(start_line, start_col);
@@ -254,7 +270,11 @@ impl Buffer {
         if self.lines.is_empty() {
             self.lines.push(String::new());
         }
-        self.is_modified = self.lines != self.initial_lines;
+        self.is_modified = true;
+
+        if was_max {
+            self.recalculate_max_line_len();
+        }
     }
 
     /// Undo the last transaction. Returns true if successful.
@@ -293,7 +313,7 @@ impl Buffer {
                 }
             }
             self.push_redo(redo_tx);
-            self.recalculate_max_line_len();
+            self.is_modified = Some(self.undo_stack.len()) != self.saved_undo_len;
             edit_pos
         } else {
             None
@@ -336,7 +356,7 @@ impl Buffer {
                 }
             }
             self.push_undo(undo_tx);
-            self.recalculate_max_line_len();
+            self.is_modified = Some(self.undo_stack.len()) != self.saved_undo_len;
             edit_pos
         } else {
             None
@@ -344,10 +364,24 @@ impl Buffer {
     }
 
     fn push_undo(&mut self, tx: Vec<Action>) {
+        if let Some(saved_len) = self.saved_undo_len {
+            if self.undo_stack.len() < saved_len {
+                self.saved_undo_len = None;
+            }
+        }
         self.undo_stack.push(tx);
         if self.undo_stack.len() > 1000 {
+            if let Some(saved_len) = self.saved_undo_len {
+                let drained_count = self.undo_stack.len() - 1000;
+                if saved_len < drained_count {
+                    self.saved_undo_len = None;
+                } else {
+                    self.saved_undo_len = Some(saved_len - drained_count);
+                }
+            }
             self.undo_stack.drain(0..(self.undo_stack.len() - 1000));
         }
+        self.is_modified = Some(self.undo_stack.len()) != self.saved_undo_len;
     }
 
     fn push_redo(&mut self, tx: Vec<Action>) {
