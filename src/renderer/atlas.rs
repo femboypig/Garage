@@ -59,7 +59,7 @@ fn load_fallback_nerd_fonts() -> Vec<fontdue::Font> {
 
 pub struct FontAtlas {
     pub font: Font,
-    pub fallback_fonts: Vec<Font>,
+    pub fallback_fonts: std::sync::Arc<std::sync::Mutex<Vec<Font>>>,
     pub texture: wgpu::Texture,
     pub sampler: wgpu::Sampler,
     pub atlas_width: u32,
@@ -79,7 +79,14 @@ impl FontAtlas {
         font_bytes: &[u8],
     ) -> Result<Self, &'static str> {
         let font = Font::from_bytes(font_bytes, FontSettings::default())?;
-        let fallback_fonts = load_fallback_nerd_fonts();
+        let fallback_fonts = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let fallback_clone = fallback_fonts.clone();
+        std::thread::spawn(move || {
+            let loaded = load_fallback_nerd_fonts();
+            if let Ok(mut lock) = fallback_clone.lock() {
+                *lock = loaded;
+            }
+        });
         
         let atlas_width = 1024;
         let atlas_height = 1024;
@@ -193,17 +200,25 @@ impl FontAtlas {
             return self.glyphs.get(&key);
         }
 
-        let mut raster_font = &self.font;
-        if self.font.lookup_glyph_index(c) == 0 {
-            for fb_font in &self.fallback_fonts {
-                if fb_font.lookup_glyph_index(c) != 0 {
-                    raster_font = fb_font;
-                    break;
+        let (metrics, bitmap) = {
+            let mut found_fb = None;
+            let fb_lock = self.fallback_fonts.lock().ok();
+            if self.font.lookup_glyph_index(c) == 0 {
+                if let Some(ref lock) = fb_lock {
+                    for fb_font in &**lock {
+                        if fb_font.lookup_glyph_index(c) != 0 {
+                            found_fb = Some(fb_font);
+                            break;
+                        }
+                    }
                 }
             }
-        }
-
-        let (metrics, bitmap) = raster_font.rasterize(c, size);
+            if let Some(fb) = found_fb {
+                fb.rasterize(c, size)
+            } else {
+                self.font.rasterize(c, size)
+            }
+        };
         
         // Handle empty glyphs (like spaces)
         if metrics.width == 0 || metrics.height == 0 {
