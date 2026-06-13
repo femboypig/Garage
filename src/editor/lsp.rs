@@ -40,6 +40,8 @@ pub enum LspCommand {
     RequestActiveTokens { lang_id: String },
     RequestTokensForFile { path: String },
     RunFlycheck { lang_id: String },
+    RegisterServer { lang_id: String, server: ServerInstance },
+    SpawnFailed { lang_id: String },
 }
 
 #[derive(Clone)]
@@ -396,6 +398,152 @@ fn spawn_server(lang_id: &str) -> Result<(std::process::Child, String), String> 
     Err(last_err)
 }
 
+fn spawn_server_async(
+    lang_id: String,
+    cmd_tx: Sender<LspCommand>,
+    diagnostics_tx: Sender<LspDiagnosticsUpdate>,
+    proxy_init: winit::event_loop::EventLoopProxy<()>,
+) {
+    let cmd_tx_clone = cmd_tx.clone();
+    std::thread::spawn(move || {
+        log::info!("LSP: Spawning server asynchronously for {}", lang_id);
+        match spawn_server(&lang_id) {
+            Ok((mut child, cmd_name)) => {
+                let mut stdin_raw = child.stdin.take().expect("Failed to open stdin");
+                let stdout = child.stdout.take().expect("Failed to open stdout");
+                let mut stdout_reader = BufReader::new(stdout);
+                
+                let token_requests = Arc::new(Mutex::new(HashMap::<u64, String>::new()));
+                let next_req_id = Arc::new(Mutex::new(1000u64));
+                
+                // Handshake
+                let current_dir = std::env::current_dir().unwrap_or_default();
+                let root_uri = format!("file://{}", current_dir.to_string_lossy());
+                let init_msg = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "processId": std::process::id(),
+                        "rootUri": root_uri,
+                        "capabilities": {
+                            "textDocument": {
+                                "publishDiagnostics": {
+                                    "relatedInformation": true
+                                },
+                                "synchronization": {
+                                    "didOpen": true,
+                                    "didChange": true,
+                                    "didSave": true,
+                                    "willSave": false,
+                                    "willSaveWaitUntil": false
+                                },
+                                "semanticTokens": {
+                                    "requests": {
+                                        "full": true
+                                    },
+                                    "tokenTypes": [
+                                        "namespace", "type", "class", "enum", "interface", "struct", "typeParameter",
+                                        "parameter", "variable", "property", "enumMember", "event", "function",
+                                        "method", "macro", "keyword", "modifier", "comment", "string", "number",
+                                        "regexp", "operator"
+                                    ],
+                                    "tokenModifiers": [
+                                        "declaration", "definition", "readonly", "static", "deprecated",
+                                        "abstract", "async", "modification", "documentation", "defaultLibrary"
+                                    ],
+                                    "formats": ["relative"]
+                                }
+                            },
+                            "window": {
+                                "workDoneProgress": true
+                            }
+                        },
+                        "initializationOptions": {
+                            "check": {
+                                "command": "check",
+                                "extraArgs": ["--target-dir", "target/rust-analyzer"]
+                            },
+                            "checkOnSave": {
+                                "enable": true,
+                                "command": "check",
+                                "extraArgs": ["--target-dir", "target/rust-analyzer"]
+                            },
+                            "cargo": {
+                                "targetDir": "target/rust-analyzer"
+                            }
+                        },
+                        "workspaceFolders": [{
+                            "uri": root_uri,
+                            "name": current_dir.file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("workspace")
+                        }]
+                    }
+                });
+
+                log::info!("LSP: Sending initialize to {}...", cmd_name);
+                if write_message(&mut stdin_raw, &init_msg.to_string()).is_ok() {
+                    if let Ok(resp_str) = read_message(&mut stdout_reader) {
+                        log::info!("LSP: Initialize response from {} received", cmd_name);
+                        let server_token_types = parse_legend_token_types(&resp_str);
+                        let token_types = Arc::new(Mutex::new(server_token_types));
+
+                        let initialized_msg = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "method": "initialized",
+                            "params": {}
+                        });
+                        let _ = write_message(&mut stdin_raw, &initialized_msg.to_string());
+                        
+                        let stdin = Arc::new(Mutex::new(stdin_raw));
+                        start_reader_thread(stdout_reader, lang_id.clone(), cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone(), token_types.clone(), cmd_tx_clone.clone());
+
+                        let server_instance = ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types };
+                        
+                        let _ = cmd_tx_clone.send(LspCommand::RegisterServer { lang_id, server: server_instance });
+                    } else {
+                        let _ = cmd_tx_clone.send(LspCommand::SpawnFailed { lang_id });
+                    }
+                } else {
+                    let _ = cmd_tx_clone.send(LspCommand::SpawnFailed { lang_id });
+                }
+            }
+            Err(e_msg) => {
+                log::warn!("LSP: Async spawn failed for {}: {}", lang_id, e_msg);
+                let _ = cmd_tx_clone.send(LspCommand::SpawnFailed { lang_id });
+            }
+        }
+    });
+}
+
+fn is_path_ignored(path_str: &str, gitignore: &ignore::gitignore::Gitignore) -> bool {
+    let path = std::path::Path::new(path_str);
+    
+    // Check if it is inside the workspace (current directory)
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    if !path.starts_with(&current_dir) {
+        return true;
+    }
+    
+    // Check if hidden (starts with a dot component)
+    let has_hidden = path.components().any(|comp| {
+        if let std::path::Component::Normal(name) = comp {
+            name.to_string_lossy().starts_with('.')
+        } else {
+            false
+        }
+    });
+    if has_hidden {
+        return true;
+    }
+
+    // Check gitignore
+    let relative_path = path.strip_prefix(&current_dir).unwrap_or(path);
+    gitignore.matched_path_or_any_parents(relative_path, false).is_ignore()
+}
+
+
 fn get_latest_github_tag(repo: &str) -> Option<String> {
     let output = Command::new("curl")
         .args(&["-sI", &format!("https://github.com/{}/releases/latest", repo)])
@@ -467,7 +615,7 @@ fn ensure_node_runtime() -> Result<(String, String), String> {
 }
 
 fn attempt_auto_install(
-    lang_id: &'static str,
+    lang_id: &str,
     cmd_tx: Sender<LspCommand>,
     diagnostics_tx: Sender<LspDiagnosticsUpdate>,
     event_loop_proxy: winit::event_loop::EventLoopProxy<()>,
@@ -475,6 +623,7 @@ fn attempt_auto_install(
     let tx = cmd_tx;
     let diag_tx = diagnostics_tx;
     let proxy = event_loop_proxy;
+    let lang_id = lang_id.to_string();
     std::thread::spawn(move || {
         let lsp_dir = std::env::current_dir().unwrap_or_default().join(".lsp");
         let _ = std::fs::create_dir_all(&lsp_dir);
@@ -483,7 +632,7 @@ fn attempt_auto_install(
             let _ = std::fs::write(&package_json_path, "{}");
         }
 
-        let install_result = match lang_id {
+        let install_result = match lang_id.as_str() {
             "rust" => {
                 let arch = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86_64" };
                 let os = if cfg!(target_os = "macos") {
@@ -755,7 +904,7 @@ fn attempt_auto_install(
             }
             Err(e) => {
                 log::warn!("LSP Auto-Install: Failed for {}: {}", lang_id, e);
-                let display_name = match lang_id {
+                let display_name = match lang_id.as_str() {
                     "rust" => "rust-analyzer",
                     "python" => "pyright/pylsp",
                     "go" => "gopls",
@@ -767,7 +916,7 @@ fn attempt_auto_install(
                     "html" => "html-language-server",
                     "css" | "scss" => "css-language-server",
                     "markdown" => "marksman",
-                    _ => lang_id,
+                    _ => &lang_id,
                 };
                 let _ = diag_tx.send(LspDiagnosticsUpdate {
                     file_path: format!("status:offline (install failed for {})", display_name),
@@ -852,164 +1001,38 @@ impl LspClient {
                             let mut server_just_spawned = false;
                             
                             if !server_ready {
-                                match spawn_server(lang_id) {
-                                    Ok((mut child, cmd_name)) => {
-                                        let mut stdin_raw = child.stdin.take().expect("Failed to open stdin");
-                                        let stdout = child.stdout.take().expect("Failed to open stdout");
-                                        let mut stdout_reader = BufReader::new(stdout);
-                                        
-                                        let token_requests = Arc::new(Mutex::new(HashMap::<u64, String>::new()));
-                                        let next_req_id = Arc::new(Mutex::new(1000u64));
-                                        
-                                        // Handshake
-                                        let current_dir = std::env::current_dir().unwrap_or_default();
-                                        let root_uri = format!("file://{}", current_dir.to_string_lossy());
-                                        let init_msg = serde_json::json!({
-                                            "jsonrpc": "2.0",
-                                            "id": 1,
-                                            "method": "initialize",
-                                            "params": {
-                                                "processId": std::process::id(),
-                                                "rootUri": root_uri,
-                                                "capabilities": {
-                                                    "textDocument": {
-                                                        "publishDiagnostics": {
-                                                            "relatedInformation": true
-                                                        },
-                                                        "synchronization": {
-                                                            "didOpen": true,
-                                                            "didChange": true,
-                                                            "didSave": true,
-                                                            "willSave": false,
-                                                            "willSaveWaitUntil": false
-                                                        },
-                                                        "semanticTokens": {
-                                                            "requests": {
-                                                                "full": true
-                                                            },
-                                                            "tokenTypes": [
-                                                                "namespace", "type", "class", "enum", "interface", "struct", "typeParameter",
-                                                                "parameter", "variable", "property", "enumMember", "event", "function",
-                                                                "method", "macro", "keyword", "modifier", "comment", "string", "number",
-                                                                "regexp", "operator"
-                                                            ],
-                                                            "tokenModifiers": [
-                                                                "declaration", "definition", "readonly", "static", "deprecated",
-                                                                "abstract", "async", "modification", "documentation", "defaultLibrary"
-                                                            ],
-                                                            "formats": ["relative"]
-                                                        }
-                                                    },
-                                                    "window": {
-                                                        "workDoneProgress": true
-                                                    }
-                                                },
-                                                "initializationOptions": {
-                                                    "check": {
-                                                        "command": "check",
-                                                        "extraArgs": ["--target-dir", "target/rust-analyzer"]
-                                                    },
-                                                    "checkOnSave": {
-                                                        "enable": true,
-                                                        "command": "check",
-                                                        "extraArgs": ["--target-dir", "target/rust-analyzer"]
-                                                    },
-                                                    "cargo": {
-                                                        "targetDir": "target/rust-analyzer"
-                                                    }
-                                                },
-                                                "workspaceFolders": [{
-                                                    "uri": root_uri,
-                                                    "name": current_dir.file_name()
-                                                        .and_then(|n| n.to_str())
-                                                        .unwrap_or("workspace")
-                                                }]
-                                            }
-                                        });
-
-                                        log::info!("LSP: Sending initialize to {}...", cmd_name);
-                                        if write_message(&mut stdin_raw, &init_msg.to_string()).is_ok() {
-                                            if let Ok(resp_str) = read_message(&mut stdout_reader) {
-                                                log::info!("LSP: Initialize response from {} received", cmd_name);
-                                                let server_token_types = parse_legend_token_types(&resp_str);
-                                                let token_types = Arc::new(Mutex::new(server_token_types));
-
-                                                let initialized_msg = serde_json::json!({
-                                                    "jsonrpc": "2.0",
-                                                    "method": "initialized",
-                                                    "params": {}
-                                                });
-                                                let _ = write_message(&mut stdin_raw, &initialized_msg.to_string());
-                                                
-                                                let stdin = Arc::new(Mutex::new(stdin_raw));
-                                                start_reader_thread(stdout_reader, lang_id.to_string(), cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone(), token_types.clone(), cmd_tx_clone.clone());
-
-                                                let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                                                    file_path: format!("status:{}", cmd_name),
-                                                    errors: 0,
-                                                    warnings: 0,
-                                                    diagnostics: vec![],
-                                                    tokens: vec![],
-                                                    is_tokens_update: false,
-                                                });
-                                                let _ = proxy_init.send_event(());
-                                                
-                                                 let server_instance = ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types };
-                                                 open_all_documents_for_server(&server_instance, lang_id, &open_documents, &mut document_versions);
-                                                 servers.insert(lang_id.to_string(), server_instance);
-                                                 
-                                                 let cmd_tx_delay = cmd_tx_clone.clone();
-                                                 let lang_id_delay = lang_id.to_string();
-                                                 std::thread::spawn(move || {
-                                                     std::thread::sleep(std::time::Duration::from_millis(2000));
-                                                     let _ = cmd_tx_delay.send(LspCommand::RunFlycheck { lang_id: lang_id_delay });
-                                                 });
-
-                                                 server_ready = true;
-                                                 server_just_spawned = true;
-                                            }
-                                        }
-                                    }
-                                    Err(e_msg) => {
-                                        log::warn!("LSP: Failed to start server for {}: {}", lang_id, e_msg);
-                                         if !installing_servers.contains(&lang_id.to_string()) && (lang_id == "rust" || lang_id == "python" || lang_id == "go" || lang_id == "c" || lang_id == "cpp" || lang_id == "typescript" || lang_id == "javascript" || lang_id == "json" || lang_id == "yaml" || lang_id == "toml" || lang_id == "html" || lang_id == "css" || lang_id == "scss" || lang_id == "markdown") {
-                                             installing_servers.push(lang_id.to_string());
-                                             let display_name = match lang_id {
-                                                 "rust" => "rust-analyzer",
-                                                 "python" => "python-lsp-server",
-                                                 "go" => "gopls",
-                                                 "c" | "cpp" => "clangd",
-                                                 "typescript" | "javascript" => "typescript-language-server",
-                                                 "json" => "json-language-server",
-                                                 "yaml" => "yaml-language-server",
-                                                 "toml" => "taplo",
-                                                 "html" => "html-language-server",
-                                                 "css" | "scss" => "css-language-server",
-                                                 "markdown" => "marksman",
-                                                 _ => lang_id,
-                                             };
-                                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                                                file_path: format!("status:installing {}...", display_name),
-                                                errors: 0,
-                                                warnings: 0,
-                                                diagnostics: vec![],
-                                                tokens: vec![],
-                                                is_tokens_update: false,
-                                            });
-                                            let _ = proxy_init.send_event(());
-                                            attempt_auto_install(lang_id, cmd_tx_clone.clone(), diagnostics_tx.clone(), proxy_init.clone());
-                                        } else {
-                                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                                                file_path: "status:offline".to_string(),
-                                                errors: 9999,
-                                                warnings: 0,
-                                                diagnostics: vec![],
-                                                tokens: vec![],
-                                                is_tokens_update: false,
-                                            });
-                                            let _ = proxy_init.send_event(());
-                                        }
-                                    }
+                                if !installing_servers.contains(&lang_id.to_string()) {
+                                    installing_servers.push(lang_id.to_string());
+                                    let display_name = match lang_id {
+                                        "rust" => "rust-analyzer",
+                                        "python" => "python-lsp-server",
+                                        "go" => "gopls",
+                                        "c" | "cpp" => "clangd",
+                                        "typescript" | "javascript" => "typescript-language-server",
+                                        "json" => "json-language-server",
+                                        "yaml" => "yaml-language-server",
+                                        "toml" => "taplo",
+                                        "html" => "html-language-server",
+                                        "css" | "scss" => "css-language-server",
+                                        "markdown" => "marksman",
+                                        _ => lang_id,
+                                    };
+                                    let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                                        file_path: format!("status:starting {}...", display_name),
+                                        errors: 0,
+                                        warnings: 0,
+                                        diagnostics: vec![],
+                                        tokens: vec![],
+                                        is_tokens_update: false,
+                                    });
+                                    let _ = proxy_init.send_event(());
+                                    
+                                    spawn_server_async(
+                                        lang_id.to_string(),
+                                        cmd_tx_clone.clone(),
+                                        diagnostics_tx.clone(),
+                                        proxy_init.clone(),
+                                    );
                                 }
                             }
 
@@ -1114,7 +1137,7 @@ impl LspClient {
                                 }
                             });
                             if let Ok(mut writer) = server.stdin.lock() {
-                                let _ = write_message(&mut *writer, &save_msg.to_string());
+                                    let _ = write_message(&mut *writer, &save_msg.to_string());
                             }
                             trigger_rust_analyzer_flycheck(server);
                         }
@@ -1206,132 +1229,102 @@ impl LspClient {
                     }
                     Ok(LspCommand::RetrySpawn { lang_id }) => {
                         installing_servers.retain(|x| x != &lang_id);
-                        if !servers.contains_key(&lang_id) {
-                            match spawn_server(&lang_id) {
-                                Ok((mut child, cmd_name)) => {
-                                    let mut stdin_raw = child.stdin.take().expect("Failed to open stdin");
-                                    let stdout = child.stdout.take().expect("Failed to open stdout");
-                                    let mut stdout_reader = BufReader::new(stdout);
-                                    
-                                    let token_requests = Arc::new(Mutex::new(HashMap::<u64, String>::new()));
-                                    let next_req_id = Arc::new(Mutex::new(1000u64));
-                                    
-                                    // Handshake
-                                    let current_dir = std::env::current_dir().unwrap_or_default();
-                                    let root_uri = format!("file://{}", current_dir.to_string_lossy());
-                                    let init_msg = serde_json::json!({
-                                        "jsonrpc": "2.0",
-                                        "id": 1,
-                                        "method": "initialize",
-                                        "params": {
-                                            "processId": std::process::id(),
-                                            "rootUri": root_uri,
-                                            "capabilities": {
-                                                "textDocument": {
-                                                    "publishDiagnostics": {
-                                                        "relatedInformation": true
-                                                    },
-                                                    "synchronization": {
-                                                        "didOpen": true,
-                                                        "didChange": true,
-                                                        "didSave": true,
-                                                        "willSave": false,
-                                                        "willSaveWaitUntil": false
-                                                    },
-                                                    "semanticTokens": {
-                                                        "requests": {
-                                                            "full": true
-                                                        },
-                                                        "tokenTypes": [
-                                                            "namespace", "type", "class", "enum", "interface", "struct", "typeParameter",
-                                                            "parameter", "variable", "property", "enumMember", "event", "function",
-                                                            "method", "macro", "keyword", "modifier", "comment", "string", "number",
-                                                            "regexp", "operator"
-                                                        ],
-                                                        "tokenModifiers": [
-                                                            "declaration", "definition", "readonly", "static", "deprecated",
-                                                            "abstract", "async", "modification", "documentation", "defaultLibrary"
-                                                        ],
-                                                        "formats": ["relative"]
-                                                    }
-                                                },
-                                                "window": {
-                                                    "workDoneProgress": true
-                                                }
-                                            },
-                                            "initializationOptions": {
-                                                "check": {
-                                                    "command": "check",
-                                                    "extraArgs": ["--target-dir", "target/rust-analyzer"]
-                                                 },
-                                                 "checkOnSave": {
-                                                     "enable": true,
-                                                     "command": "check",
-                                                     "extraArgs": ["--target-dir", "target/rust-analyzer"]
-                                                 }
-                                             },
-                                            "workspaceFolders": [{
-                                                "uri": root_uri,
-                                                "name": current_dir.file_name()
-                                                    .and_then(|n| n.to_str())
-                                                    .unwrap_or("workspace")
-                                            }]
-                                        }
-                                    });
-
-                                    log::info!("LSP: Sending initialize to {} after auto-install...", cmd_name);
-                                    if write_message(&mut stdin_raw, &init_msg.to_string()).is_ok() {
-                                        if let Ok(resp_str) = read_message(&mut stdout_reader) {
-                                            let server_token_types = parse_legend_token_types(&resp_str);
-                                            let token_types = Arc::new(Mutex::new(server_token_types));
-                                            log::info!("LSP: Initialize response from {} received", cmd_name);
-                                            let initialized_msg = serde_json::json!({
-                                                "jsonrpc": "2.0",
-                                                "method": "initialized",
-                                                "params": {}
-                                            });
-                                            let _ = write_message(&mut stdin_raw, &initialized_msg.to_string());
-                                            
-                                            let stdin = Arc::new(Mutex::new(stdin_raw));
-                                            start_reader_thread(stdout_reader, lang_id.to_string(), cmd_name.clone(), diagnostics_tx.clone(), proxy_init.clone(), token_requests.clone(), stdin.clone(), token_types.clone(), cmd_tx_clone.clone());
-
-                                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                                                file_path: format!("status:{}", cmd_name),
-                                                errors: 0,
-                                                warnings: 0,
-                                                diagnostics: vec![],
-                                                tokens: vec![],
-                                                is_tokens_update: false,
-                                            });
-                                            let _ = proxy_init.send_event(());
-                                            
-                                            // Open all files that belong to this language
-                                            let server_instance = ServerInstance { stdin, cmd_name, token_requests, next_req_id, _token_types: token_types };
-                                            open_all_documents_for_server(&server_instance, &lang_id, &open_documents, &mut document_versions);
-                                            servers.insert(lang_id.to_string(), server_instance);
-
-                                            let cmd_tx_delay = cmd_tx_clone.clone();
-                                            let lang_id_delay = lang_id.to_string();
-                                            std::thread::spawn(move || {
-                                                std::thread::sleep(std::time::Duration::from_millis(2000));
-                                                let _ = cmd_tx_delay.send(LspCommand::RunFlycheck { lang_id: lang_id_delay });
-                                            });
-                                        }
-                                    }
-                                }
-                                Err(e_msg) => {
-                                    log::warn!("LSP: Spawn failed again for {} after auto-install: {}", lang_id, e_msg);
-                                    let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
-                                        file_path: "status:offline".to_string(),
-                                        errors: 9999,
-                                        warnings: 0,
-                                        diagnostics: vec![],
-                                        tokens: vec![],
-                                        is_tokens_update: false,
-                                    });
-                                    let _ = proxy_init.send_event(());
-                                }
-                            }
+                        if !servers.contains_key(&lang_id) && !installing_servers.contains(&lang_id) {
+                            installing_servers.push(lang_id.clone());
+                            let display_name = match lang_id.as_str() {
+                                "rust" => "rust-analyzer",
+                                "python" => "python-lsp-server",
+                                "go" => "gopls",
+                                "c" | "cpp" => "clangd",
+                                "typescript" | "javascript" => "typescript-language-server",
+                                "json" => "json-language-server",
+                                "yaml" => "yaml-language-server",
+                                "toml" => "taplo",
+                                "html" => "html-language-server",
+                                "css" | "scss" => "css-language-server",
+                                "markdown" => "marksman",
+                                _ => &lang_id,
+                            };
+                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                                file_path: format!("status:starting {}...", display_name),
+                                errors: 0,
+                                warnings: 0,
+                                diagnostics: vec![],
+                                tokens: vec![],
+                                is_tokens_update: false,
+                            });
+                            let _ = proxy_init.send_event(());
+                            
+                            spawn_server_async(
+                                lang_id.clone(),
+                                cmd_tx_clone.clone(),
+                                diagnostics_tx.clone(),
+                                proxy_init.clone(),
+                            );
+                        }
+                    }
+                    Ok(LspCommand::RegisterServer { lang_id, server }) => {
+                        installing_servers.retain(|x| x != &lang_id);
+                        open_all_documents_for_server(&server, &lang_id, &open_documents, &mut document_versions);
+                        
+                        let cmd_name = server.cmd_name.clone();
+                        servers.insert(lang_id.clone(), server);
+                        
+                        let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                            file_path: format!("status:{}", cmd_name),
+                            errors: 0,
+                            warnings: 0,
+                            diagnostics: vec![],
+                            tokens: vec![],
+                            is_tokens_update: false,
+                        });
+                        let _ = proxy_init.send_event(());
+                        
+                        let cmd_tx_delay = cmd_tx_clone.clone();
+                        let lang_id_delay = lang_id.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(2000));
+                            let _ = cmd_tx_delay.send(LspCommand::RunFlycheck { lang_id: lang_id_delay });
+                        });
+                    }
+                    Ok(LspCommand::SpawnFailed { lang_id }) => {
+                        installing_servers.retain(|x| x != &lang_id);
+                        if lang_id == "rust" || lang_id == "python" || lang_id == "go" || lang_id == "c" || lang_id == "cpp" || lang_id == "typescript" || lang_id == "javascript" || lang_id == "json" || lang_id == "yaml" || lang_id == "toml" || lang_id == "html" || lang_id == "css" || lang_id == "scss" || lang_id == "markdown" {
+                            installing_servers.push(lang_id.clone());
+                            let display_name = match lang_id.as_str() {
+                                "rust" => "rust-analyzer",
+                                "python" => "python-lsp-server",
+                                "go" => "gopls",
+                                "c" | "cpp" => "clangd",
+                                "typescript" | "javascript" => "typescript-language-server",
+                                "json" => "json-language-server",
+                                "yaml" => "yaml-language-server",
+                                "toml" => "taplo",
+                                "html" => "html-language-server",
+                                "css" | "scss" => "css-language-server",
+                                "markdown" => "marksman",
+                                _ => &lang_id,
+                            };
+                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                                file_path: format!("status:installing {}...", display_name),
+                                errors: 0,
+                                warnings: 0,
+                                diagnostics: vec![],
+                                tokens: vec![],
+                                is_tokens_update: false,
+                            });
+                            let _ = proxy_init.send_event(());
+                            attempt_auto_install(&lang_id, cmd_tx_clone.clone(), diagnostics_tx.clone(), proxy_init.clone());
+                        } else {
+                            let _ = diagnostics_tx.send(LspDiagnosticsUpdate {
+                                file_path: "status:offline".to_string(),
+                                errors: 9999,
+                                warnings: 0,
+                                diagnostics: vec![],
+                                tokens: vec![],
+                                is_tokens_update: false,
+                            });
+                            let _ = proxy_init.send_event(());
                         }
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
@@ -1428,6 +1421,9 @@ fn start_reader_thread(
     std::thread::spawn(move || {
         let mut stdout_reader = stdout_reader;
         let mut active_progress = HashMap::<String, String>::new();
+        let mut builder = ignore::gitignore::GitignoreBuilder::new(".");
+        builder.add(".gitignore");
+        let gitignore = builder.build().unwrap_or_else(|_| ignore::gitignore::Gitignore::empty());
         loop {
             match read_message(&mut stdout_reader) {
                 Ok(resp_str) => {
@@ -1551,6 +1547,9 @@ fn start_reader_thread(
                             if let Some(params) = resp.get("params") {
                                 let uri = params["uri"].as_str().unwrap_or("");
                                 let file_path = uri_to_file_path(uri);
+                                if is_path_ignored(&file_path, &gitignore) {
+                                    continue;
+                                }
                                 
                                 let mut errors = 0;
                                 let mut warnings = 0;
@@ -1948,3 +1947,33 @@ fn parse_legend_token_types(resp_str: &str) -> Vec<String> {
     }
     token_types
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_path_ignored() {
+        let mut builder = ignore::gitignore::GitignoreBuilder::new(".");
+        builder.add(".gitignore");
+        let gitignore = builder.build().unwrap();
+
+        // Let's test with absolute paths or relative paths since the language server might send both.
+        let current_dir = std::env::current_dir().unwrap_or_default();
+        let target_file = current_dir.join("target/debug/build/foo.rs");
+        let zed_file = current_dir.join("zed_src/crates/editor/src/editor.rs");
+        let main_file = current_dir.join("src/main.rs");
+        let hidden_file = current_dir.join(".git/config");
+        
+        let external_cargo_file = std::path::PathBuf::from("/home/source/.cargo/registry/src/lib.rs");
+        let std_lib_file = std::path::PathBuf::from("/rustc/8904744439b503d2bbb32/library/core/src/ops/function.rs");
+
+        assert!(is_path_ignored(&target_file.to_string_lossy(), &gitignore), "target folder should be ignored");
+        assert!(is_path_ignored(&zed_file.to_string_lossy(), &gitignore), "zed_src folder should be ignored");
+        assert!(is_path_ignored(&hidden_file.to_string_lossy(), &gitignore), "hidden .git folder should be ignored");
+        assert!(is_path_ignored(&external_cargo_file.to_string_lossy(), &gitignore), "external cargo registry files should be ignored");
+        assert!(is_path_ignored(&std_lib_file.to_string_lossy(), &gitignore), "standard library path should be ignored");
+        assert!(!is_path_ignored(&main_file.to_string_lossy(), &gitignore), "src/main.rs should NOT be ignored");
+    }
+}
+
