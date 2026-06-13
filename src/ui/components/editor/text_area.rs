@@ -349,7 +349,7 @@ pub fn draw_text_area(
 
                     let code_start_x = text_area_x + gutter_w;
                     // Render syntax highlighted code line
-                    let syntax_colors = ui.get_line_char_colors(line_content);
+                    let syntax_colors = ui.get_line_char_colors(line_content, Some(path));
                     for (char_idx, c) in line_content.chars().enumerate() {
                         let char_color = syntax_colors.get(char_idx).copied().unwrap_or(ui.config.theme.syntax_default);
                         ui.push_char(
@@ -630,7 +630,7 @@ pub fn draw_text_area(
             }
         }
         if !has_tokens {
-            char_colors = ui.get_line_char_colors(line_text);
+            char_colors = ui.get_line_char_colors(line_text, active_file_path);
         }
         
         for (char_idx, c) in line_text.chars().enumerate() {
