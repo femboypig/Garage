@@ -288,7 +288,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     if let Err(e) = gpu.as_mut().unwrap().render(&vertices, &indices) {
                         log::error!("Rendering error: {:?}", e);
                     } else {
-                        first_frame_rendered = true;
+                        if !first_frame_rendered {
+                            first_frame_rendered = true;
+                            crate::experiments::startup::report_startup_complete();
+                        }
                     }
                 }
 
