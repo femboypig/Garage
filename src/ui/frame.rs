@@ -215,7 +215,7 @@ impl UiState {
         None
     }
 
-    /// Basic fallback syntax highlighting when no LSP semantic tokens are available (disabled per request)
+    /// Basic syntax highlighting (currently returns default theme color)
     pub fn get_line_char_colors(&self, line_text: &str, _path_opt: Option<&str>) -> Vec<[f32; 4]> {
         vec![self.config.theme.syntax_default; line_text.chars().count()]
     }
