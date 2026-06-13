@@ -59,8 +59,6 @@ pub fn draw_minimap(
     let end_line = ((editor_height + minimap_offset_y) / minimap_line_height).ceil().max(0.0) as usize;
     let end_line = end_line.min(buffer.len());
 
-    let abs_path = active_file_path.map(crate::editor::lsp::get_absolute_path).unwrap_or_default();
-    let tokens_opt = ui.lsp_semantic_tokens.get(&abs_path);
     let default_color = ui.config.theme.syntax_default;
 
     for line_idx in start_line..end_line {
@@ -68,37 +66,7 @@ pub fn draw_minimap(
         
         let line_text = &buffer.lines()[line_idx];
         let char_count = line_text.chars().count();
-        let mut char_colors = vec![default_color; char_count];
-
-        if let Some(tokens) = tokens_opt {
-            for token in tokens {
-                if token.line == line_idx {
-                    let start = token.start_col;
-                    let end = (token.start_col + token.length).min(char_count);
-                    
-                    let token_color = match token.token_type.as_str() {
-                        "keyword" | "modifier" => ui.config.theme.syntax_keyword,
-                        "string" => ui.config.theme.syntax_string,
-                        "comment" => ui.config.theme.syntax_comment,
-                        "number" => ui.config.theme.syntax_number,
-                        "type" | "class" | "struct" | "interface" | "enum" | "typeParameter" => ui.config.theme.syntax_type,
-                        "function" | "method" => ui.config.theme.syntax_attribute,
-                        "macro" => ui.config.theme.syntax_macro,
-                        "namespace" => ui.config.theme.syntax_namespace,
-                        "enumMember" => ui.config.theme.syntax_enum_member,
-                        "parameter" => ui.config.theme.syntax_parameter,
-                        "variable" => ui.config.theme.syntax_variable,
-                        "property" => ui.config.theme.syntax_property,
-                        "operator" => ui.config.theme.syntax_operator,
-                        _ => default_color,
-                    };
-                    
-                    for c_idx in start..end {
-                        char_colors[c_idx] = token_color;
-                    }
-                }
-            }
-        }
+        let char_colors = vec![default_color; char_count];
         
         let mut current_col = 0.0f32;
         let mut start_x = 0.0f32;
