@@ -311,12 +311,20 @@ impl GpuContext {
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
 
+        let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+            wgpu::PresentMode::Mailbox
+        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
+            wgpu::PresentMode::Immediate
+        } else {
+            wgpu::PresentMode::Fifo
+        };
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo, // Cap at monitor refresh rate (VSync)
+            present_mode,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
