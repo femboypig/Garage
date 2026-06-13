@@ -99,7 +99,8 @@ pub fn handle_action(
             if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
                 ui.selected_file = Some(std::path::PathBuf::from(active_path));
                 if !active_path.starts_with("diagnostics://") {
-                    ui.diagnostics_file_cache.insert(active_path.clone(), state.tabs[state.active_tab_idx].buffer.lines().to_vec());
+                    let abs_path = crate::editor::lsp::get_absolute_path(active_path);
+                    ui.diagnostics_file_cache.insert(abs_path, state.tabs[state.active_tab_idx].buffer.lines().to_vec());
                     ui.update_git_diff(Some(active_path));
                     ui.update_git_file_blame(Some(active_path));
                     ui.update_git_statuses();
@@ -483,7 +484,8 @@ pub fn handle_action(
                     if let Some(ref lsp) = state.lsp_client {
                         lsp.notify_change(&start_path, new_lines.join("\n"));
                     }
-                    ui.diagnostics_file_cache.insert(start_path.clone(), new_lines.to_vec());
+                    let abs_path = crate::editor::lsp::get_absolute_path(&start_path);
+                    ui.diagnostics_file_cache.insert(abs_path, new_lines.to_vec());
                 }
             }
         }
