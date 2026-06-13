@@ -166,13 +166,15 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     window.set_visible(true);
     crate::experiments::startup::record_step("Window Visibility Set");
 
+    let mut redraw_requested = false;
+
     // Run the event loop reactively to save power/CPU/GPU cycles when idle
     event_loop.run(move |event, elwt| {
         elwt.set_control_flow(ControlFlow::Wait);
 
         match event {
             Event::NewEvents(winit::event::StartCause::Init) => {
-                window.request_redraw();
+                redraw_requested = true;
             }
 
             Event::UserEvent(()) => {
@@ -224,7 +226,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         crate::experiments::startup::report_startup_complete();
                     }
                 }
-                window.request_redraw();
+                redraw_requested = true;
             }
 
             Event::WindowEvent { event, window_id } if window_id == window.id() => {
@@ -246,16 +248,140 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                     WindowEvent::Resized(physical_size) => {
                         gpu_ref.resize(physical_size);
-                        window.request_redraw();
+                        redraw_requested = true;
                     }
 
                     WindowEvent::ScaleFactorChanged { .. } => {
                         let physical_size = window.inner_size();
                         gpu_ref.resize(physical_size);
-                        window.request_redraw();
+                        redraw_requested = true;
                     }
 
                     WindowEvent::RedrawRequested => {
+                        redraw_requested = true;
+                    }
+
+                    WindowEvent::ModifiersChanged(new_modifiers) => {
+                        state.modifiers = new_modifiers.state();
+                    }
+
+                    WindowEvent::CursorMoved { position, .. } => {
+                        input::handle_cursor_moved(
+                            ui_ref,
+                            &mut state,
+                            &window,
+                            position.x as f32,
+                            position.y as f32,
+                        );
+                        redraw_requested = true;
+                    }
+
+                    WindowEvent::MouseInput { state: input_state, button, .. } => {
+                        input::handle_mouse_input(
+                            ui_ref,
+                            &mut state,
+                            &mut window.clone(),
+                            elwt,
+                            &mut gpu,
+                            atlas_ref,
+                            font_bytes,
+                            input_state,
+                            button,
+                        );
+                        redraw_requested = true;
+                    }
+
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        input::handle_mouse_wheel(ui_ref, &mut state, &window, delta);
+                        redraw_requested = true;
+                    }
+
+                    WindowEvent::KeyboardInput { event: key_event, .. } => {
+                        if key_event.state == winit::event::ElementState::Pressed {
+                            input::handle_keyboard_input(
+                                ui_ref,
+                                &mut state,
+                                &mut window.clone(),
+                                elwt,
+                                &mut gpu,
+                                atlas_ref,
+                                font_bytes,
+                                key_event.logical_key,
+                                key_event.physical_key,
+                            );
+
+                            if !state.terminal_focus {
+                                let active_tab = &state.tabs[state.active_tab_idx];
+                                if let Some(ref path) = active_tab.path {
+                                    let abs_path = crate::editor::get_absolute_path(path);
+                                    ui_ref.diagnostics_file_cache.insert(abs_path, active_tab.buffer.lines().to_vec());
+                                }
+                            }
+                            redraw_requested = true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Event::AboutToWait => {
+                if !first_frame_rendered && gpu.is_some() {
+                    redraw_requested = true;
+                }
+                
+                if gpu.is_some() && ui.is_some() && atlas.is_some() {
+                    let ui_ref = ui.as_mut().unwrap();
+                    let gpu_ref = gpu.as_mut().unwrap();
+                    let atlas_ref = atlas.as_mut().unwrap();
+
+                    // Throttled git branch, status and diff check (every 1 second)
+                    if ui_ref.last_branch_check.is_none() || ui_ref.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(1) {
+                        if ui_ref.config.show_git_branch {
+                            ui_ref.update_git_branch();
+                        }
+                        ui_ref.update_git_statuses();
+                        if state.active_tab_idx < state.tabs.len() {
+                            if let Some(ref file_path) = state.tabs[state.active_tab_idx].path {
+                                ui_ref.update_git_diff(Some(file_path));
+                            }
+                        }
+                        ui_ref.last_branch_check = Some(std::time::Instant::now());
+                    }
+
+                    if state.active_tab_idx < state.tabs.len() {
+                        if let Some(ref file_path) = state.tabs[state.active_tab_idx].path {
+                            if !ui_ref.git_file_blames.contains_key(file_path) {
+                                ui_ref.update_git_file_blame(Some(file_path));
+                            }
+                        }
+                    }
+
+                    // Drain Tree scan channel
+                    if let Some(ref rx) = ui_ref.tree_rx {
+                        while let Ok(nodes) = rx.try_recv() {
+                            ui_ref.visible_nodes = nodes;
+                            redraw_requested = true;
+                        }
+                    }
+
+                    // Drain diagnostics file channel
+                    if let Some(ref rx) = ui_ref.diagnostics_file_rx {
+                        while let Ok((path, lines)) = rx.try_recv() {
+                            ui_ref.diagnostics_file_cache.insert(path, lines);
+                            redraw_requested = true;
+                        }
+                    }
+
+                    // Read data from PTY channels for all terminals and parse ANSI sequences using persistent parser
+                    for term in &mut state.dock_terminals {
+                        while let Ok(bytes) = term.rx.try_recv() {
+                            for b in bytes {
+                                term.parser.advance(&mut term.grid, b);
+                            }
+                            redraw_requested = true;
+                        }
+                    }
+
+                    if redraw_requested {
                         let size = window.inner_size();
                         if ui_ref.show_dock && !state.dock_terminals.is_empty() && !state.is_dragging_sidebar && !state.is_dragging_dock_border {
                             let width_content = size.width as f32 - ui_ref.sidebar_width - 16.0;
@@ -269,30 +395,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             }
                         }
 
-                        // Drain Tree scan channel
-                        if let Some(ref rx) = ui_ref.tree_rx {
-                            while let Ok(nodes) = rx.try_recv() {
-                                ui_ref.visible_nodes = nodes;
-                            }
-                        }
-
-                        // Drain diagnostics file channel
-                        if let Some(ref rx) = ui_ref.diagnostics_file_rx {
-                            while let Ok((path, lines)) = rx.try_recv() {
-                                ui_ref.diagnostics_file_cache.insert(path, lines);
-                                window.request_redraw();
-                            }
-                        }
-
-                        // Read data from PTY channels for all terminals and parse ANSI sequences using persistent parser
-                        for term in &mut state.dock_terminals {
-                            while let Ok(bytes) = term.rx.try_recv() {
-                                for b in bytes {
-                                    term.parser.advance(&mut term.grid, b);
-                                }
-                            }
-                        }
-
                         // Sync active tab scroll offsets
                         state.tabs[state.active_tab_idx].scroll_x = ui_ref.scroll_x;
                         state.tabs[state.active_tab_idx].scroll_y = ui_ref.scroll_y;
@@ -301,24 +403,24 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         vertices.clear();
                         indices.clear();
 
-                        let size = window.inner_size();
-                        
                         // Sync active tab buffers to diagnostics file cache
                         for tab in &state.tabs {
                             if let Some(ref path) = tab.path {
                                 if !path.starts_with("diagnostics://") {
                                     let abs_path = crate::editor::get_absolute_path(path);
-                                    let tab_lines = tab.buffer.lines();
+                                    let tab_revision = tab.buffer.revision;
                                     let mut needs_update = false;
-                                    if let Some(cached) = ui_ref.diagnostics_file_cache.get(&abs_path) {
-                                        if cached.len() != tab_lines.len() || cached != tab_lines {
+                                    if let Some(&synced_rev) = ui_ref.synced_revisions.get(&abs_path) {
+                                        if synced_rev != tab_revision {
                                             needs_update = true;
                                         }
                                     } else {
                                         needs_update = true;
                                     }
                                     if needs_update {
-                                        ui_ref.diagnostics_file_cache.insert(abs_path, tab_lines.to_vec());
+                                        let tab_lines = tab.buffer.lines();
+                                        ui_ref.diagnostics_file_cache.insert(abs_path.clone(), tab_lines.to_vec());
+                                        ui_ref.synced_revisions.insert(abs_path, tab_revision);
                                         ui_ref.diagnostics_changed = true;
                                     }
                                 }
@@ -398,72 +500,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 crate::experiments::startup::report_startup_complete();
                             }
                         }
-                    }
 
-                    WindowEvent::ModifiersChanged(new_modifiers) => {
-                        state.modifiers = new_modifiers.state();
+                        redraw_requested = false;
                     }
-
-                    WindowEvent::CursorMoved { position, .. } => {
-                        input::handle_cursor_moved(
-                            ui_ref,
-                            &mut state,
-                            &window,
-                            position.x as f32,
-                            position.y as f32,
-                        );
-                        window.request_redraw();
-                    }
-
-                    WindowEvent::MouseInput { state: input_state, button, .. } => {
-                        input::handle_mouse_input(
-                            ui_ref,
-                            &mut state,
-                            &mut window.clone(),
-                            elwt,
-                            &mut gpu,
-                            atlas_ref,
-                            font_bytes,
-                            input_state,
-                            button,
-                        );
-                    }
-
-                    WindowEvent::MouseWheel { delta, .. } => {
-                        input::handle_mouse_wheel(ui_ref, &mut state, &window, delta);
-                    }
-
-                    WindowEvent::KeyboardInput { event: key_event, .. } => {
-                        if key_event.state == winit::event::ElementState::Pressed {
-                            input::handle_keyboard_input(
-                                ui_ref,
-                                &mut state,
-                                &mut window.clone(),
-                                elwt,
-                                &mut gpu,
-                                atlas_ref,
-                                font_bytes,
-                                key_event.logical_key,
-                                key_event.physical_key,
-                            );
-
-                            if !state.terminal_focus {
-                                let active_tab = &state.tabs[state.active_tab_idx];
-                                if let Some(ref path) = active_tab.path {
-                                    let abs_path = crate::editor::get_absolute_path(path);
-                                    ui_ref.diagnostics_file_cache.insert(abs_path, active_tab.buffer.lines().to_vec());
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
                 }
-            }
-            Event::AboutToWait => {
-                if !first_frame_rendered && gpu.is_some() {
-                    window.request_redraw();
-                }
-                
+
                 let scheduled_wakeup = false;
 
                 if !scheduled_wakeup {
@@ -471,7 +512,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         elwt.set_control_flow(ControlFlow::WaitUntil(
                             std::time::Instant::now() + std::time::Duration::from_millis(15)
                         ));
-                        window.request_redraw();
                     } else {
                         elwt.set_control_flow(ControlFlow::Wait);
                     }
