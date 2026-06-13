@@ -41,22 +41,28 @@ impl Buffer {
     }
 
     pub fn from_text(text: &str) -> Self {
-        let lines: Vec<String> = if text.is_empty() {
-            vec![String::new()]
-        } else {
-            text.lines().map(|s| s.replace('\t', "    ")).collect()
-        };
-        let mut buffer = Self {
+        if text.is_empty() {
+            return Self::new();
+        }
+        let mut max_len = 0;
+        let mut lines = Vec::new();
+        for s in text.lines() {
+            let replaced = s.replace('\t', "    ");
+            let count = replaced.chars().count();
+            if count > max_len {
+                max_len = count;
+            }
+            lines.push(replaced);
+        }
+        Self {
             lines,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             current_transaction: None,
             is_modified: false,
-            max_line_len: 0,
+            max_line_len: max_len,
             saved_undo_len: Some(0),
-        };
-        buffer.recalculate_max_line_len();
-        buffer
+        }
     }
 
     /// Load a file into the buffer.
@@ -66,16 +72,20 @@ impl Buffer {
         std::io::Read::read_to_end(&mut file, &mut bytes)?;
 
         let text = String::from_utf8_lossy(&bytes);
-        let mut loaded_lines = text
-            .split('\n')
-            .map(|s| {
-                let mut s = s.to_string();
-                if s.ends_with('\r') {
-                    s.pop();
-                }
-                s.replace('\t', "    ")
-            })
-            .collect::<Vec<String>>();
+        let mut max_len = 0;
+        let mut loaded_lines = Vec::new();
+        for s in text.split('\n') {
+            let mut line = s.to_string();
+            if line.ends_with('\r') {
+                line.pop();
+            }
+            let replaced = line.replace('\t', "    ");
+            let count = replaced.chars().count();
+            if count > max_len {
+                max_len = count;
+            }
+            loaded_lines.push(replaced);
+        }
 
         if loaded_lines.is_empty() {
             loaded_lines.push(String::new());
@@ -87,7 +97,7 @@ impl Buffer {
         self.current_transaction = None;
         self.is_modified = false;
         self.saved_undo_len = Some(0);
-        self.recalculate_max_line_len();
+        self.max_line_len = max_len;
         Ok(())
     }
 
