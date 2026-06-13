@@ -64,9 +64,7 @@ pub struct UiState {
     pub git_blame_file_tx: std::sync::mpsc::Sender<(String, std::collections::HashMap<usize, String>)>,
 
     pub lsp_diagnostics: std::collections::HashMap<String, (usize, usize)>,
-    pub lsp_diagnostics_details: std::collections::HashMap<String, Vec<crate::editor::lsp::DiagnosticDetail>>,
-    pub lsp_semantic_tokens: std::collections::HashMap<String, Vec<crate::editor::lsp::SemanticTokenDetail>>,
-    pub lsp_diagnostics_rx: Option<std::sync::mpsc::Receiver<crate::editor::lsp::LspDiagnosticsUpdate>>,
+    pub lsp_diagnostics_details: std::collections::HashMap<String, Vec<crate::editor::DiagnosticDetail>>,
     pub lsp_status: String,
 
     pub git_statuses: std::collections::HashMap<PathBuf, String>,
@@ -96,7 +94,7 @@ pub struct UiState {
 
     pub tree_rx: Option<std::sync::mpsc::Receiver<Vec<FileNode>>>,
     pub tree_tx: std::sync::mpsc::Sender<Vec<FileNode>>,
-    pub hovered_diagnostic: Option<crate::editor::lsp::DiagnosticDetail>,
+    pub hovered_diagnostic: Option<crate::editor::DiagnosticDetail>,
     pub hover_start: Option<std::time::Instant>,
     pub hover_pos: Option<(usize, usize)>,
     pub hovered_copy_button: bool,
@@ -221,8 +219,6 @@ impl UiState {
             languages,
             lsp_diagnostics: std::collections::HashMap::new(),
             lsp_diagnostics_details: std::collections::HashMap::new(),
-            lsp_semantic_tokens: std::collections::HashMap::new(),
-            lsp_diagnostics_rx: None,
             lsp_status: "starting".to_string(),
             command_palette_query: String::new(),
             command_palette_selected: 0,
