@@ -43,7 +43,7 @@ impl Buffer {
         let lines: Vec<String> = if text.is_empty() {
             vec![String::new()]
         } else {
-            text.lines().map(|s| s.to_string()).collect()
+            text.lines().map(|s| s.replace('\t', "    ")).collect()
         };
         Self {
             lines: lines.clone(),
@@ -64,7 +64,13 @@ impl Buffer {
         let text = String::from_utf8_lossy(&bytes);
         let mut loaded_lines = text
             .split('\n')
-            .map(|s| s.to_string())
+            .map(|s| {
+                let mut s = s.to_string();
+                if s.ends_with('\r') {
+                    s.pop();
+                }
+                s.replace('\t', "    ")
+            })
             .collect::<Vec<String>>();
 
         if loaded_lines.is_empty() {
