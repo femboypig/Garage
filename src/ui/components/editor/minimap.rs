@@ -13,7 +13,7 @@ pub fn draw_minimap(
     minimap_x: f32,
     minimap_width: f32,
     visible_lines: usize,
-    active_file_path: Option<&str>,
+    _active_file_path: Option<&str>,
 ) {
     let white_uv = atlas.white_pixel_uv();
     
