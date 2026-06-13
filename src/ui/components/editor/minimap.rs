@@ -65,17 +65,15 @@ pub fn draw_minimap(
         let row_y = editor_y + line_idx as f32 * minimap_line_height - minimap_offset_y;
         
         let line_text = &buffer.lines()[line_idx];
-        let char_count = line_text.chars().count();
-        let char_colors = vec![default_color; char_count];
         
         let mut current_col = 0.0f32;
         let mut start_x = 0.0f32;
         let mut current_color = None;
         let mut block_w = 0.0f32;
         
-        for (char_idx, c) in line_text.chars().enumerate() {
+        for (_char_idx, c) in line_text.chars().enumerate() {
             let char_w = if c == '\t' { 4.0 * minimap_char_w } else { minimap_char_w };
-            let color = char_colors.get(char_idx).copied().unwrap_or(ui.config.theme.syntax_default);
+            let color = default_color;
             let is_whitespace = c == ' ' || c == '\t';
             
             if is_whitespace {
