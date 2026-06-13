@@ -73,15 +73,12 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     // Update bind group to use actual font texture and sampler
     gpu.as_mut().unwrap().update_bind_group(&atlas.texture, &atlas.sampler);
 
-    // Initialize LSP diagnostics channel
-    let (lsp_diag_tx, lsp_diag_rx) = std::sync::mpsc::channel();
 
     let proxy = event_loop.create_proxy();
 
     // Initialize layout and state
     let mut ui = UiState::new(&mut atlas, &gpu.as_ref().unwrap().queue, config, proxy.clone());
     ui.active_device_name = gpu.as_ref().unwrap().device_name.clone();
-    ui.lsp_diagnostics_rx = Some(lsp_diag_rx);
 
     // Load initial file or start with empty tab
     let initial_tab = {
@@ -106,7 +103,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 } else {
                     path_buf
                 };
-                let normalized = crate::editor::lsp::normalize_path(&normalized);
+                let normalized = crate::editor::normalize_path(&normalized);
                 Some(normalized.to_string_lossy().to_string())
             }
         } else {
@@ -121,31 +118,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
         }
     };
 
-    // Spawn rust-analyzer LSP client
-    let lsp_client = Some(crate::editor::lsp::LspClient::new(lsp_diag_tx, proxy));
-    if let Some(ref lsp) = lsp_client {
-        if let Some(ref path) = initial_tab.path {
-            lsp.notify_open(path, initial_tab.buffer.lines().join("\n"));
-            lsp.notify_active_file(path);
-        } else {
-            lsp.notify_active_file("");
-        }
-
-        // Scan workspace dynamically on startup and notify LSP client of all supported files
-        let lsp_clone = lsp.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            let mut files = Vec::new();
-            scan_workspace_for_lsp(&mut files);
-            for path in files {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    lsp_clone.notify_open(&path.to_string_lossy(), content);
-                }
-            }
-        });
-    }
-
-    let mut state = AppState::new(initial_tab, lsp_client);
+    let mut state = AppState::new(initial_tab);
     if let Some(ref path) = state.tabs[0].path {
         ui.selected_file = Some(std::path::PathBuf::from(path));
     }
@@ -188,26 +161,6 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         }
                     }
 
-                    // Drain LSP diagnostics channel
-                    if let Some(ref rx) = ui.lsp_diagnostics_rx {
-                        while let Ok(update) = rx.try_recv() {
-                            if update.file_path.starts_with("status:") {
-                                ui.lsp_status = update.file_path["status:".len()..].to_string();
-                            } else if update.file_path.is_empty() {
-                                if update.errors == 9999 {
-                                    ui.lsp_status = "offline".to_string();
-                                } else {
-                                    ui.lsp_status = "rust-analyzer".to_string();
-                                }
-                            } else if update.is_tokens_update {
-                                ui.lsp_semantic_tokens.insert(update.file_path, update.tokens);
-                            } else {
-                                ui.lsp_diagnostics.insert(update.file_path.clone(), (update.errors, update.warnings));
-                                ui.lsp_diagnostics_details.insert(update.file_path, update.diagnostics);
-                                ui.diagnostics_changed = true;
-                            }
-                        }
-                    }
 
                     // Drain Tree scan channel
                     if let Some(ref rx) = ui.tree_rx {
@@ -239,7 +192,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     for tab in &state.tabs {
                         if let Some(ref path) = tab.path {
                             if !path.starts_with("diagnostics://") {
-                                let abs_path = crate::editor::lsp::get_absolute_path(path);
+                                let abs_path = crate::editor::get_absolute_path(path);
                                 let tab_lines = tab.buffer.lines();
                                 let mut needs_update = false;
                                 if let Some(cached) = ui.diagnostics_file_cache.get(&abs_path) {
@@ -379,11 +332,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         if !state.terminal_focus {
                             let active_tab = &state.tabs[state.active_tab_idx];
                             if let Some(ref path) = active_tab.path {
-                                let abs_path = crate::editor::lsp::get_absolute_path(path);
+                                let abs_path = crate::editor::get_absolute_path(path);
                                 ui.diagnostics_file_cache.insert(abs_path, active_tab.buffer.lines().to_vec());
-                                if let Some(ref lsp) = state.lsp_client {
-                                    lsp.notify_change(path, active_tab.buffer.lines().join("\n"));
-                                }
                             }
                         }
                     }
@@ -405,7 +355,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     if elapsed >= std::time::Duration::from_millis(300) {
                         if !state.tabs.is_empty() && state.active_tab_idx < state.tabs.len() {
                             if let Some(ref path) = state.tabs[state.active_tab_idx].path {
-                                let abs_path = crate::editor::lsp::get_absolute_path(path);
+                                let abs_path = crate::editor::get_absolute_path(path);
                                 if let Some(diags) = ui.lsp_diagnostics_details.get(&abs_path) {
                                     if let Some((line_idx, col_idx)) = ui.hover_pos {
                                         let mut found_diag = None;
@@ -472,61 +422,4 @@ fn is_hidden(path: &std::path::Path) -> bool {
     })
 }
 
-fn scan_workspace_for_lsp(files: &mut Vec<std::path::PathBuf>) {
-    let output = std::process::Command::new("git")
-        .args(&["ls-files", "--cached", "--others", "--exclude-standard"])
-        .output();
-    
-    let mut success = false;
-    if let Ok(out) = output {
-        if out.status.success() {
-            success = true;
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            for line in stdout.lines() {
-                let path = std::path::PathBuf::from(line.trim());
-                if is_hidden(&path) {
-                    continue;
-                }
-                let path_str = path.to_string_lossy();
-                let lang_id = crate::editor::lsp::detect_language_id(&path_str);
-                if lang_id != "plaintext" {
-                    files.push(path);
-                }
-            }
-        }
-    }
-    
-    if !success {
-        scan_dir_fallback(std::path::Path::new("."), files);
-    }
-}
 
-fn scan_dir_fallback(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
-    let walker = ignore::WalkBuilder::new(dir)
-        .hidden(true)
-        .git_ignore(true)
-        .parents(true)
-        .build();
-
-    for result in walker {
-        if files.len() >= 300 {
-            break;
-        }
-        if let Ok(entry) = result {
-            if entry.depth() == 0 {
-                continue;
-            }
-            let path = entry.path();
-            if is_hidden(path) {
-                continue;
-            }
-            if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                let path_str = path.to_string_lossy();
-                let lang_id = crate::editor::lsp::detect_language_id(&path_str);
-                if lang_id != "plaintext" {
-                    files.push(path.to_path_buf());
-                }
-            }
-        }
-    }
-}
