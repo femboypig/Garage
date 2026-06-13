@@ -65,7 +65,6 @@ pub struct UiState {
 
     pub lsp_diagnostics: std::collections::HashMap<String, (usize, usize)>,
     pub lsp_diagnostics_details: std::collections::HashMap<String, Vec<crate::editor::DiagnosticDetail>>,
-    pub lsp_status: String,
 
     pub git_statuses: std::collections::HashMap<PathBuf, String>,
     pub git_status_rx: Option<std::sync::mpsc::Receiver<std::collections::HashMap<PathBuf, String>>>,
@@ -219,7 +218,6 @@ impl UiState {
             languages,
             lsp_diagnostics: std::collections::HashMap::new(),
             lsp_diagnostics_details: std::collections::HashMap::new(),
-            lsp_status: "starting".to_string(),
             command_palette_query: String::new(),
             command_palette_selected: 0,
             command_palette_scroll: 0,
