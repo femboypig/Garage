@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use winit::window::Window;
-use winit::keyboard::{Key, PhysicalKey, NamedKey};
+use winit::keyboard::{Key, PhysicalKey};
 use winit::event_loop::EventLoopWindowTarget;
 
 use crate::renderer::wgpu::GpuContext;
