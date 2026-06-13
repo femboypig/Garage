@@ -18,12 +18,12 @@ pub fn handle_action(
     atlas: &mut FontAtlas,
     font_bytes: &[u8],
 ) {
-    let (active_path_start, old_content) = {
+    let (active_path_start, old_revision) = {
         if state.active_tab_idx < state.tabs.len() {
             let active_tab = &state.tabs[state.active_tab_idx];
             if let Some(ref path) = active_tab.path {
                 if !path.starts_with("diagnostics://") {
-                    (Some(path.clone()), Some(active_tab.buffer.lines().to_vec()))
+                    (Some(path.clone()), Some(active_tab.buffer.revision))
                 } else {
                     (None, None)
                 }
@@ -432,14 +432,15 @@ pub fn handle_action(
         UiAction::None => {}
     }
 
-    if let (Some(start_path), Some(old_lines)) = (active_path_start, old_content) {
+    if let (Some(start_path), Some(old_rev)) = (active_path_start, old_revision) {
         if state.active_tab_idx < state.tabs.len() {
             let active_tab = &state.tabs[state.active_tab_idx];
             if active_tab.path.as_ref() == Some(&start_path) {
-                let new_lines = active_tab.buffer.lines();
-                if old_lines != new_lines {
+                if old_rev != active_tab.buffer.revision {
                     let abs_path = crate::editor::get_absolute_path(&start_path);
-                    ui.diagnostics_file_cache.insert(abs_path, new_lines.to_vec());
+                    ui.diagnostics_file_cache.insert(abs_path.clone(), active_tab.buffer.lines().to_vec());
+                    ui.synced_revisions.insert(abs_path, active_tab.buffer.revision);
+                    ui.diagnostics_changed = true;
                 }
             }
         }
