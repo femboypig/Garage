@@ -269,9 +269,7 @@ pub fn handle_keyboard_input(
                         if let Some(ref p) = tab.path {
                             if !p.starts_with("diagnostics://") && tab.buffer.is_modified {
                                 let _ = tab.buffer.save_file(p);
-                                if let Some(ref lsp) = state.lsp_client {
-                                    lsp.notify_save(p);
-                                }
+
                             }
                         }
                     }
@@ -360,12 +358,7 @@ pub fn handle_keyboard_input(
                         let new_col = state.tabs[target_tab_idx].cursor.col;
                         let target_lines = state.tabs[target_tab_idx].buffer.lines().to_vec();
                         
-                        // Notify LSP of target file change
-                        if let Some(ref lsp) = state.lsp_client {
-                            lsp.notify_change(&path, target_lines.join("\n"));
-                        }
-                        
-                        let abs_path = crate::editor::lsp::get_absolute_path(&path);
+                        let abs_path = crate::editor::get_absolute_path(&path);
                         ui.diagnostics_file_cache.insert(abs_path, target_lines);
 
                         // Restore diagnostics tab
@@ -715,10 +708,7 @@ pub fn handle_keyboard_input(
             if active_tab.path.as_ref() == Some(&start_path) {
                 let new_lines = active_tab.buffer.lines();
                 if old_lines != new_lines {
-                    if let Some(ref lsp) = state.lsp_client {
-                        lsp.notify_change(&start_path, new_lines.join("\n"));
-                    }
-                    let abs_path = crate::editor::lsp::get_absolute_path(&start_path);
+                    let abs_path = crate::editor::get_absolute_path(&start_path);
                     ui.diagnostics_file_cache.insert(abs_path, new_lines.to_vec());
                 }
             }
