@@ -31,10 +31,6 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, buffer: &Buffer, mouse_
         window.set_cursor_icon(winit::window::CursorIcon::ColResize);
     } else if on_dock_border {
         window.set_cursor_icon(winit::window::CursorIcon::RowResize);
-    } else if ui.hovered_copy_button {
-        window.set_cursor_icon(winit::window::CursorIcon::Pointer);
-    } else if ui.mouse_in_popup {
-        window.set_cursor_icon(winit::window::CursorIcon::Default);
     } else {
         let scrollbar_width = ui.scrollbar_width();
         let minimap_width = ui.minimap_width();
@@ -67,122 +63,11 @@ pub fn handle_cursor_moved(
     state.mouse_y = position_y;
  
     let size = window.inner_size();
-    let mut mouse_in_popup = false;
-
-    // Update diagnostic hover detection
-    let mut hover_reset = true;
-    if !state.tabs.is_empty() && state.active_tab_idx < state.tabs.len() {
-        let active_tab = &state.tabs[state.active_tab_idx];
-        if let Some(ref active_path) = active_tab.path {
-            if !active_path.starts_with("diagnostics://") {
-                let main_y = ui.titlebar_height;
-                let editor_top = main_y + ui.tabbar_height + ui.breadcrumb_height;
-                let status_y = (size.height as f32 - ui.status_height).round();
-                let editor_bottom_limit = status_y;
-                
-                let max_line_digits = active_tab.buffer.len().to_string().len().max(3);
-                let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
-                let text_area_x = ui.sidebar_width + gutter_width;
-                
-                let scrollbar_width = ui.scrollbar_width();
-                let minimap_width = ui.minimap_width();
-                let sb_x = size.width as f32 - scrollbar_width;
-                let minimap_x = sb_x - minimap_width;
-                
-                mouse_in_popup = false;
-                if let Some(diag) = &ui.hovered_diagnostic {
-                    if let Some((line_idx, col_idx)) = ui.hover_pos {
-                        let char_x = text_area_x + (col_idx as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
-                        let char_y = editor_top + (line_idx as isize - ui.scroll_y as isize) as f32 * ui.buffer_line_height;
-                        
-                        let label = match diag.severity {
-                            1 => "Syntax Error",
-                            2 => "Warning",
-                            _ => "Info",
-                        };
-                        let max_w = 400.0f32;
-                        let max_chars_per_line = (max_w / ui.ui_char_width).floor() as usize;
-                        let full_message = if diag.message.is_empty() { label.to_string() } else { format!("{}: {}", label, diag.message) };
-                        
-                        let mut lines = Vec::new();
-                        let words: Vec<&str> = full_message.split_whitespace().collect();
-                        let mut current_line = String::new();
-                        for word in words {
-                            if current_line.is_empty() {
-                                current_line = word.to_string();
-                            } else if (current_line.chars().count() + 1 + word.chars().count()) <= max_chars_per_line {
-                                current_line.push(' ');
-                                current_line.push_str(word);
-                            } else {
-                                lines.push(current_line);
-                                current_line = word.to_string();
-                            }
-                        }
-                        if !current_line.is_empty() { lines.push(current_line); }
-                        
-                        let line_count = lines.len();
-                        let popup_w = (lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f32 * ui.ui_char_width + 24.0 + 20.0).max(120.0);
-                        let popup_h = line_count as f32 * ui.ui_line_height + 16.0;
-                        
-                        let mut popup_x = char_x.round();
-                        let mut popup_y = (char_y + ui.buffer_line_height + 4.0).round();
-                        
-                        if popup_x + popup_w > minimap_x {
-                            popup_x = (minimap_x - popup_w - 10.0).max(text_area_x + 10.0);
-                        }
-                        let editor_bottom_limit = status_y;
-                        let editor_height = editor_bottom_limit - editor_top;
-                        if popup_y + popup_h > editor_top + editor_height {
-                            popup_y = (char_y - popup_h - 4.0).max(editor_top + 4.0);
-                        }
-                        
-                        let combined_min_x = char_x.min(popup_x) - 15.0;
-                        let combined_max_x = (char_x + ui.buffer_char_width).max(popup_x + popup_w) + 15.0;
-                        let combined_min_y = char_y.min(popup_y) - 15.0;
-                        let combined_max_y = (char_y + ui.buffer_line_height).max(popup_y + popup_h) + 15.0;
-                        
-                        if state.mouse_x >= combined_min_x && state.mouse_x < combined_max_x && state.mouse_y >= combined_min_y && state.mouse_y < combined_max_y {
-                            mouse_in_popup = true;
-                            let copy_x = (popup_x + popup_w - 24.0).round();
-                            let copy_y = (popup_y + (popup_h - 11.0) / 2.0).round();
-                            if state.mouse_x >= copy_x - 4.0 && state.mouse_x < copy_x + 15.0 && state.mouse_y >= copy_y - 4.0 && state.mouse_y < copy_y + 15.0 {
-                                ui.hovered_copy_button = true;
-                            } else {
-                                ui.hovered_copy_button = false;
-                            }
-                        }
-                    }
-                }
-
-                if mouse_in_popup {
-                    hover_reset = false;
-                } else if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit - 14.0 {
-                    let line_idx = (((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y).min(active_tab.buffer.len().saturating_sub(1));
-                    let col_idx = (((state.mouse_x - text_area_x) / ui.buffer_char_width).floor() as usize + ui.scroll_x).min(active_tab.buffer.lines()[line_idx].chars().count());
-                    
-                    let new_pos = (line_idx, col_idx);
-                    if ui.hover_pos != Some(new_pos) {
-                        ui.hover_pos = Some(new_pos);
-                        ui.hover_start = Some(std::time::Instant::now());
-                        ui.hovered_diagnostic = None;
-                    }
-                    hover_reset = false;
-                }
-            }
-        }
-    }
-    if hover_reset {
-        ui.hover_pos = None;
-        ui.hover_start = None;
-        ui.hovered_diagnostic = None;
-        ui.mouse_in_popup = false;
-        ui.hovered_copy_button = false;
-    } else {
-        ui.mouse_in_popup = mouse_in_popup;
-        if !mouse_in_popup {
-            ui.hovered_copy_button = false;
-        }
-    }
+    ui.hover_pos = None;
+    ui.hover_start = None;
+    ui.hovered_diagnostic = None;
+    ui.mouse_in_popup = false;
+    ui.hovered_copy_button = false;
  
     if state.is_dragging_sidebar {
         let new_width = if state.mouse_x < 30.0 { 0.0 } else { state.mouse_x.clamp(50.0, 600.0) };
@@ -416,13 +301,6 @@ pub fn handle_mouse_input(
     if button == MouseButton::Left {
         let size = window.inner_size();
         if input_state == ElementState::Pressed {
-            if ui.hovered_copy_button {
-                if let Some(ref diag) = ui.hovered_diagnostic {
-                    state.copy_to_clipboard(diag.message.clone());
-                }
-                window.request_redraw();
-                return;
-            }
             
             // Check if click is on tab scrollbar
             let tabbar_start_x = ui.sidebar_width;
@@ -711,68 +589,6 @@ pub fn handle_mouse_input(
                             } else {
                                  // Click inside editor area
                                  if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit - 14.0 {
-                                     // 1. Check if copy button of hover diagnostic was clicked
-                                     let mut copy_clicked = false;
-                                     if let Some(diag) = &ui.hovered_diagnostic {
-                                         if let Some((line_idx, col_idx)) = ui.hover_pos {
-                                             let char_x = text_area_x + (col_idx as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
-                                             let char_y = editor_top + (line_idx as isize - ui.scroll_y as isize) as f32 * ui.buffer_line_height;
-                                             
-                                             let label = match diag.severity {
-                                                 1 => "Syntax Error",
-                                                 2 => "Warning",
-                                                 _ => "Info",
-                                             };
-                                             let max_w = 400.0f32;
-                                             let max_chars_per_line = (max_w / ui.ui_char_width).floor() as usize;
-                                             let full_message = if diag.message.is_empty() { label.to_string() } else { format!("{}: {}", label, diag.message) };
-                                             
-                                             let mut lines = Vec::new();
-                                             let words: Vec<&str> = full_message.split_whitespace().collect();
-                                             let mut current_line = String::new();
-                                             for word in words {
-                                                 if current_line.is_empty() {
-                                                     current_line = word.to_string();
-                                                 } else if (current_line.chars().count() + 1 + word.chars().count()) <= max_chars_per_line {
-                                                     current_line.push(' ');
-                                                     current_line.push_str(word);
-                                                 } else {
-                                                     lines.push(current_line);
-                                                     current_line = word.to_string();
-                                                 }
-                                             }
-                                             if !current_line.is_empty() { lines.push(current_line); }
-                                             
-                                             let line_count = lines.len();
-                                             let popup_w = (lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f32 * ui.ui_char_width + 24.0 + 20.0).max(120.0);
-                                             let popup_h = line_count as f32 * ui.ui_line_height + 16.0;
-                                             
-                                             let mut popup_x = char_x.round();
-                                             let mut popup_y = (char_y + ui.buffer_line_height + 4.0).round();
-                                             
-                                             if popup_x + popup_w > minimap_x {
-                                                 popup_x = (minimap_x - popup_w - 10.0).max(text_area_x + 10.0);
-                                             }
-                                             if popup_y + popup_h > editor_top + editor_height {
-                                                 popup_y = (char_y - popup_h - 4.0).max(editor_top + 4.0);
-                                             }
-                                             
-                                             let copy_x = (popup_x + popup_w - 24.0).round();
-                                             let copy_y = (popup_y + (popup_h - 11.0) / 2.0).round();
-                                             
-                                             if state.mouse_x >= copy_x - 4.0 && state.mouse_x < copy_x + 15.0 && state.mouse_y >= copy_y - 4.0 && state.mouse_y < copy_y + 15.0 {
-                                                 state.copy_to_clipboard(diag.message.clone());
-                                                 ui.hovered_diagnostic = None;
-                                                 ui.hover_start = None;
-                                                 ui.hover_pos = None;
-                                                 copy_clicked = true;
-                                                 window.request_redraw();
-                                             }
-                                         }
-                                     }
-                                     if copy_clicked {
-                                         return;
-                                     }
 
                                        // 2. Check if virtual diagnostics tab item was clicked
                                        let mut clicked_info = None;
