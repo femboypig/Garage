@@ -3,6 +3,7 @@ pub mod renderer;
 pub mod ui;
 pub mod app;
 pub mod terminal;
+pub mod git;
 
 fn main() {
     let file_path = std::env::args().nth(1);
