@@ -77,7 +77,7 @@ pub fn draw_scrollbars(
 
         let track_h = editor_height;
         let ratio = visible_count as f32 / virtual_len as f32;
-        let thumb_h = (track_h * ratio).clamp(20.0, track_h);
+        let thumb_h = (track_h * ratio).clamp(20.0_f32.min(track_h), track_h);
         let max_scroll_f = (virtual_len as isize - visible_count as isize).max(0) as f32;
         let scroll_ratio = if max_scroll_f > 0.0 { ui.scroll_y as f32 / max_scroll_f } else { 0.0 };
         let thumb_y = editor_y + scroll_ratio * (track_h - thumb_h);
@@ -155,7 +155,7 @@ pub fn draw_scrollbars(
         );
         // Calculate horizontal scrollbar thumb
         let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
-        let thumb_w = (text_viewport_w * ratio_x).clamp(20.0, text_viewport_w);
+        let thumb_w = (text_viewport_w * ratio_x).clamp(20.0_f32.min(text_viewport_w), text_viewport_w);
         let max_scroll_x = (max_line_len as isize - visible_cols as isize).max(0) as f32;
         let scroll_ratio_x = if max_scroll_x > 0.0 { ui.scroll_x as f32 / max_scroll_x } else { 0.0 };
         let thumb_x = text_area_x + scroll_ratio_x * (text_viewport_w - thumb_w);
