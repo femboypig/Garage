@@ -2,6 +2,12 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
 
+fn is_binary_file(bytes: &[u8]) -> bool {
+    let check_len = bytes.len().min(8192);
+    bytes[..check_len].contains(&0)
+}
+
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     Insert {
@@ -47,12 +53,16 @@ impl Buffer {
         let mut max_len = 0;
         let mut lines = Vec::new();
         for s in text.lines() {
-            let replaced = s.replace('\t', "    ");
-            let count = replaced.chars().count();
+            let line = if s.contains('\t') {
+                s.replace('\t', "    ")
+            } else {
+                s.to_string()
+            };
+            let count = line.chars().count();
             if count > max_len {
                 max_len = count;
             }
-            lines.push(replaced);
+            lines.push(line);
         }
         Self {
             lines,
@@ -71,20 +81,36 @@ impl Buffer {
         let mut bytes = Vec::new();
         std::io::Read::read_to_end(&mut file, &mut bytes)?;
 
+        if is_binary_file(&bytes) {
+            let error_msg = "[Error: Binary file detected. Garage does not support editing binary files.]".to_string();
+            self.max_line_len = error_msg.chars().count();
+            self.lines = vec![error_msg];
+            self.undo_stack.clear();
+            self.redo_stack.clear();
+            self.current_transaction = None;
+            self.is_modified = false;
+            self.saved_undo_len = Some(0);
+            return Ok(());
+        }
+
         let text = String::from_utf8_lossy(&bytes);
         let mut max_len = 0;
         let mut loaded_lines = Vec::new();
         for s in text.split('\n') {
-            let mut line = s.to_string();
-            if line.ends_with('\r') {
-                line.pop();
+            let mut s = s;
+            if s.ends_with('\r') {
+                s = &s[..s.len() - 1];
             }
-            let replaced = line.replace('\t', "    ");
-            let count = replaced.chars().count();
+            let line = if s.contains('\t') {
+                s.replace('\t', "    ")
+            } else {
+                s.to_string()
+            };
+            let count = line.chars().count();
             if count > max_len {
                 max_len = count;
             }
-            loaded_lines.push(replaced);
+            loaded_lines.push(line);
         }
 
         if loaded_lines.is_empty() {
