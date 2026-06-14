@@ -11,6 +11,10 @@ use crate::app::state::AppState;
 use crate::app::handler::handle_action;
 
 pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
+    if state.is_actually_dragging_tab() {
+        window.set_cursor_icon(winit::window::CursorIcon::Grabbing);
+        return;
+    }
     let size = window.inner_size();
     let mouse_x = state.mouse_x;
     let mouse_y = state.mouse_y;
