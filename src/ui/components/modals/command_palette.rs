@@ -250,7 +250,7 @@ pub fn draw_command_palette(
         );
         
         let ratio = max_visible_items as f32 / filtered.len() as f32;
-        let thumb_h = (track_h * ratio).clamp(15.0, track_h);
+        let thumb_h = (track_h * ratio).clamp(15.0_f32.min(track_h), track_h);
         let scroll_ratio = ui.command_palette_scroll as f32 / max_scroll as f32;
         let thumb_y = list_y + scroll_ratio * (track_h - thumb_h);
         
