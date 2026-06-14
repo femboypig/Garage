@@ -226,6 +226,52 @@ impl UiState {
         crate::git::update_git_statuses(self.git_status_tx.clone(), self.event_loop_proxy.clone());
     }
 
+    pub fn run_global_search(&mut self, query: String) {
+        if query.is_empty() {
+            self.global_search_results.clear();
+            self.global_search_selected = 0;
+            self.global_search_scroll = 0;
+            self.is_searching_globally = false;
+            return;
+        }
+        self.is_searching_globally = true;
+        let tx = self.global_search_tx.clone();
+        let proxy = self.event_loop_proxy.clone();
+        
+        std::thread::spawn(move || {
+            let mut results = Vec::new();
+            let walker = ignore::WalkBuilder::new(".")
+                .hidden(true)
+                .git_ignore(true)
+                .parents(true)
+                .build();
+                
+            let query_lower = query.to_lowercase();
+            for result in walker {
+                if let Ok(entry) = result {
+                    if entry.file_type().map_or(false, |t| t.is_file()) {
+                        let path = entry.path().to_path_buf();
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            for (line_idx, line) in content.lines().enumerate() {
+                                if line.to_lowercase().contains(&query_lower) {
+                                    results.push((path.clone(), line_idx, line.trim().to_string()));
+                                    if results.len() >= 100 {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if results.len() >= 100 {
+                    break;
+                }
+            }
+            let _ = tx.send(results);
+            let _ = proxy.send_event(());
+        });
+    }
+
     pub fn update_git_diff(&mut self, file_path: Option<&str>) {
         if let Some(path) = file_path {
             crate::git::update_git_diff(
@@ -404,6 +450,14 @@ impl UiState {
         if let Some(ref rx) = self.git_status_rx {
             while let Ok(statuses) = rx.try_recv() {
                 self.git_statuses = statuses;
+            }
+        }
+
+        // Drain global search channel
+        if let Some(ref rx) = self.global_search_rx {
+            while let Ok(results) = rx.try_recv() {
+                self.global_search_results = results;
+                self.is_searching_globally = false;
             }
         }
 
