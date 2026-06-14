@@ -376,6 +376,7 @@ impl UiState {
         tab_paths: &[Option<String>],
         tab_modified: &[bool],
         active_tab_idx: usize,
+        dragged_tab_idx: Option<usize>,
         inactive_panes: &[crate::app::state::Pane],
         active_pane_idx: usize,
         terminals: &[TerminalInstance],
@@ -626,5 +627,114 @@ impl UiState {
             current_backend,
             tab_paths,
         );
+
+        // --- 8. Draw Tab Drag and Drop Overlay ---
+        if dragged_tab_idx.is_some() {
+            let main_y = self.titlebar_height;
+            let mut dock_start_y = height - self.status_height;
+            if self.show_dock {
+                dock_start_y = (height - self.status_height - self.dock_height).max(main_y + self.tabbar_height + self.breadcrumb_height + 50.0);
+            }
+            let editor_bottom_limit = if self.show_dock {
+                dock_start_y
+            } else {
+                height - self.status_height
+            };
+            
+            let is_in_editor_area = mouse_y >= main_y + self.tabbar_height && mouse_y < editor_bottom_limit;
+            let is_in_tabbar = mouse_y >= main_y && mouse_y < main_y + self.tabbar_height;
+            let white_uv = atlas.white_pixel_uv();
+            let overlay_color = [0.2, 0.45, 0.85, 0.25]; // Premium semi-transparent blue highlight
+
+            if is_in_editor_area {
+                if inactive_panes.is_empty() {
+                    // Split editor visual cue
+                    let editor_area_width = width - sidebar_original;
+                    let half_w = editor_area_width / 2.0;
+                    
+                    if mouse_x < sidebar_original + half_w {
+                        // Left pane preview split
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            sidebar_original,
+                            main_y + self.tabbar_height,
+                            half_w,
+                            editor_bottom_limit - (main_y + self.tabbar_height),
+                            white_uv,
+                            overlay_color,
+                        );
+                    } else {
+                        // Right pane preview split
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            sidebar_original + half_w,
+                            main_y + self.tabbar_height,
+                            half_w,
+                            editor_bottom_limit - (main_y + self.tabbar_height),
+                            white_uv,
+                            overlay_color,
+                        );
+                    }
+                } else {
+                    // Two panes, highlight hovered pane
+                    let editor_area_width = width - sidebar_original;
+                    let pane_width = editor_area_width / 2.0;
+                    
+                    if mouse_x < sidebar_original + pane_width {
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            sidebar_original,
+                            main_y + self.tabbar_height,
+                            pane_width,
+                            editor_bottom_limit - (main_y + self.tabbar_height),
+                            white_uv,
+                            overlay_color,
+                        );
+                    } else {
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            sidebar_original + pane_width,
+                            main_y + self.tabbar_height,
+                            pane_width,
+                            editor_bottom_limit - (main_y + self.tabbar_height),
+                            white_uv,
+                            overlay_color,
+                        );
+                    }
+                }
+            } else if is_in_tabbar && !inactive_panes.is_empty() {
+                // Highlight hovered pane's tabbar
+                let editor_area_width = width - sidebar_original;
+                let pane_width = editor_area_width / 2.0;
+                
+                if mouse_x < sidebar_original + pane_width {
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        sidebar_original,
+                        main_y,
+                        pane_width,
+                        self.tabbar_height,
+                        white_uv,
+                        overlay_color,
+                    );
+                } else {
+                    self.push_quad(
+                        vertices,
+                        indices,
+                        sidebar_original + pane_width,
+                        main_y,
+                        pane_width,
+                        self.tabbar_height,
+                        white_uv,
+                        overlay_color,
+                    );
+                }
+            }
+        }
     }
 }
