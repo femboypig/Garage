@@ -295,7 +295,7 @@ pub fn handle_action(
                     if !state.inactive_panes.is_empty() {
                         let target_pane = state.inactive_panes.remove(0);
                         state.tabs = target_pane.tabs;
-                        state.active_tab_idx = target_pane.active_tab_idx;
+                        state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                         state.active_pane_idx = 0;
                     } else {
                         state.tabs.push(Tab {
@@ -327,7 +327,7 @@ pub fn handle_action(
                 if !state.inactive_panes.is_empty() {
                     let target_pane = state.inactive_panes.remove(0);
                     state.tabs = target_pane.tabs;
-                    state.active_tab_idx = target_pane.active_tab_idx;
+                    state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                     state.active_pane_idx = 0;
                 } else {
                     state.tabs.push(Tab {
@@ -372,7 +372,7 @@ pub fn handle_action(
                 if !state.inactive_panes.is_empty() {
                     let target_pane = state.inactive_panes.remove(0);
                     state.tabs = target_pane.tabs;
-                    state.active_tab_idx = target_pane.active_tab_idx;
+                    state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                     state.active_pane_idx = 0;
                 } else {
                     state.tabs.push(Tab {
