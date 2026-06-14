@@ -67,7 +67,8 @@ const DEFAULT_KEYMAPS_JSON: &str = r#"[
       "ctrl-=": "workspace::ZoomIn",
       "ctrl-plus": "workspace::ZoomIn",
       "ctrl--": "workspace::ZoomOut",
-      "ctrl-shift-p": "workspace::CommandPalette"
+      "ctrl-shift-p": "workspace::CommandPalette",
+      "ctrl-f": "workspace::Find"
     }
   },
   {
@@ -290,6 +291,7 @@ pub fn parse_action(action_str: &str) -> Option<Action> {
         "editor::MoveLineDown" => Some(Action::MoveLineDown),
         "editor::DuplicateLine" => Some(Action::DuplicateLine),
         "editor::DeleteLine" => Some(Action::DeleteLine),
+        "workspace::Find" | "editor::Find" => Some(Action::Find),
         
         _ => None,
     }
