@@ -18,7 +18,7 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
     // Check status bar first
     let status_y = size.height as f32 - ui.status_height;
     let is_on_statusbar_item = if ui.active_modal.is_none() && mouse_y >= status_y {
-        let sb_btn_w = 26.0f32;
+        let sb_btn_w = 28.0f32;
         let term_btn_x = size.width as f32 - 10.0 - sb_btn_w;
 
         // 1. Check Terminal toggle button
@@ -184,20 +184,124 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
         } else {
             let mut is_pointer = false;
             
-            // 1. Sidebar items
-            if sidebar_original > 0.0 && mouse_x < sidebar_original && mouse_y >= ui.titlebar_height && mouse_y < dock_start_y {
+            // 1. Sidebar items (only actual node items, not empty space below)
+            let sidebar_item_count = 1 + ui.visible_nodes.len();
+            let sidebar_height_limit = ui.titlebar_height + (sidebar_item_count as f32 - ui.sidebar_scroll as f32) * ui.ui_line_height;
+            if sidebar_original > 0.0 && mouse_x < sidebar_original && mouse_y >= ui.titlebar_height && mouse_y < sidebar_height_limit.min(dock_start_y) {
                 is_pointer = true;
             }
-            // 2. Tabbar
-            else if mouse_y >= ui.titlebar_height && mouse_y < ui.titlebar_height + ui.tabbar_height && mouse_x < size.width as f32 {
-                is_pointer = true;
+            // 2. Tabbar (only over actual tabs, not empty space to the right)
+            else if mouse_y >= ui.titlebar_height && mouse_y < ui.titlebar_height + ui.tabbar_height {
+                // Calculate which pane and active tab widths
+                let mut in_tab_area = false;
+                if state.inactive_panes.is_empty() {
+                    // Single pane
+                    let start_x = ui.sidebar_width;
+                    let mut total_tabs_width = 0.0f32;
+                    let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+                    let close_reserved = 8.0f32 + tab_close_icon_sz;
+                    for t in &state.tabs {
+                        let file_name = t.path.as_ref()
+                            .and_then(|p| std::path::Path::new(p).file_name())
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "untitled.txt".to_string());
+                        let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+                        let dot_reserved = 18.0f32;
+                        let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+                        total_tabs_width += tab_w;
+                    }
+                    if mouse_x >= start_x && mouse_x < (start_x + total_tabs_width - ui.tab_scroll_x).min(size.width as f32) {
+                        in_tab_area = true;
+                    }
+                } else {
+                    // Split panes (Left and Right)
+                    let editor_area_width = size.width as f32 - sidebar_original;
+                    let pane_width = editor_area_width / 2.0;
+
+                    // Left Pane (Pane 0)
+                    let start_x_0 = sidebar_original;
+                    let end_x_0 = sidebar_original + pane_width;
+                    
+                    // Right Pane (Pane 1)
+                    let start_x_1 = sidebar_original + pane_width;
+                    let end_x_1 = size.width as f32;
+
+                    let (tabs_0, scroll_x_0) = if state.active_pane_idx == 0 {
+                        (&state.tabs, ui.tab_scroll_x)
+                    } else {
+                        (&state.inactive_panes[0].tabs, 0.0)
+                    };
+
+                    let (tabs_1, scroll_x_1) = if state.active_pane_idx == 1 {
+                        (&state.tabs, ui.tab_scroll_x)
+                    } else {
+                        (&state.inactive_panes[0].tabs, 0.0)
+                    };
+
+                    // Check if in Left Pane tabs
+                    if mouse_x >= start_x_0 && mouse_x < end_x_0 {
+                        let mut total_w_0 = 0.0f32;
+                        let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+                        let close_reserved = 8.0f32 + tab_close_icon_sz;
+                        for t in tabs_0 {
+                            let file_name = t.path.as_ref()
+                                .and_then(|p| std::path::Path::new(p).file_name())
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| "untitled.txt".to_string());
+                            let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+                            let dot_reserved = 18.0f32;
+                            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+                            total_w_0 += tab_w;
+                        }
+                        if mouse_x < (start_x_0 + total_w_0 - scroll_x_0).min(end_x_0) {
+                            in_tab_area = true;
+                        }
+                    }
+                    // Check if in Right Pane tabs
+                    else if mouse_x >= start_x_1 && mouse_x < end_x_1 {
+                        let mut total_w_1 = 0.0f32;
+                        let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+                        let close_reserved = 8.0f32 + tab_close_icon_sz;
+                        for t in tabs_1 {
+                            let file_name = t.path.as_ref()
+                                .and_then(|p| std::path::Path::new(p).file_name())
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| "untitled.txt".to_string());
+                            let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+                            let dot_reserved = 18.0f32;
+                            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+                            total_w_1 += tab_w;
+                        }
+                        if mouse_x < (start_x_1 + total_w_1 - scroll_x_1).min(end_x_1) {
+                            in_tab_area = true;
+                        }
+                    }
+                }
+                if in_tab_area {
+                    is_pointer = true;
+                }
             }
-            // 3. Titlebar (Menu)
+            // 3. Titlebar Menu (only menu labels, not drag area)
             else if mouse_y < ui.titlebar_height {
-                is_pointer = true;
+                let menu_items = ["Garage", "File", "Edit", "Selection", "View"];
+                let mut menu_width = 0.0f32;
+                for (i, label) in menu_items.iter().enumerate() {
+                    let label_len = label.chars().count() as f32;
+                    let text_w = label_len * ui.ui_char_width;
+                    let (left_pad, right_pad) = if i == 0 { (14.0, 10.0) } else { (10.0, 10.0) };
+                    menu_width += text_w + left_pad + right_pad;
+                }
+                let max_drag_x = if ui.is_tiling_wm() {
+                    size.width as f32
+                } else {
+                    size.width as f32 - 135.0
+                };
+                if mouse_x < menu_width || mouse_x >= max_drag_x {
+                    is_pointer = true;
+                }
             }
-            // 4. Scrollbar/Minimap area
-            else if mouse_x >= minimap_x && mouse_x < w_width && mouse_y >= ui.titlebar_height + ui.tabbar_height && mouse_y < dock_start_y {
+            // 4. Scrollbar thumb/track only (excluding minimap itself)
+            else if mouse_x >= sb_x && mouse_x < w_width && mouse_y >= ui.titlebar_height + ui.tabbar_height && mouse_y < dock_start_y {
                 is_pointer = true;
             }
             // 5. Active modal interactive areas
@@ -362,7 +466,7 @@ pub fn handle_cursor_moved(
         }
  
         let ratio = visible_width / total_tabs_width;
-        let thumb_w = (visible_width * ratio).clamp(20.0, visible_width);
+        let thumb_w = (visible_width * ratio).clamp(20.0_f32.min(visible_width), visible_width);
         let max_scroll_x = (total_tabs_width - visible_width).max(0.0);
  
         if max_scroll_x > 0.0 {
@@ -436,7 +540,7 @@ pub fn handle_cursor_moved(
             };
      
             let ratio = visible_lines as f32 / virtual_len as f32;
-            let thumb_h = (editor_height * ratio).clamp(20.0, editor_height);
+            let thumb_h = (editor_height * ratio).clamp(20.0_f32.min(editor_height), editor_height);
             let max_scroll = (virtual_len as isize - visible_lines as isize).max(0) as f32;
             let relative_y = state.mouse_y - editor_top - state.scroll_drag_offset_y;
             let scroll_range = editor_height - thumb_h;
@@ -455,7 +559,7 @@ pub fn handle_cursor_moved(
             let max_line_len = ui.get_max_line_len(&state.tabs[state.active_tab_idx].buffer, state.tabs[state.active_tab_idx].path.as_deref(), state.tabs[state.active_tab_idx].cursor.line);
             let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
             let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
-            let thumb_w = (text_viewport_w * ratio_x).clamp(20.0, text_viewport_w);
+            let thumb_w = (text_viewport_w * ratio_x).clamp(20.0_f32.min(text_viewport_w), text_viewport_w);
             let max_scroll_x = (max_line_len as isize - visible_cols as isize).max(0) as f32;
             let relative_x = state.mouse_x - text_area_x - state.scroll_drag_offset_x;
             let scroll_range = text_viewport_w - thumb_w;
@@ -928,7 +1032,7 @@ pub fn handle_mouse_input(
 
                 if is_on_scrollbar {
                     let ratio = visible_width / total_tabs_width;
-                    let thumb_w = (visible_width * ratio).clamp(20.0, visible_width);
+                    let thumb_w = (visible_width * ratio).clamp(20.0_f32.min(visible_width), visible_width);
                     let max_scroll_x = total_tabs_width - visible_width;
                     let scroll_ratio_x = if max_scroll_x > 0.0 { ui.tab_scroll_x / max_scroll_x } else { 0.0 };
                     let thumb_x = tabbar_start_x + scroll_ratio_x * (visible_width - thumb_w);
@@ -1148,7 +1252,7 @@ pub fn handle_mouse_input(
                                 state.is_dragging_scroll = true;
                                 let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
                                 let ratio = visible_lines as f32 / virtual_len as f32;
-                                let thumb_h = (editor_height * ratio).clamp(20.0, editor_height);
+                                let thumb_h = (editor_height * ratio).clamp(20.0_f32.min(editor_height), editor_height);
                                 let max_scroll = (virtual_len as isize - visible_lines as isize).max(0) as f32;
                                 
                                 let scroll_ratio = if max_scroll > 0.0 { ui.scroll_y as f32 / max_scroll } else { 0.0 };
@@ -1171,7 +1275,7 @@ pub fn handle_mouse_input(
                                 let max_line_len = ui.get_max_line_len(&active_tab.buffer, active_tab.path.as_deref(), active_tab.cursor.line);
                                 let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
                                 let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
-                                let thumb_w = (text_viewport_w * ratio_x).clamp(20.0, text_viewport_w);
+                                let thumb_w = (text_viewport_w * ratio_x).clamp(20.0_f32.min(text_viewport_w), text_viewport_w);
                                 let max_scroll_x = (max_line_len as isize - visible_cols as isize).max(0) as f32;
                                 
                                 let scroll_ratio_x = if max_scroll_x > 0.0 { ui.scroll_x as f32 / max_scroll_x } else { 0.0 };
@@ -1353,7 +1457,7 @@ pub fn handle_mouse_input(
                                if state.tabs.is_empty() {
                                    let target_pane = state.inactive_panes.remove(0);
                                    state.tabs = target_pane.tabs;
-                                   state.active_tab_idx = target_pane.active_tab_idx;
+                                   state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                                    state.active_pane_idx = 0;
                                } else {
                                    state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
@@ -1390,12 +1494,13 @@ pub fn handle_mouse_input(
                                    // Move to the other pane
                                    let tab_to_move = state.tabs.remove(dragged_idx);
                                    state.inactive_panes[0].tabs.push(tab_to_move);
+                                   state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
                                    
-                                   // If active pane became empty, collapse
+                                   // If active pane became empty, collapse the split
                                    if state.tabs.is_empty() {
                                        let target_pane = state.inactive_panes.remove(0);
                                        state.tabs = target_pane.tabs;
-                                       state.active_tab_idx = target_pane.active_tab_idx;
+                                       state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                                        state.active_pane_idx = 0;
                                    } else {
                                        state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
