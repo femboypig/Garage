@@ -21,6 +21,35 @@ impl UiState {
         raw_max
     }
 
+    pub fn draw_split_preview(
+        &self,
+        vertices: &mut Vec<Vertex>,
+        indices: &mut Vec<u16>,
+        white_uv: [f32; 2],
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) {
+        // Fill with selection bg
+        self.push_quad(
+            vertices,
+            indices,
+            x,
+            y,
+            w,
+            h,
+            white_uv,
+            self.config.theme.selection_bg,
+        );
+        // 2px solid border using cursor_color (theme's primary accent color)
+        let border_color = self.config.theme.cursor_color;
+        self.push_quad(vertices, indices, x, y, w, 2.0, white_uv, border_color); // top
+        self.push_quad(vertices, indices, x, y + h - 2.0, w, 2.0, white_uv, border_color); // bottom
+        self.push_quad(vertices, indices, x, y, 2.0, h, white_uv, border_color); // left
+        self.push_quad(vertices, indices, x + w - 2.0, y, 2.0, h, white_uv, border_color); // right
+    }
+
     /// Push a solid rectangle (quad) into the vertex and index vectors
     pub fn push_quad(
         &self,
@@ -881,7 +910,7 @@ impl UiState {
                 // Draw floating tab-like banner in the center
                 let msg = "Drop outside to open in a new window";
                 let msg_w = msg.chars().count() as f32 * self.ui_char_width;
-                let pill_w = msg_w + 64.0; // wider padding for icons
+                let pill_w = msg_w + 32.0; // padding of 16px on each side (no decorative icons)
                 let pill_h = self.tabbar_height + 4.0; // matching tab height
                 let pill_x = (sidebar_original + (editor_area_width - pill_w) / 2.0).round();
                 let pill_y = (main_y + self.tabbar_height + (editor_area_height - pill_h) / 2.0).round();
@@ -904,29 +933,9 @@ impl UiState {
                 self.push_quad(vertices, indices, pill_x, pill_y, 1.0, pill_h, white_uv, border_color); // left border
                 self.push_quad(vertices, indices, pill_x + pill_w - 1.0, pill_y, 1.0, pill_h, white_uv, border_color); // right border
                 
-                // 3. Top accent line (blue highlight like active tab)
-                let accent_color = [0.25, 0.55, 0.95, 1.0];
-                self.push_quad(vertices, indices, pill_x, pill_y, pill_w, 2.0, white_uv, accent_color);
-                
-                // 4. Draw a "plus" icon on the left
-                let icon_sz = (self.ui_font_size * 0.95).round().max(12.0);
-                let icon_x = pill_x + 12.0;
-                let icon_y = (pill_y + (pill_h - icon_sz) / 2.0).round();
-                self.push_icon(
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    "plus",
-                    icon_x,
-                    icon_y,
-                    self.config.theme.tab_text,
-                    icon_sz,
-                );
-                
-                // 5. Draw the text
-                let text_x = icon_x + icon_sz + 8.0;
-                let text_y = (pill_y + (pill_h - self.ui_font_size) / 2.0).round() - 1.0;
+                // 3. Draw the text (properly centered vertically and horizontally)
+                let text_x = (pill_x + (pill_w - msg_w) / 2.0).round();
+                let text_y = (pill_y + pill_h / 2.0 + self.ui_font_ascent / 2.0 - 3.5).round();
                 self.push_str(
                     vertices,
                     indices,
@@ -939,20 +948,6 @@ impl UiState {
                     self.ui_font_size,
                     self.ui_char_width,
                 );
-                
-                // 6. Draw a "close" icon on the right (decorative)
-                let close_x = pill_x + pill_w - 12.0 - icon_sz;
-                self.push_icon(
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    "close",
-                    close_x,
-                    icon_y,
-                    self.config.theme.tab_text,
-                    icon_sz,
-                );
             } else if is_in_editor_area {
                 if inactive_panes.is_empty() {
                     // Split editor visual cue
@@ -961,51 +956,47 @@ impl UiState {
                     
                     if mouse_y < main_y + self.tabbar_height + editor_area_height * 0.25 {
                         // Top pane preview split
-                        self.push_quad(
+                        self.draw_split_preview(
                             vertices,
                             indices,
+                            white_uv,
                             sidebar_original,
                             main_y + self.tabbar_height,
                             editor_area_width,
                             editor_area_height * 0.5,
-                            white_uv,
-                            overlay_color,
                         );
                     } else if mouse_y >= main_y + self.tabbar_height + editor_area_height * 0.75 {
                         // Bottom pane preview split
-                        self.push_quad(
+                        self.draw_split_preview(
                             vertices,
                             indices,
+                            white_uv,
                             sidebar_original,
                             main_y + self.tabbar_height + editor_area_height * 0.5,
                             editor_area_width,
                             editor_area_height * 0.5,
-                            white_uv,
-                            overlay_color,
                         );
                     } else if mouse_x < sidebar_original + editor_area_width * 0.5 {
                         // Left pane preview split
-                        self.push_quad(
+                        self.draw_split_preview(
                             vertices,
                             indices,
+                            white_uv,
                             sidebar_original,
                             main_y + self.tabbar_height,
                             editor_area_width * 0.5,
                             editor_area_height,
-                            white_uv,
-                            overlay_color,
                         );
                     } else {
                         // Right pane preview split
-                        self.push_quad(
+                        self.draw_split_preview(
                             vertices,
                             indices,
+                            white_uv,
                             sidebar_original + editor_area_width * 0.5,
                             main_y + self.tabbar_height,
                             editor_area_width * 0.5,
                             editor_area_height,
-                            white_uv,
-                            overlay_color,
                         );
                     }
                 } else {
@@ -1016,27 +1007,25 @@ impl UiState {
                         
                         if mouse_y < main_y + pane_height {
                             // Top pane highlight
-                            self.push_quad(
+                            self.draw_split_preview(
                                 vertices,
                                 indices,
+                                white_uv,
                                 sidebar_original,
                                 main_y + self.tabbar_height,
                                 width - sidebar_original,
                                 pane_height - self.tabbar_height,
-                                white_uv,
-                                overlay_color,
                             );
                         } else {
                             // Bottom pane highlight
-                            self.push_quad(
+                            self.draw_split_preview(
                                 vertices,
                                 indices,
+                                white_uv,
                                 sidebar_original,
                                 main_y + pane_height + self.tabbar_height,
                                 width - sidebar_original,
                                 editor_bottom_limit - (main_y + pane_height + self.tabbar_height),
-                                white_uv,
-                                overlay_color,
                             );
                         }
                     } else {
@@ -1044,26 +1033,24 @@ impl UiState {
                         let pane_width = editor_area_width / 2.0;
                         
                         if mouse_x < sidebar_original + pane_width {
-                            self.push_quad(
+                            self.draw_split_preview(
                                 vertices,
                                 indices,
+                                white_uv,
                                 sidebar_original,
                                 main_y + self.tabbar_height,
                                 pane_width,
                                 editor_bottom_limit - (main_y + self.tabbar_height),
-                                white_uv,
-                                overlay_color,
                             );
                         } else {
-                            self.push_quad(
+                            self.draw_split_preview(
                                 vertices,
                                 indices,
+                                white_uv,
                                 sidebar_original + pane_width,
                                 main_y + self.tabbar_height,
                                 pane_width,
                                 editor_bottom_limit - (main_y + self.tabbar_height),
-                                white_uv,
-                                overlay_color,
                             );
                         }
                     }
