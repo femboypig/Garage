@@ -100,7 +100,12 @@ const DEFAULT_KEYMAPS_JSON: &str = r#"[
       "home": "editor::MoveToLineStart",
       "shift-home": "editor::SelectToLineStart",
       "end": "editor::MoveToLineEnd",
-      "shift-end": "editor::SelectToLineEnd"
+      "shift-end": "editor::SelectToLineEnd",
+      "alt-up": "editor::MoveLineUp",
+      "alt-down": "editor::MoveLineDown",
+      "shift-alt-up": "editor::DuplicateLine",
+      "shift-alt-down": "editor::DuplicateLine",
+      "ctrl-shift-k": "editor::DeleteLine"
     }
   }
 ]"#;
@@ -280,6 +285,11 @@ pub fn parse_action(action_str: &str) -> Option<Action> {
         
         "editor::MoveToLineEnd" => Some(Action::MoveToLineEnd { select: false }),
         "editor::SelectToLineEnd" => Some(Action::MoveToLineEnd { select: true }),
+        
+        "editor::MoveLineUp" => Some(Action::MoveLineUp),
+        "editor::MoveLineDown" => Some(Action::MoveLineDown),
+        "editor::DuplicateLine" => Some(Action::DuplicateLine),
+        "editor::DeleteLine" => Some(Action::DeleteLine),
         
         _ => None,
     }
