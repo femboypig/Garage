@@ -494,7 +494,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         input::update_cursor_icon(
                             &window,
                             ui_ref,
-                            state,
+                            &state,
                         );
 
                         // Render to swapchain
