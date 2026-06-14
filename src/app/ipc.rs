@@ -3,7 +3,7 @@ use std::thread;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::io::{Read, Write};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use winit::window::Window;
 use winit::event_loop::EventLoopProxy;
 
@@ -102,7 +102,7 @@ pub fn start_ipc_server(
 pub fn register_window(window: &Window, socket_path: &str) {
     let pid = std::process::id();
     let pos = window.inner_position().unwrap_or(winit::dpi::PhysicalPosition::new(0, 0));
-    let size = window.outer_size();
+    let size = window.inner_size();
     
     let mut list = load_active_windows();
     // Remove existing if any
@@ -127,7 +127,7 @@ pub fn update_window_geometry(window: &Window) {
         Ok(p) => p,
         Err(_) => return,
     };
-    let size = window.outer_size();
+    let size = window.inner_size();
     
     let mut list = load_active_windows();
     let mut found = false;
