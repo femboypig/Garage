@@ -456,6 +456,7 @@ impl UiState {
         tab_modified: &[bool],
         active_tab_idx: usize,
         dragged_tab_idx: Option<usize>,
+        dragged_sidebar_path: Option<&str>,
         inactive_panes: &[crate::app::state::Pane],
         active_pane_idx: usize,
         is_split_horizontal: bool,
@@ -853,7 +854,7 @@ impl UiState {
         );
 
         // --- 8. Draw Tab Drag and Drop Overlay ---
-        if dragged_tab_idx.is_some() {
+        if dragged_tab_idx.is_some() || dragged_sidebar_path.is_some() {
             let main_y = self.titlebar_height;
             let mut dock_start_y = height - self.status_height;
             if self.show_dock {
@@ -1126,6 +1127,18 @@ impl UiState {
                     mouse_y,
                     path_str,
                     is_modified,
+                );
+            } else if let Some(path_str) = dragged_sidebar_path {
+                crate::ui::components::editor::tab_bar::draw_floating_tab(
+                    self,
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    mouse_x,
+                    mouse_y,
+                    Some(path_str),
+                    false,
                 );
             }
         }
