@@ -106,6 +106,10 @@ pub struct UiState {
     pub diagnostics_changed: bool,
     pub synced_revisions: std::collections::HashMap<String, usize>,
     pub keymap: crate::editor::keymap::Keymap,
+    pub sidebar_input_type: String,
+    pub sidebar_input_target: std::path::PathBuf,
+    pub sidebar_input_value: String,
+    pub sidebar_context_menu: Option<(f32, f32, std::path::PathBuf, bool)>,
 }
 
 
@@ -245,6 +249,10 @@ impl UiState {
             diagnostics_changed: true,
             synced_revisions: std::collections::HashMap::new(),
             keymap: crate::editor::keymap::Keymap::load(),
+            sidebar_input_type: String::new(),
+            sidebar_input_target: std::path::PathBuf::new(),
+            sidebar_input_value: String::new(),
+            sidebar_context_menu: None,
         };
 
         state.rebuild_tree();
