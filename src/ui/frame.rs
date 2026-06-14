@@ -847,11 +847,13 @@ impl UiState {
             };
             let is_in_editor_area = mouse_y >= main_y + self.tabbar_height && mouse_y < editor_bottom_limit;
             let white_uv = atlas.white_pixel_uv();
-            let overlay_color = [0.2, 0.45, 0.85, 0.25]; // Premium semi-transparent blue highlight
+            let mut overlay_color = self.config.theme.tab_active_bg;
+            overlay_color[3] = 0.25; // Premium semi-transparent theme active tab highlight
 
             if is_outside {
                 // Draw full editor area overlay with message
-                let overlay_rect_color = [0.15, 0.45, 0.85, 0.2]; // Blue overlay
+                let mut overlay_rect_color = self.config.theme.tabbar_bg;
+                overlay_rect_color[3] = 0.2; // Theme tabbar_bg highlight
                 let editor_area_width = width - sidebar_original;
                 let editor_area_height = editor_bottom_limit - (main_y + self.tabbar_height);
                 self.push_quad(
@@ -865,8 +867,8 @@ impl UiState {
                     overlay_rect_color,
                 );
                 
-                // Draw a nice border around the editor area to highlight the drop target
-                let border_color = [0.25, 0.55, 0.95, 0.8];
+                // Draw a nice border around the editor area to highlight the drop target using theme active tab bg
+                let border_color = self.config.theme.tabbar_border;
                 let area_x = sidebar_original;
                 let area_y = main_y + self.tabbar_height;
                 let area_w = editor_area_width;
@@ -876,17 +878,15 @@ impl UiState {
                 self.push_quad(vertices, indices, area_x, area_y, 2.0, area_h, white_uv, border_color);
                 self.push_quad(vertices, indices, area_x + area_w - 2.0, area_y, 2.0, area_h, white_uv, border_color);
                 
-                // Draw text in the middle of the editor area
+                // Draw floating tab-like banner in the center
                 let msg = "Drop outside to open in a new window";
                 let msg_w = msg.chars().count() as f32 * self.ui_char_width;
-                let msg_x = (sidebar_original + (editor_area_width - msg_w) / 2.0).round();
-                let msg_y = (main_y + self.tabbar_height + (editor_area_height - self.ui_font_size) / 2.0).round();
+                let pill_w = msg_w + 64.0; // wider padding for icons
+                let pill_h = self.tabbar_height + 4.0; // matching tab height
+                let pill_x = (sidebar_original + (editor_area_width - pill_w) / 2.0).round();
+                let pill_y = (main_y + self.tabbar_height + (editor_area_height - pill_h) / 2.0).round();
                 
-                // Behind the text, draw a solid background pill for contrast
-                let pill_w = msg_w + 30.0;
-                let pill_h = self.ui_font_size * 2.0;
-                let pill_x = msg_x - 15.0;
-                let pill_y = msg_y - self.ui_font_size * 0.5;
+                // 1. Tab-like background
                 self.push_quad(
                     vertices,
                     indices,
@@ -895,24 +895,63 @@ impl UiState {
                     pill_w,
                     pill_h,
                     white_uv,
-                    [0.1, 0.1, 0.12, 0.9], // Solid dark background
+                    self.config.theme.tab_active_bg,
                 );
-                self.push_quad(vertices, indices, pill_x, pill_y, pill_w, 1.0, white_uv, border_color);
-                self.push_quad(vertices, indices, pill_x, pill_y + pill_h - 1.0, pill_w, 1.0, white_uv, border_color);
-                self.push_quad(vertices, indices, pill_x, pill_y, 1.0, pill_h, white_uv, border_color);
-                self.push_quad(vertices, indices, pill_x + pill_w - 1.0, pill_y, 1.0, pill_h, white_uv, border_color);
-
+                
+                // 2. Tab borders
+                self.push_quad(vertices, indices, pill_x, pill_y, pill_w, 1.0, white_uv, border_color); // top border
+                self.push_quad(vertices, indices, pill_x, pill_y + pill_h - 1.0, pill_w, 1.0, white_uv, border_color); // bottom border
+                self.push_quad(vertices, indices, pill_x, pill_y, 1.0, pill_h, white_uv, border_color); // left border
+                self.push_quad(vertices, indices, pill_x + pill_w - 1.0, pill_y, 1.0, pill_h, white_uv, border_color); // right border
+                
+                // 3. Top accent line (blue highlight like active tab)
+                let accent_color = [0.25, 0.55, 0.95, 1.0];
+                self.push_quad(vertices, indices, pill_x, pill_y, pill_w, 2.0, white_uv, accent_color);
+                
+                // 4. Draw a "plus" icon on the left
+                let icon_sz = (self.ui_font_size * 0.95).round().max(12.0);
+                let icon_x = pill_x + 12.0;
+                let icon_y = (pill_y + (pill_h - icon_sz) / 2.0).round();
+                self.push_icon(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    "plus",
+                    icon_x,
+                    icon_y,
+                    self.config.theme.tab_text,
+                    icon_sz,
+                );
+                
+                // 5. Draw the text
+                let text_x = icon_x + icon_sz + 8.0;
+                let text_y = (pill_y + (pill_h - self.ui_font_size) / 2.0).round() - 1.0;
                 self.push_str(
                     vertices,
                     indices,
                     atlas,
                     queue,
                     msg,
-                    msg_x,
-                    msg_y,
-                    [0.85, 0.9, 1.0, 1.0],
+                    text_x,
+                    text_y,
+                    self.config.theme.tab_text,
                     self.ui_font_size,
                     self.ui_char_width,
+                );
+                
+                // 6. Draw a "close" icon on the right (decorative)
+                let close_x = pill_x + pill_w - 12.0 - icon_sz;
+                self.push_icon(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    "close",
+                    close_x,
+                    icon_y,
+                    self.config.theme.tab_text,
+                    icon_sz,
                 );
             } else if is_in_editor_area {
                 if inactive_panes.is_empty() {
