@@ -275,13 +275,20 @@ pub fn handle_action(
             } else {
                 state.tabs.remove(idx);
                 if state.tabs.is_empty() {
-                    state.tabs.push(Tab {
-                        path: None,
-                        buffer: Buffer::new(),
-                        cursor: Cursor::new(),
-                        scroll_x: 0,
-                        scroll_y: 0,
-                    });
+                    if !state.inactive_panes.is_empty() {
+                        let target_pane = state.inactive_panes.remove(0);
+                        state.tabs = target_pane.tabs;
+                        state.active_tab_idx = target_pane.active_tab_idx;
+                        state.active_pane_idx = 0;
+                    } else {
+                        state.tabs.push(Tab {
+                            path: None,
+                            buffer: Buffer::new(),
+                            cursor: Cursor::new(),
+                            scroll_x: 0,
+                            scroll_y: 0,
+                        });
+                    }
                 }
                 state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
                 ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
@@ -300,13 +307,20 @@ pub fn handle_action(
         UiAction::ForceCloseTab(idx) => {
             state.tabs.remove(idx);
             if state.tabs.is_empty() {
-                state.tabs.push(Tab {
-                    path: None,
-                    buffer: Buffer::new(),
-                    cursor: Cursor::new(),
-                    scroll_x: 0,
-                    scroll_y: 0,
-                });
+                if !state.inactive_panes.is_empty() {
+                    let target_pane = state.inactive_panes.remove(0);
+                    state.tabs = target_pane.tabs;
+                    state.active_tab_idx = target_pane.active_tab_idx;
+                    state.active_pane_idx = 0;
+                } else {
+                    state.tabs.push(Tab {
+                        path: None,
+                        buffer: Buffer::new(),
+                        cursor: Cursor::new(),
+                        scroll_x: 0,
+                        scroll_y: 0,
+                    });
+                }
             }
             state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
             ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
@@ -338,13 +352,20 @@ pub fn handle_action(
             
             state.tabs.remove(idx);
             if state.tabs.is_empty() {
-                state.tabs.push(Tab {
-                    path: None,
-                    buffer: Buffer::new(),
-                    cursor: Cursor::new(),
-                    scroll_x: 0,
-                    scroll_y: 0,
-                });
+                if !state.inactive_panes.is_empty() {
+                    let target_pane = state.inactive_panes.remove(0);
+                    state.tabs = target_pane.tabs;
+                    state.active_tab_idx = target_pane.active_tab_idx;
+                    state.active_pane_idx = 0;
+                } else {
+                    state.tabs.push(Tab {
+                        path: None,
+                        buffer: Buffer::new(),
+                        cursor: Cursor::new(),
+                        scroll_x: 0,
+                        scroll_y: 0,
+                    });
+                }
             }
             state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
             ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
