@@ -13,6 +13,7 @@ pub fn draw_breadcrumbs(
     width: f32,
     main_y: f32,
     activity_bar_width: f32,
+    active_file_path: Option<&str>,
 ) {
     let white_uv = atlas.white_pixel_uv();
     
@@ -40,15 +41,14 @@ pub fn draw_breadcrumbs(
     );
     
     // Construct breadcrumb text: relative_path > current_function
-    let relative_path = ui.selected_file.as_ref()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "Untitled".to_string());
+    let relative_path = active_file_path
+        .unwrap_or("Untitled");
     
     let current_fn = ui.find_current_function(buffer, cursor.line);
     let breadcrumb_text = if let Some(ref func) = current_fn {
         format!("{} > {}", relative_path, func)
     } else {
-        relative_path
+        relative_path.to_string()
     };
     ui.push_str(
         vertices,
