@@ -74,7 +74,18 @@ pub struct UiState {
     pub git_diff_rx: Option<std::sync::mpsc::Receiver<(String, Vec<types::GitDiffHunk>)>>,
     pub git_diff_tx: std::sync::mpsc::Sender<(String, Vec<types::GitDiffHunk>)>,
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CommandPaletteMode {
+    Commands,
+    Languages,
+    Encodings,
+}
+
     pub languages: std::collections::HashMap<String, String>,
+
+    pub command_palette_mode: CommandPaletteMode,
+    pub forced_languages: std::collections::HashMap<String, String>,
+    pub forced_encodings: std::collections::HashMap<String, String>,
 
     pub command_palette_query: String,
     pub command_palette_selected: usize,
@@ -235,6 +246,9 @@ impl UiState {
             languages,
             lsp_diagnostics: std::collections::HashMap::new(),
             lsp_diagnostics_details: std::collections::HashMap::new(),
+            command_palette_mode: CommandPaletteMode::Commands,
+            forced_languages: std::collections::HashMap::new(),
+            forced_encodings: std::collections::HashMap::new(),
             command_palette_query: String::new(),
             command_palette_selected: 0,
             command_palette_scroll: 0,
