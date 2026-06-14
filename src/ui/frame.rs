@@ -316,24 +316,24 @@ impl UiState {
                 ("Exit: Quit Garage", "Close the code editor"),
             ],
             CommandPaletteMode::Languages => vec![
-                ("Language: Rust", "Set syntax highlighting to Rust"),
-                ("Language: Python", "Set syntax highlighting to Python"),
-                ("Language: JavaScript", "Set syntax highlighting to JavaScript"),
-                ("Language: TypeScript", "Set syntax highlighting to TypeScript"),
-                ("Language: HTML", "Set syntax highlighting to HTML"),
-                ("Language: CSS", "Set syntax highlighting to CSS"),
-                ("Language: JSON", "Set syntax highlighting to JSON"),
-                ("Language: TOML", "Set syntax highlighting to TOML"),
-                ("Language: C", "Set syntax highlighting to C"),
-                ("Language: C++", "Set syntax highlighting to C++"),
-                ("Language: Go", "Set syntax highlighting to Go"),
-                ("Language: Plain Text", "Disable syntax highlighting"),
+                ("Rust", ""),
+                ("Python", ""),
+                ("JavaScript", ""),
+                ("TypeScript", ""),
+                ("HTML", ""),
+                ("CSS", ""),
+                ("JSON", ""),
+                ("TOML", ""),
+                ("C", ""),
+                ("C++", ""),
+                ("Go", ""),
+                ("Plain Text", ""),
             ],
             CommandPaletteMode::Encodings => vec![
-                ("Encoding: UTF-8", "Unicode Transfer Format 8-bit"),
-                ("Encoding: UTF-16", "Unicode Transfer Format 16-bit"),
-                ("Encoding: ASCII", "American Standard Code for Information Interchange"),
-                ("Encoding: ISO-8859-1", "Latin-1 encoding"),
+                ("UTF-8", ""),
+                ("UTF-16", ""),
+                ("ASCII", ""),
+                ("ISO-8859-1", ""),
             ],
         }
     }
@@ -384,23 +384,23 @@ impl UiState {
             }
             "Exit: Quit Garage" => UiAction::Exit,
             // Languages
-            "Language: Rust" => { self.forced_languages.insert(path_key, "rs".to_string()); UiAction::None }
-            "Language: Python" => { self.forced_languages.insert(path_key, "py".to_string()); UiAction::None }
-            "Language: JavaScript" => { self.forced_languages.insert(path_key, "js".to_string()); UiAction::None }
-            "Language: TypeScript" => { self.forced_languages.insert(path_key, "ts".to_string()); UiAction::None }
-            "Language: HTML" => { self.forced_languages.insert(path_key, "html".to_string()); UiAction::None }
-            "Language: CSS" => { self.forced_languages.insert(path_key, "css".to_string()); UiAction::None }
-            "Language: JSON" => { self.forced_languages.insert(path_key, "json".to_string()); UiAction::None }
-            "Language: TOML" => { self.forced_languages.insert(path_key, "toml".to_string()); UiAction::None }
-            "Language: C" => { self.forced_languages.insert(path_key, "c".to_string()); UiAction::None }
-            "Language: C++" => { self.forced_languages.insert(path_key, "cpp".to_string()); UiAction::None }
-            "Language: Go" => { self.forced_languages.insert(path_key, "go".to_string()); UiAction::None }
-            "Language: Plain Text" => { self.forced_languages.insert(path_key, "".to_string()); UiAction::None }
+            "Rust" => { self.forced_languages.insert(path_key, "rs".to_string()); UiAction::None }
+            "Python" => { self.forced_languages.insert(path_key, "py".to_string()); UiAction::None }
+            "JavaScript" => { self.forced_languages.insert(path_key, "js".to_string()); UiAction::None }
+            "TypeScript" => { self.forced_languages.insert(path_key, "ts".to_string()); UiAction::None }
+            "HTML" => { self.forced_languages.insert(path_key, "html".to_string()); UiAction::None }
+            "CSS" => { self.forced_languages.insert(path_key, "css".to_string()); UiAction::None }
+            "JSON" => { self.forced_languages.insert(path_key, "json".to_string()); UiAction::None }
+            "TOML" => { self.forced_languages.insert(path_key, "toml".to_string()); UiAction::None }
+            "C" => { self.forced_languages.insert(path_key, "c".to_string()); UiAction::None }
+            "C++" => { self.forced_languages.insert(path_key, "cpp".to_string()); UiAction::None }
+            "Go" => { self.forced_languages.insert(path_key, "go".to_string()); UiAction::None }
+            "Plain Text" => { self.forced_languages.insert(path_key, "".to_string()); UiAction::None }
             // Encodings
-            "Encoding: UTF-8" => { self.forced_encodings.insert(path_key, "UTF-8".to_string()); UiAction::None }
-            "Encoding: UTF-16" => { self.forced_encodings.insert(path_key, "UTF-16".to_string()); UiAction::None }
-            "Encoding: ASCII" => { self.forced_encodings.insert(path_key, "ASCII".to_string()); UiAction::None }
-            "Encoding: ISO-8859-1" => { self.forced_encodings.insert(path_key, "ISO-8859-1".to_string()); UiAction::None }
+            "UTF-8" => { self.forced_encodings.insert(path_key, "UTF-8".to_string()); UiAction::None }
+            "UTF-16" => { self.forced_encodings.insert(path_key, "UTF-16".to_string()); UiAction::None }
+            "ASCII" => { self.forced_encodings.insert(path_key, "ASCII".to_string()); UiAction::None }
+            "ISO-8859-1" => { self.forced_encodings.insert(path_key, "ISO-8859-1".to_string()); UiAction::None }
             _ => UiAction::None,
         }
     }
