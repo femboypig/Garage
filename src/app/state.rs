@@ -4,6 +4,7 @@ use crate::terminal::TerminalInstance;
 use winit::keyboard::ModifiersState;
 use std::time::Instant;
 
+#[derive(Clone)]
 pub struct Tab {
     pub path: Option<String>,
     pub buffer: Buffer,
@@ -12,9 +13,17 @@ pub struct Tab {
     pub scroll_y: usize,
 }
 
+#[derive(Clone)]
+pub struct Pane {
+    pub tabs: Vec<Tab>,
+    pub active_tab_idx: usize,
+}
+
 pub struct AppState {
     pub tabs: Vec<Tab>,
     pub active_tab_idx: usize,
+    pub inactive_panes: Vec<Pane>,
+    pub active_pane_idx: usize,
     pub modifiers: ModifiersState,
     pub is_dragging: bool,
     pub is_dragging_scroll: bool,
@@ -38,6 +47,8 @@ impl AppState {
         Self {
             tabs: vec![initial_tab],
             active_tab_idx: 0,
+            inactive_panes: Vec::new(),
+            active_pane_idx: 0,
             modifiers: ModifiersState::default(),
             is_dragging: false,
             is_dragging_scroll: false,
@@ -55,6 +66,26 @@ impl AppState {
             mouse_x: 0.0,
             mouse_y: 0.0,
         }
+    }
+
+    pub fn switch_pane(&mut self, target_pane_idx: usize) {
+        if target_pane_idx == self.active_pane_idx {
+            return;
+        }
+        if self.inactive_panes.is_empty() {
+            return;
+        }
+        
+        let current_active_pane = Pane {
+            tabs: std::mem::take(&mut self.tabs),
+            active_tab_idx: self.active_tab_idx,
+        };
+        
+        let target_pane = std::mem::replace(&mut self.inactive_panes[0], current_active_pane);
+        
+        self.tabs = target_pane.tabs;
+        self.active_tab_idx = target_pane.active_tab_idx;
+        self.active_pane_idx = target_pane_idx;
     }
 
     pub fn copy_to_clipboard(&mut self, text: String) {
