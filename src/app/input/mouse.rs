@@ -1562,6 +1562,15 @@ pub fn handle_mouse_input(
                                     state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                                     state.active_pane_idx = 0;
                                     state.is_split_horizontal = false;
+                                } else {
+                                    state.tabs.push(crate::app::state::Tab {
+                                        path: None,
+                                        buffer: crate::editor::buffer::Buffer::new(),
+                                        cursor: crate::editor::cursor::Cursor::new(),
+                                        scroll_x: 0,
+                                        scroll_y: 0,
+                                    });
+                                    state.active_tab_idx = 0;
                                 }
                             } else {
                                 state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
@@ -1634,11 +1643,50 @@ pub fn handle_mouse_input(
                                 if state.tabs.len() > dragged_idx {
                                     state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
                                 }
-                                state.inactive_panes.push(crate::app::state::Pane {
-                                    tabs: vec![tab_to_move],
-                                    active_tab_idx: 0,
-                                });
-                                state.switch_pane(1);
+                                
+                                let editor_area_width = size.width as f32 - sidebar_original;
+                                let editor_area_height = editor_bottom_limit - (main_y + ui.tabbar_height);
+                                
+                                if state.mouse_y < main_y + ui.tabbar_height + editor_area_height * 0.25 {
+                                    // Top Split
+                                    state.is_split_horizontal = true;
+                                    let existing_pane = crate::app::state::Pane {
+                                        tabs: std::mem::take(&mut state.tabs),
+                                        active_tab_idx: state.active_tab_idx,
+                                    };
+                                    state.inactive_panes.push(existing_pane);
+                                    state.tabs = vec![tab_to_move];
+                                    state.active_tab_idx = 0;
+                                    state.active_pane_idx = 0;
+                                } else if state.mouse_y >= main_y + ui.tabbar_height + editor_area_height * 0.75 {
+                                    // Bottom Split
+                                    state.is_split_horizontal = true;
+                                    state.inactive_panes.push(crate::app::state::Pane {
+                                        tabs: vec![tab_to_move],
+                                        active_tab_idx: 0,
+                                    });
+                                    state.switch_pane(1);
+                                } else if state.mouse_x < sidebar_original + editor_area_width * 0.5 {
+                                    // Left Split
+                                    state.is_split_horizontal = false;
+                                    let existing_pane = crate::app::state::Pane {
+                                        tabs: std::mem::take(&mut state.tabs),
+                                        active_tab_idx: state.active_tab_idx,
+                                    };
+                                    state.inactive_panes.push(existing_pane);
+                                    state.tabs = vec![tab_to_move];
+                                    state.active_tab_idx = 0;
+                                    state.active_pane_idx = 0;
+                                } else {
+                                    // Right Split
+                                    state.is_split_horizontal = false;
+                                    state.inactive_panes.push(crate::app::state::Pane {
+                                        tabs: vec![tab_to_move],
+                                        active_tab_idx: 0,
+                                    });
+                                    state.switch_pane(1);
+                                }
+                                
                                 if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
                                     ui.scroll_x = active_tab.scroll_x;
                                     ui.scroll_y = active_tab.scroll_y;
