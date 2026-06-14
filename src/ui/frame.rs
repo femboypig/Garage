@@ -553,6 +553,7 @@ impl UiState {
                 tab_modified,
                 active_tab_idx,
                 status_y,
+                dragged_tab_idx,
             );
         } else if is_split_horizontal {
             let editor_area_height = status_y - main_y;
@@ -595,6 +596,7 @@ impl UiState {
                 &p0_modified,
                 p0_active_idx,
                 main_y + pane_height,
+                if active_pane_idx == 0 { dragged_tab_idx } else { None },
             );
             
             self.scroll_x = orig_scroll_x;
@@ -641,6 +643,7 @@ impl UiState {
                 &p1_modified,
                 p1_active_idx,
                 status_y,
+                if active_pane_idx == 1 { dragged_tab_idx } else { None },
             );
 
             self.scroll_x = orig_scroll_x;
@@ -703,6 +706,7 @@ impl UiState {
                 &p0_modified,
                 p0_active_idx,
                 status_y,
+                if active_pane_idx == 0 { dragged_tab_idx } else { None },
             );
             
             self.scroll_x = orig_scroll_x;
@@ -748,6 +752,7 @@ impl UiState {
                 &p1_modified,
                 p1_active_idx,
                 status_y,
+                if active_pane_idx == 1 { dragged_tab_idx } else { None },
             );
 
             self.scroll_x = orig_scroll_x;
@@ -1083,48 +1088,18 @@ impl UiState {
 
             // Draw floating tab preview under mouse cursor
             if let Some(dragged_idx) = dragged_tab_idx {
-                let tab_name = tab_paths.get(dragged_idx).and_then(|p| p.as_ref())
-                    .and_then(|p| std::path::Path::new(p).file_name())
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "untitled.txt".to_string());
-                
-                let box_w = (tab_name.chars().count() as f32 * self.ui_char_width + 30.0).max(120.0);
-                let box_h = 28.0f32;
-                let box_x = mouse_x - box_w / 2.0;
-                let box_y = mouse_y - box_h / 2.0;
-                
-                // Draw background of floating tab
-                self.push_quad(
-                    vertices,
-                    indices,
-                    box_x,
-                    box_y,
-                    box_w,
-                    box_h,
-                    white_uv,
-                    [0.18, 0.18, 0.22, 0.85], // Dark semi-transparent
-                );
-                // Draw border of floating tab
-                let border_color = [0.35, 0.6, 0.95, 0.9]; // Blue highlight border
-                self.push_quad(vertices, indices, box_x, box_y, box_w, 1.0, white_uv, border_color);
-                self.push_quad(vertices, indices, box_x, box_y + box_h - 1.0, box_w, 1.0, white_uv, border_color);
-                self.push_quad(vertices, indices, box_x, box_y, 1.0, box_h, white_uv, border_color);
-                self.push_quad(vertices, indices, box_x + box_w - 1.0, box_y, 1.0, box_h, white_uv, border_color);
-                
-                // Draw text inside floating tab
-                let text_x = box_x + 15.0;
-                let text_y = box_y + (box_h - self.ui_font_size) / 2.0;
-                self.push_str(
+                let path_str = tab_paths.get(dragged_idx).and_then(|p| p.as_deref());
+                let is_modified = tab_modified.get(dragged_idx).copied().unwrap_or(false);
+                crate::ui::components::editor::tab_bar::draw_floating_tab(
+                    self,
                     vertices,
                     indices,
                     atlas,
                     queue,
-                    &tab_name,
-                    text_x,
-                    text_y,
-                    [0.9, 0.95, 1.0, 0.95],
-                    self.ui_font_size,
-                    self.ui_char_width,
+                    mouse_x,
+                    mouse_y,
+                    path_str,
+                    is_modified,
                 );
             }
         }
