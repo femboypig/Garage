@@ -101,16 +101,7 @@ pub fn draw_command_palette(
         }
 
         // Left text: display name
-        let mut display_name = item.0.to_string();
-        if ui.command_palette_mode == crate::ui::CommandPaletteMode::Languages {
-            if let Some(stripped) = display_name.strip_prefix("Language: ") {
-                display_name = stripped.to_string();
-            }
-        } else if ui.command_palette_mode == crate::ui::CommandPaletteMode::Encodings {
-            if let Some(stripped) = display_name.strip_prefix("Encoding: ") {
-                display_name = stripped.to_string();
-            }
-        }
+        let display_name = item.0.to_string();
 
         let item_text_color = if is_selected {
             ui.config.theme.modal_text_title
