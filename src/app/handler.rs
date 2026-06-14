@@ -36,7 +36,11 @@ pub fn handle_action(
     };
 
     match action {
-        UiAction::OpenFile(path) => {
+        UiAction::OpenFile(path) | UiAction::OpenFileAt(path, _) => {
+            let line_to_jump = match action {
+                UiAction::OpenFileAt(_, l) => Some(l),
+                _ => None,
+            };
             let current_dir = std::env::current_dir().unwrap_or_default();
             let path_str = path.to_string_lossy().to_string();
             let path_str = if path_str.starts_with("diagnostics://") {
@@ -112,6 +116,18 @@ pub fn handle_action(
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
             ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
+
+            // Handle jumping to specific line
+            if let Some(line) = line_to_jump {
+                let active_tab = &mut state.tabs[state.active_tab_idx];
+                let max_line = active_tab.buffer.len().saturating_sub(1);
+                active_tab.cursor.line = line.min(max_line);
+                active_tab.cursor.col = 0;
+                active_tab.cursor.intended_col = 0;
+                active_tab.cursor.selection_anchor = None;
+                
+                ui.scroll_to_cursor(&active_tab.cursor, active_tab.buffer.len(), size.width as f32, size.height as f32);
+            }
         }
         UiAction::SaveFile => {
             let active_tab = &mut state.tabs[state.active_tab_idx];
