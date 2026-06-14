@@ -314,7 +314,7 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
                     is_pointer = true;
                 }
             }
-            // 3. Titlebar Menu (only menu labels, not drag area)
+            // 3. Titlebar Menu (only menu labels and window controls, not empty space or drag area)
             else if mouse_y < ui.titlebar_height {
                 let menu_items = ["Garage", "File", "Edit", "Selection", "View"];
                 let mut menu_width = 0.0f32;
@@ -324,13 +324,14 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
                     let (left_pad, right_pad) = if i == 0 { (14.0, 10.0) } else { (10.0, 10.0) };
                     menu_width += text_w + left_pad + right_pad;
                 }
-                let max_drag_x = if ui.is_tiling_wm() {
-                    size.width as f32
-                } else {
-                    size.width as f32 - 135.0
-                };
-                if mouse_x < menu_width || mouse_x >= max_drag_x {
+                if mouse_x < menu_width {
                     is_pointer = true;
+                } else if !ui.is_tiling_wm() {
+                    let btn_w = 45.0f32;
+                    let min_x = size.width as f32 - btn_w * 3.0;
+                    if mouse_x >= min_x {
+                        is_pointer = true;
+                    }
                 }
             }
             // 4. Scrollbar thumb/track only (excluding minimap itself)
@@ -372,14 +373,123 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
                 let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
                 let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
                 
-                if mouse_x >= modal_x && mouse_x <= modal_x + modal_w && mouse_y >= modal_y && mouse_y <= modal_y + modal_h {
-                    if modal == crate::ui::ModalType::CommandPalette || modal == crate::ui::ModalType::GlobalSearch {
-                        let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
-                        if mouse_y >= modal_y + header_h {
-                            is_pointer = true;
+                let mx = mouse_x;
+                let my = mouse_y;
+                if mx >= modal_x && mx <= modal_x + modal_w && my >= modal_y && my <= modal_y + modal_h {
+                    match modal {
+                        crate::ui::ModalType::CommandPalette | crate::ui::ModalType::GlobalSearch => {
+                            let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
+                            if my >= modal_y + header_h {
+                                is_pointer = true;
+                            } else if my >= modal_y + 15.0 && my < modal_y + 15.0 + ui.ui_line_height + 8.0 {
+                                window.set_cursor_icon(winit::window::CursorIcon::Text);
+                                return;
+                            }
                         }
-                    } else {
-                        is_pointer = true;
+                        crate::ui::ModalType::Settings => {
+                            let row_height = (ui.ui_line_height * 2.2).round();
+                            let control_x = modal_x + 24.0 * ui.ui_char_width;
+                            let btn_h = (ui.ui_line_height * 1.3).round().max(24.0);
+                            let btn_w = (ui.ui_char_width * 3.0).round().max(24.0);
+                            let backend_btn_w = (ui.ui_char_width * 10.0).round().max(80.0);
+                            let theme_btn_w = (ui.ui_char_width * 16.0).round().max(140.0);
+
+                            let row1_y = modal_y + row_height * 1.0;
+                            let btn1_y = row1_y + ((ui.ui_line_height - btn_h) / 2.0).round();
+                            let row2_y = modal_y + row_height * 2.0;
+                            let btn2_y = row2_y + ((ui.ui_line_height - btn_h) / 2.0).round();
+                            let row3_y = modal_y + row_height * 3.0;
+                            let btn3_y = row3_y + ((ui.ui_line_height - btn_h) / 2.0).round();
+                            let row4_y = modal_y + row_height * 4.0;
+                            let btn4_y = row4_y + ((ui.ui_line_height - btn_h) / 2.0).round();
+                            let row5_y = modal_y + row_height * 5.0;
+                            let btn5_y = row5_y + ((ui.ui_line_height - btn_h) / 2.0).round();
+                            let row6_y = modal_y + row_height * 6.0;
+                            let btn6_y = row6_y + ((ui.ui_line_height - btn_h) / 2.0).round();
+
+                            let inc_btn_x = control_x + btn_w + ui.ui_char_width;
+                            let opengl_btn_x = control_x + backend_btn_w + ui.ui_char_width;
+                            let disabled5_btn_x = control_x + backend_btn_w + ui.ui_char_width;
+                            let disabled6_btn_x = control_x + backend_btn_w + ui.ui_char_width;
+
+                            let close_btn_w = (12.0 * ui.ui_char_width).max(100.0).round();
+                            let close_btn_h = (ui.ui_line_height * 1.6).max(30.0).round();
+                            let close_btn_x = modal_x + ((modal_w - close_btn_w) / 2.0).round();
+                            let close_btn_y = modal_y + modal_h - close_btn_h - (ui.ui_line_height * 1.0).round();
+
+                            let on_row1 = (mx >= control_x && mx <= control_x + btn_w && my >= btn1_y && my <= btn1_y + btn_h)
+                                || (mx >= inc_btn_x && mx <= inc_btn_x + btn_w && my >= btn1_y && my <= btn1_y + btn_h);
+                            let on_row2 = (mx >= control_x && mx <= control_x + btn_w && my >= btn2_y && my <= btn2_y + btn_h)
+                                || (mx >= inc_btn_x && mx <= inc_btn_x + btn_w && my >= btn2_y && my <= btn2_y + btn_h);
+                            let on_row3 = (mx >= control_x && mx <= control_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h)
+                                || (mx >= opengl_btn_x && mx <= opengl_btn_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h);
+                            let on_row4 = mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h;
+                            let on_dropdown = ui.theme_dropdown_open && {
+                                let dropdown_y = btn4_y + btn_h;
+                                let item_height = (ui.ui_line_height * 1.5).round().max(24.0);
+                                let dropdown_h = 2.0 * item_height;
+                                mx >= control_x && mx <= control_x + theme_btn_w && my >= dropdown_y && my <= dropdown_y + dropdown_h
+                            };
+                            let on_row5 = (mx >= control_x && mx <= control_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h)
+                                || (mx >= disabled5_btn_x && mx <= disabled5_btn_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h);
+                            let on_row6 = (mx >= control_x && mx <= control_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h)
+                                || (mx >= disabled6_btn_x && mx <= disabled6_btn_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h);
+                            let on_close = mx >= close_btn_x && mx <= close_btn_x + close_btn_w && my >= close_btn_y && my <= close_btn_y + close_btn_h;
+
+                            if on_row1 || on_row2 || on_row3 || on_row4 || on_dropdown || on_row5 || on_row6 || on_close {
+                                is_pointer = true;
+                            }
+                        }
+                        crate::ui::ModalType::About => {
+                            let close_btn_w = (12.0 * ui.ui_char_width).max(100.0).round();
+                            let close_btn_h = (ui.ui_line_height * 1.6).max(30.0).round();
+                            let close_btn_x = modal_x + ((modal_w - close_btn_w) / 2.0).round();
+                            let close_btn_y = modal_y + modal_h - close_btn_h - (ui.ui_line_height * 1.0).round();
+                            if mx >= close_btn_x && mx <= close_btn_x + close_btn_w && my >= close_btn_y && my <= close_btn_y + close_btn_h {
+                                is_pointer = true;
+                            }
+                        }
+                        crate::ui::ModalType::UnsavedChanges => {
+                            let btn_w = 130.0f32;
+                            let btn_h = 34.0f32;
+                            let spacing = 15.0f32;
+                            let total_btn_block_w = 3.0 * btn_w + 2.0 * spacing;
+                            let start_btn_x = modal_x + ((modal_w - total_btn_block_w) / 2.0).round();
+                            let btn_y = modal_y + modal_h - btn_h - 20.0;
+                            
+                            let on_save = mx >= start_btn_x && mx <= start_btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+                            let ds_x = start_btn_x + btn_w + spacing;
+                            let on_dont_save = mx >= ds_x && mx <= ds_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+                            let c_x = start_btn_x + 2.0 * (btn_w + spacing);
+                            let on_cancel = mx >= c_x && mx <= c_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+                            
+                            if on_save || on_dont_save || on_cancel {
+                                is_pointer = true;
+                            }
+                        }
+                        crate::ui::ModalType::SidebarInput => {
+                            let input_x = modal_x + 20.0;
+                            let title_y = modal_y + 20.0;
+                            let input_y = title_y + ui.ui_line_height + 15.0;
+                            let input_w = modal_w - 40.0;
+                            let input_h = ui.ui_line_height + 8.0;
+
+                            let btn_w = 80.0f32;
+                            let btn_h = 24.0f32;
+                            let cancel_x = modal_x + modal_w - 20.0 - btn_w * 2.0 - 10.0;
+                            let confirm_x = modal_x + modal_w - 20.0 - btn_w;
+                            let btn_y = input_y + input_h + 15.0;
+
+                            let on_cancel = mx >= cancel_x && mx <= cancel_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+                            let on_confirm = mx >= confirm_x && mx <= confirm_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+
+                            if on_cancel || on_confirm {
+                                is_pointer = true;
+                            } else if mx >= input_x && mx <= input_x + input_w && my >= input_y && my <= input_y + input_h {
+                                window.set_cursor_icon(winit::window::CursorIcon::Text);
+                                return;
+                            }
+                        }
                     }
                 }
             }
@@ -1514,14 +1624,18 @@ pub fn handle_mouse_input(
                              }
                          }
                          UiAction::SelectTab(idx) => {
-                               state.dragged_tab_idx = Some(idx);
-                               state.drag_start_pos = Some((state.mouse_x, state.mouse_y));
-                               handle_action(ui, state, UiAction::SelectTab(idx), window, elwt, gpu, atlas, font_bytes);
-                           }
-                           act => {
-                               handle_action(ui, state, act, window, elwt, gpu, atlas, font_bytes);
-                           }
-                       }
+                                state.dragged_tab_idx = Some(idx);
+                                state.drag_start_pos = Some((state.mouse_x, state.mouse_y));
+                                handle_action(ui, state, UiAction::SelectTab(idx), window, elwt, gpu, atlas, font_bytes);
+                            }
+                            UiAction::OpenFile(path) => {
+                                state.dragged_sidebar_path = Some(path.to_string_lossy().to_string());
+                                state.drag_start_pos = Some((state.mouse_x, state.mouse_y));
+                            }
+                            act => {
+                                handle_action(ui, state, act, window, elwt, gpu, atlas, font_bytes);
+                            }    
+                        }
                    }
                }
            } else {
@@ -1752,6 +1866,143 @@ pub fn handle_mouse_input(
                         }    
                     } else {
                         state.drag_start_pos = None;
+                    }
+                }
+
+                if let Some(path_str) = state.dragged_sidebar_path.take() {
+                    let drag_start = state.drag_start_pos.take();
+                    let mut was_dragged = false;
+                    if let Some((sx, sy)) = drag_start {
+                        let dx = state.mouse_x - sx;
+                        let dy = state.mouse_y - sy;
+                        if (dx * dx + dy * dy).sqrt() >= 8.0 {
+                            was_dragged = true;
+                        }
+                    }
+
+                    if was_dragged {
+                        let is_outside = state.mouse_x < 0.0 || state.mouse_x >= size.width as f32 || state.mouse_y < 0.0 || state.mouse_y >= size.height as f32;
+                        if is_outside {
+                            let inner_pos = window.inner_position().unwrap_or(winit::dpi::PhysicalPosition::new(0, 0));
+                            let global_x = inner_pos.x + state.mouse_x as i32;
+                            let global_y = inner_pos.y + state.mouse_y as i32;
+                            
+                            if !crate::app::ipc::try_drop_to_other_window(global_x, global_y, &path_str) {
+                                if let Ok(exe_path) = std::env::current_exe() {
+                                    let _ = std::process::Command::new(exe_path)
+                                        .arg(&path_str)
+                                        .spawn();
+                                }
+                            }
+                        } else {
+                            let main_y = ui.titlebar_height;
+                            let sidebar_original = ui.config.sidebar_width;
+                            let mut dock_start_y = size.height as f32 - ui.status_height;
+                            if ui.show_dock {
+                                dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
+                            }
+                            let editor_bottom_limit = if ui.show_dock {
+                                dock_start_y
+                            } else {
+                                size.height as f32 - ui.status_height
+                            };
+
+                            let editor_area_width = size.width as f32 - sidebar_original;
+                            let pane_width = editor_area_width / 2.0;
+                            
+                            let hovered_pane_idx = if state.inactive_panes.is_empty() {
+                                0
+                            } else {
+                                if state.is_split_horizontal {
+                                    let editor_area_height = editor_bottom_limit - main_y;
+                                    let pane_height = (editor_area_height / 2.0).round();
+                                    if state.mouse_y < main_y + pane_height { 0 } else { 1 }
+                                } else {
+                                    if state.mouse_x < sidebar_original + pane_width { 0 } else { 1 }
+                                }
+                            };
+                            
+                            let is_in_tabbar = if !state.inactive_panes.is_empty() && state.is_split_horizontal {
+                                let editor_area_height = editor_bottom_limit - main_y;
+                                let pane_height = (editor_area_height / 2.0).round();
+                                let pane_top = if hovered_pane_idx == 0 { main_y } else { main_y + pane_height };
+                                state.mouse_y >= pane_top && state.mouse_y < pane_top + ui.tabbar_height
+                            } else {
+                                state.mouse_y >= main_y && state.mouse_y < main_y + ui.tabbar_height
+                            };
+
+                            if is_in_tabbar {
+                                if hovered_pane_idx != state.active_pane_idx {
+                                    state.switch_pane(hovered_pane_idx);
+                                }
+                                handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from(&path_str)), window, elwt, gpu, atlas, font_bytes);
+                            } else {
+                                if state.inactive_panes.is_empty() {
+                                    let editor_area_width = size.width as f32 - sidebar_original;
+                                    let editor_area_height = editor_bottom_limit - (main_y + ui.tabbar_height);
+                                    
+                                    let mut new_buf = crate::editor::buffer::Buffer::new();
+                                    if let Err(e) = new_buf.load_file(&path_str) {
+                                        log::warn!("Failed to load file '{}': {}", path_str, e);
+                                    }
+                                    let new_tab = crate::app::state::Tab {
+                                        path: Some(path_str.clone()),
+                                        buffer: new_buf,
+                                        cursor: crate::editor::cursor::Cursor::new(),
+                                        scroll_x: 0,
+                                        scroll_y: 0,
+                                    };
+
+                                    if state.mouse_y < main_y + ui.tabbar_height + editor_area_height * 0.25 {
+                                        state.is_split_horizontal = true;
+                                        let existing_pane = crate::app::state::Pane {
+                                            tabs: std::mem::take(&mut state.tabs),
+                                            active_tab_idx: state.active_tab_idx,
+                                        };
+                                        state.inactive_panes.push(existing_pane);
+                                        state.tabs = vec![new_tab];
+                                        state.active_tab_idx = 0;
+                                        state.active_pane_idx = 0;
+                                    } else if state.mouse_y >= main_y + ui.tabbar_height + editor_area_height * 0.75 {
+                                        state.is_split_horizontal = true;
+                                        state.inactive_panes.push(crate::app::state::Pane {
+                                            tabs: vec![new_tab],
+                                            active_tab_idx: 0,
+                                        });
+                                        state.switch_pane(1);
+                                    } else if state.mouse_x < sidebar_original + editor_area_width * 0.5 {
+                                        state.is_split_horizontal = false;
+                                        let existing_pane = crate::app::state::Pane {
+                                            tabs: std::mem::take(&mut state.tabs),
+                                            active_tab_idx: state.active_tab_idx,
+                                        };
+                                        state.inactive_panes.push(existing_pane);
+                                        state.tabs = vec![new_tab];
+                                        state.active_tab_idx = 0;
+                                        state.active_pane_idx = 0;
+                                    } else {
+                                        state.is_split_horizontal = false;
+                                        state.inactive_panes.push(crate::app::state::Pane {
+                                            tabs: vec![new_tab],
+                                            active_tab_idx: 0,
+                                        });
+                                        state.switch_pane(1);
+                                    }
+                                    
+                                    if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+                                        ui.scroll_x = active_tab.scroll_x;
+                                        ui.scroll_y = active_tab.scroll_y;
+                                    }
+                                } else {
+                                    if hovered_pane_idx != state.active_pane_idx {
+                                        state.switch_pane(hovered_pane_idx);
+                                    }
+                                    handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from(&path_str)), window, elwt, gpu, atlas, font_bytes);
+                                }
+                            }
+                        }
+                    } else {
+                        handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from(&path_str)), window, elwt, gpu, atlas, font_bytes);
                     }
                 }
 
