@@ -192,7 +192,7 @@ pub fn draw_modals(
                 };
                 
                 let title_y = modal_y + 20.0;
-                ui.push_string(vertices, indices, atlas, queue, title, modal_x + 20.0, title_y + ui.ui_font_ascent, ui.config.theme.modal_text_title, ui.ui_font_size);
+                ui.push_str(vertices, indices, atlas, queue, title, modal_x + 20.0, title_y + ui.ui_font_ascent, ui.config.theme.modal_text_title, ui.ui_font_size, ui.ui_char_width);
                 
                 let input_x = modal_x + 20.0;
                 let input_y = title_y + ui.ui_line_height + 15.0;
@@ -207,7 +207,7 @@ pub fn draw_modals(
                 
                 let text_x = input_x + 6.0;
                 let text_baseline = (input_y + input_h / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
-                ui.push_string(vertices, indices, atlas, queue, &ui.sidebar_input_value, text_x, text_baseline, ui.config.theme.modal_text_normal, ui.ui_font_size);
+                ui.push_str(vertices, indices, atlas, queue, &ui.sidebar_input_value, text_x, text_baseline, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
                 
                 let cursor_x = text_x + ui.sidebar_input_value.chars().count() as f32 * ui.ui_char_width;
                 if cursor_x < input_x + input_w - 6.0 {
@@ -236,7 +236,7 @@ pub fn draw_modals(
                 ui.push_quad(vertices, indices, cancel_x, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
                 ui.push_quad(vertices, indices, cancel_x + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
                 let cancel_text_x = cancel_x + ((btn_w - "Cancel".chars().count() as f32 * ui.ui_char_width) / 2.0).round();
-                ui.push_string(vertices, indices, atlas, queue, "Cancel", cancel_text_x, (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round(), ui.config.theme.button_text, ui.ui_font_size);
+                ui.push_str(vertices, indices, atlas, queue, "Cancel", cancel_text_x, (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round(), ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
                 
                 let confirm_hover = mouse_x >= confirm_x && mouse_x <= confirm_x + btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h;
                 ui.push_quad(vertices, indices, confirm_x, btn_y, btn_w, btn_h, white_uv, if confirm_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
@@ -245,7 +245,7 @@ pub fn draw_modals(
                 ui.push_quad(vertices, indices, confirm_x, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
                 ui.push_quad(vertices, indices, confirm_x + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
                 let confirm_text_x = confirm_x + ((btn_w - "OK".chars().count() as f32 * ui.ui_char_width) / 2.0).round();
-                ui.push_string(vertices, indices, atlas, queue, "OK", confirm_text_x, (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round(), ui.config.theme.button_text, ui.ui_font_size);
+                ui.push_str(vertices, indices, atlas, queue, "OK", confirm_text_x, (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round(), ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
             }
         }
 
