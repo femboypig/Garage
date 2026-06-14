@@ -7,7 +7,6 @@ use winit::event_loop::EventLoopWindowTarget;
 use crate::renderer::wgpu::GpuContext;
 use crate::ui::{UiState, UiAction};
 use crate::renderer::atlas::FontAtlas;
-use crate::editor::buffer::Buffer;
 use crate::app::state::AppState;
 use crate::app::handler::handle_action;
 
@@ -125,7 +124,7 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
     };
 
     if is_on_statusbar_item {
-        window.set_cursor_icon(winit::window::CursorIcon::Hand);
+        window.set_cursor_icon(winit::window::CursorIcon::Pointer);
         return;
     }
 
