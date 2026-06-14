@@ -193,6 +193,7 @@ impl UiState {
             ModalType::About => 520.0,
             ModalType::CommandPalette => (50.0 * self.ui_char_width).max(500.0).round(),
             ModalType::UnsavedChanges => 520.0,
+            ModalType::SidebarInput => 400.0,
         };
         let modal_h = match modal {
             ModalType::Settings => {
@@ -208,6 +209,7 @@ impl UiState {
                 (header_h + visible_items as f32 * item_height + 15.0).round()
             }
             ModalType::UnsavedChanges => 200.0,
+            ModalType::SidebarInput => 150.0,
         };
         let modal_x = ((width - modal_w) / 2.0).round();
         let modal_y = ((height - modal_h) / 2.0).round();
