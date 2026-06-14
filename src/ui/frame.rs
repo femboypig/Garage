@@ -831,6 +831,7 @@ impl UiState {
                 height - self.status_height
             };
             
+            let is_outside = mouse_x < 0.0 || mouse_x >= width || mouse_y < 0.0 || mouse_y >= height;
             let is_in_tabbar = if !inactive_panes.is_empty() && is_split_horizontal {
                 let editor_area_height = editor_bottom_limit - main_y;
                 let pane_height = (editor_area_height / 2.0).round();
@@ -843,14 +844,90 @@ impl UiState {
             let white_uv = atlas.white_pixel_uv();
             let overlay_color = [0.2, 0.45, 0.85, 0.25]; // Premium semi-transparent blue highlight
 
-            if is_in_editor_area {
+            if is_outside {
+                // Draw full editor area overlay with message
+                let overlay_rect_color = [0.15, 0.45, 0.85, 0.2]; // Blue overlay
+                let editor_area_width = width - sidebar_original;
+                let editor_area_height = editor_bottom_limit - (main_y + self.tabbar_height);
+                self.push_quad(
+                    vertices,
+                    indices,
+                    sidebar_original,
+                    main_y + self.tabbar_height,
+                    editor_area_width,
+                    editor_area_height,
+                    white_uv,
+                    overlay_rect_color,
+                );
+                
+                // Draw a nice border around the editor area to highlight the drop target
+                let border_color = [0.25, 0.55, 0.95, 0.8];
+                let area_x = sidebar_original;
+                let area_y = main_y + self.tabbar_height;
+                let area_w = editor_area_width;
+                let area_h = editor_area_height;
+                self.push_quad(vertices, indices, area_x, area_y, area_w, 2.0, white_uv, border_color);
+                self.push_quad(vertices, indices, area_x, area_y + area_h - 2.0, area_w, 2.0, white_uv, border_color);
+                self.push_quad(vertices, indices, area_x, area_y, 2.0, area_h, white_uv, border_color);
+                self.push_quad(vertices, indices, area_x + area_w - 2.0, area_y, 2.0, area_h, white_uv, border_color);
+                
+                // Draw text in the middle of the editor area
+                let msg = "Drop outside to open in a new window";
+                let msg_w = msg.chars().count() as f32 * self.ui_char_width;
+                let msg_x = (sidebar_original + (editor_area_width - msg_w) / 2.0).round();
+                let msg_y = (main_y + self.tabbar_height + (editor_area_height - self.ui_font_size) / 2.0).round();
+                
+                // Behind the text, draw a solid background pill for contrast
+                let pill_w = msg_w + 30.0;
+                let pill_h = self.ui_font_size * 2.0;
+                let pill_x = msg_x - 15.0;
+                let pill_y = msg_y - self.ui_font_size * 0.5;
+                self.push_quad(
+                    vertices,
+                    indices,
+                    pill_x,
+                    pill_y,
+                    pill_w,
+                    pill_h,
+                    white_uv,
+                    [0.1, 0.1, 0.12, 0.9], // Solid dark background
+                );
+                self.push_quad(vertices, indices, pill_x, pill_y, pill_w, 1.0, white_uv, border_color);
+                self.push_quad(vertices, indices, pill_x, pill_y + pill_h - 1.0, pill_w, 1.0, white_uv, border_color);
+                self.push_quad(vertices, indices, pill_x, pill_y, 1.0, pill_h, white_uv, border_color);
+                self.push_quad(vertices, indices, pill_x + pill_w - 1.0, pill_y, 1.0, pill_h, white_uv, border_color);
+
+                self.push_str(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    msg,
+                    msg_x,
+                    msg_y,
+                    [0.85, 0.9, 1.0, 1.0],
+                    self.ui_font_size,
+                    self.ui_char_width,
+                );
+            } else if is_in_editor_area {
                 if inactive_panes.is_empty() {
                     // Split editor visual cue
                     let editor_area_width = width - sidebar_original;
-                    let half_w = editor_area_width / 2.0;
                     let editor_area_height = editor_bottom_limit - (main_y + self.tabbar_height);
                     
-                    if mouse_y >= main_y + self.tabbar_height + editor_area_height * 0.5 {
+                    if mouse_y < main_y + self.tabbar_height + editor_area_height * 0.25 {
+                        // Top pane preview split
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            sidebar_original,
+                            main_y + self.tabbar_height,
+                            editor_area_width,
+                            editor_area_height * 0.5,
+                            white_uv,
+                            overlay_color,
+                        );
+                    } else if mouse_y >= main_y + self.tabbar_height + editor_area_height * 0.75 {
                         // Bottom pane preview split
                         self.push_quad(
                             vertices,
@@ -862,14 +939,14 @@ impl UiState {
                             white_uv,
                             overlay_color,
                         );
-                    } else if mouse_x < sidebar_original + half_w {
+                    } else if mouse_x < sidebar_original + editor_area_width * 0.5 {
                         // Left pane preview split
                         self.push_quad(
                             vertices,
                             indices,
                             sidebar_original,
                             main_y + self.tabbar_height,
-                            half_w,
+                            editor_area_width * 0.5,
                             editor_area_height,
                             white_uv,
                             overlay_color,
@@ -879,9 +956,9 @@ impl UiState {
                         self.push_quad(
                             vertices,
                             indices,
-                            sidebar_original + half_w,
+                            sidebar_original + editor_area_width * 0.5,
                             main_y + self.tabbar_height,
-                            half_w,
+                            editor_area_width * 0.5,
                             editor_area_height,
                             white_uv,
                             overlay_color,
@@ -1002,6 +1079,53 @@ impl UiState {
                         );
                     }
                 }
+            }
+
+            // Draw floating tab preview under mouse cursor
+            if let Some(dragged_idx) = dragged_tab_idx {
+                let tab_name = tab_paths.get(dragged_idx).and_then(|p| p.as_ref())
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "untitled.txt".to_string());
+                
+                let box_w = (tab_name.chars().count() as f32 * self.ui_char_width + 30.0).max(120.0);
+                let box_h = 28.0f32;
+                let box_x = mouse_x - box_w / 2.0;
+                let box_y = mouse_y - box_h / 2.0;
+                
+                // Draw background of floating tab
+                self.push_quad(
+                    vertices,
+                    indices,
+                    box_x,
+                    box_y,
+                    box_w,
+                    box_h,
+                    white_uv,
+                    [0.18, 0.18, 0.22, 0.85], // Dark semi-transparent
+                );
+                // Draw border of floating tab
+                let border_color = [0.35, 0.6, 0.95, 0.9]; // Blue highlight border
+                self.push_quad(vertices, indices, box_x, box_y, box_w, 1.0, white_uv, border_color);
+                self.push_quad(vertices, indices, box_x, box_y + box_h - 1.0, box_w, 1.0, white_uv, border_color);
+                self.push_quad(vertices, indices, box_x, box_y, 1.0, box_h, white_uv, border_color);
+                self.push_quad(vertices, indices, box_x + box_w - 1.0, box_y, 1.0, box_h, white_uv, border_color);
+                
+                // Draw text inside floating tab
+                let text_x = box_x + 15.0;
+                let text_y = box_y + (box_h - self.ui_font_size) / 2.0;
+                self.push_str(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    &tab_name,
+                    text_x,
+                    text_y,
+                    [0.9, 0.95, 1.0, 0.95],
+                    self.ui_font_size,
+                    self.ui_char_width,
+                );
             }
         }
     }
