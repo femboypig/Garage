@@ -405,6 +405,7 @@ pub fn handle_command_palette_input(
         match logical_key {
             Key::Named(NamedKey::Escape) => {
                 ui.active_modal = None;
+                ui.command_palette_mode = crate::ui::CommandPaletteMode::Commands;
                 window.request_redraw();
             }
             Key::Named(NamedKey::ArrowDown) => {
@@ -429,7 +430,8 @@ pub fn handle_command_palette_input(
                     
                     let action_res = {
                          let active_tab = &mut state.tabs[state.active_tab_idx];
-                         ui.execute_command(cmd, &mut active_tab.buffer, &mut active_tab.cursor)
+                         let active_path = active_tab.path.as_deref();
+                         ui.execute_command(cmd, &mut active_tab.buffer, &mut active_tab.cursor, active_path)
                      };
                      handle_action(ui, state, action_res, window, elwt, gpu, atlas, font_bytes);
                 }
