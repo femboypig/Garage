@@ -48,6 +48,7 @@ pub enum ModalType {
     CommandPalette,
     UnsavedChanges,
     SidebarInput,
+    GlobalSearch,
 }
 
 pub struct FileNode {
