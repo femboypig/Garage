@@ -201,48 +201,50 @@ pub fn handle_cursor_moved(
     }
  
     if let Some(dragged_idx) = state.dragged_tab_idx {
-        let main_y = ui.titlebar_height;
-        let is_inside_tabbar = state.mouse_y >= main_y && state.mouse_y < main_y + ui.tabbar_height;
-        if is_inside_tabbar {
-            let tabbar_start_x = sidebar_width;
-            let mut tab_widths = Vec::new();
-            let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
-            let close_reserved = 8.0f32 + tab_close_icon_sz;
-            let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
-            for idx in 0..tab_paths.len() {
-                let path_opt = &tab_paths[idx];
-                let file_name = path_opt.as_ref()
-                    .and_then(|p| std::path::Path::new(p).file_name())
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "untitled.txt".to_string());
-                let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
-                let dot_reserved = 18.0f32;
-                let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
-                tab_widths.push(tab_w);
-            }
-
-            let mut hovered_idx = None;
-            let mut current_tab_x = tabbar_start_x;
-            for idx in 0..state.tabs.len() {
-                let tab_w = tab_widths[idx];
-                let draw_x = current_tab_x - ui.tab_scroll_x;
-                let clip_left = draw_x.max(tabbar_start_x);
-                let clip_right = (draw_x + tab_w).min(w_width);
-                
-                if clip_left < clip_right && state.mouse_x >= clip_left && state.mouse_x < clip_right {
-                    hovered_idx = Some(idx);
-                    break;
+        if state.is_actually_dragging_tab() {
+            let main_y = ui.titlebar_height;
+            let is_inside_tabbar = state.mouse_y >= main_y && state.mouse_y < main_y + ui.tabbar_height;
+            if is_inside_tabbar {
+                let tabbar_start_x = sidebar_width;
+                let mut tab_widths = Vec::new();
+                let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+                let close_reserved = 8.0f32 + tab_close_icon_sz;
+                let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
+                for idx in 0..tab_paths.len() {
+                    let path_opt = &tab_paths[idx];
+                    let file_name = path_opt.as_ref()
+                        .and_then(|p| std::path::Path::new(p).file_name())
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "untitled.txt".to_string());
+                    let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+                    let dot_reserved = 18.0f32;
+                    let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+                    tab_widths.push(tab_w);
                 }
-                current_tab_x += tab_w;
-            }
 
-            if let Some(h_idx) = hovered_idx {
-                if h_idx != dragged_idx {
-                    let tab = state.tabs.remove(dragged_idx);
-                    state.tabs.insert(h_idx, tab);
-                    state.dragged_tab_idx = Some(h_idx);
-                    state.active_tab_idx = h_idx;
-                    window.request_redraw();
+                let mut hovered_idx = None;
+                let mut current_tab_x = tabbar_start_x;
+                for idx in 0..state.tabs.len() {
+                    let tab_w = tab_widths[idx];
+                    let draw_x = current_tab_x - ui.tab_scroll_x;
+                    let clip_left = draw_x.max(tabbar_start_x);
+                    let clip_right = (draw_x + tab_w).min(w_width);
+                    
+                    if clip_left < clip_right && state.mouse_x >= clip_left && state.mouse_x < clip_right {
+                        hovered_idx = Some(idx);
+                        break;
+                    }
+                    current_tab_x += tab_w;
+                }
+
+                if let Some(h_idx) = hovered_idx {
+                    if h_idx != dragged_idx {
+                        let tab = state.tabs.remove(dragged_idx);
+                        state.tabs.insert(h_idx, tab);
+                        state.dragged_tab_idx = Some(h_idx);
+                        state.active_tab_idx = h_idx;
+                        window.request_redraw();
+                    }
                 }
             }
         }
@@ -1188,115 +1190,129 @@ pub fn handle_mouse_input(
                              }
                          }
                          UiAction::SelectTab(idx) => {
-                              state.dragged_tab_idx = Some(idx);
-                              handle_action(ui, state, UiAction::SelectTab(idx), window, elwt, gpu, atlas, font_bytes);
-                          }
-                          act => {
-                              handle_action(ui, state, act, window, elwt, gpu, atlas, font_bytes);
-                          }
-                      }
-                  }
-              }
-          } else {
-              // Button Released
-              ui.tab_scroll_is_dragging = false;
-              let was_dragging_sidebar = state.is_dragging_sidebar;
-              state.is_dragging = false;
-              state.is_dragging_scroll = false;
-              state.is_dragging_horizontal_scroll = false;
-              state.is_dragging_minimap = false;
-              state.is_dragging_sidebar = false;
-              state.is_dragging_dock_border = false;
-              if was_dragging_sidebar {
-                  ui.config.sidebar_width = ui.sidebar_width;
-                  ui.config.save_in_background();
-              }
-              
-              if let Some(dragged_idx) = state.dragged_tab_idx.take() {
-                  let main_y = ui.titlebar_height;
-                  let sidebar_original = ui.config.sidebar_width;
-                  let editor_area_width = size.width as f32 - sidebar_original;
-                  let pane_width = editor_area_width / 2.0;
-                  
-                  let hovered_pane_idx = if state.inactive_panes.is_empty() {
-                      0
-                  } else {
-                      if state.mouse_x < sidebar_original + pane_width { 0 } else { 1 }
-                  };
-                  
-                  let is_in_tabbar = state.mouse_y >= main_y && state.mouse_y < main_y + ui.tabbar_height;
-                  
-                  if is_in_tabbar {
-                      if hovered_pane_idx != state.active_pane_idx {
-                          // Move tab to the other pane!
-                          let tab_to_move = state.tabs.remove(dragged_idx);
-                          state.inactive_panes[0].tabs.push(tab_to_move);
-                          state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
-                          
-                          // If active pane became empty, collapse the split
-                          if state.tabs.is_empty() {
-                              let target_pane = state.inactive_panes.remove(0);
-                              state.tabs = target_pane.tabs;
-                              state.active_tab_idx = target_pane.active_tab_idx;
-                              state.active_pane_idx = 0;
-                          } else {
-                              state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
-                              let target_pane = 1 - state.active_pane_idx;
-                              state.switch_pane(target_pane);
-                          }
-                          if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
-                              ui.scroll_x = active_tab.scroll_x;
-                              ui.scroll_y = active_tab.scroll_y;
-                          }
-                      }
-                  } else {
-                      if state.inactive_panes.is_empty() {
-                          // Split editor
-                          let tab_to_move = if state.tabs.len() > 1 {
-                              state.tabs.remove(dragged_idx)
-                          } else {
-                              state.tabs[dragged_idx].clone()
-                          };
-                          if state.tabs.len() > dragged_idx {
-                              state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
-                          }
-                          state.inactive_panes.push(crate::app::state::Pane {
-                              tabs: vec![tab_to_move],
-                              active_tab_idx: 0,
-                          });
-                          state.switch_pane(1);
-                          if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
-                              ui.scroll_x = active_tab.scroll_x;
-                              ui.scroll_y = active_tab.scroll_y;
-                          }
-                      } else {
-                          if hovered_pane_idx != state.active_pane_idx {
-                              // Move to the other pane
-                              let tab_to_move = state.tabs.remove(dragged_idx);
-                              state.inactive_panes[0].tabs.push(tab_to_move);
-                              state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
-                              
-                              // If active pane became empty, collapse
-                              if state.tabs.is_empty() {
-                                  let target_pane = state.inactive_panes.remove(0);
-                                  state.tabs = target_pane.tabs;
-                                  state.active_tab_idx = target_pane.active_tab_idx;
-                                  state.active_pane_idx = 0;
-                              } else {
-                                  state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
-                                  let target_pane = 1 - state.active_pane_idx;
-                                  state.switch_pane(target_pane);
-                              }
-                              if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
-                                  ui.scroll_x = active_tab.scroll_x;
-                                  ui.scroll_y = active_tab.scroll_y;
-                              }
-                          }
-                      }
-                  }
-              }
+                               state.dragged_tab_idx = Some(idx);
+                               state.drag_start_pos = Some((state.mouse_x, state.mouse_y));
+                               handle_action(ui, state, UiAction::SelectTab(idx), window, elwt, gpu, atlas, font_bytes);
+                           }
+                           act => {
+                               handle_action(ui, state, act, window, elwt, gpu, atlas, font_bytes);
+                           }
+                       }
+                   }
+               }
+           } else {
+               // Button Released
+               ui.tab_scroll_is_dragging = false;
+               let was_dragging_sidebar = state.is_dragging_sidebar;
+               state.is_dragging = false;
+               state.is_dragging_scroll = false;
+               state.is_dragging_horizontal_scroll = false;
+               state.is_dragging_minimap = false;
+               state.is_dragging_sidebar = false;
+               state.is_dragging_dock_border = false;
+               if was_dragging_sidebar {
+                   ui.config.sidebar_width = ui.sidebar_width;
+                   ui.config.save_in_background();
+               }
+               
+               if let Some(dragged_idx) = state.dragged_tab_idx.take() {
+                   let drag_start = state.drag_start_pos.take();
+                   let mut was_dragged = false;
+                   if let Some((sx, sy)) = drag_start {
+                       let dx = state.mouse_x - sx;
+                       let dy = state.mouse_y - sy;
+                       if (dx * dx + dy * dy).sqrt() >= 8.0 {
+                           was_dragged = true;
+                       }
+                   }
 
-              if let Some((s_l, s_c, e_l, e_c)) = state.tabs[state.active_tab_idx].cursor.selection_range() {
+                   if was_dragged {
+                       let main_y = ui.titlebar_height;
+                       let sidebar_original = ui.config.sidebar_width;
+                       let editor_area_width = size.width as f32 - sidebar_original;
+                       let pane_width = editor_area_width / 2.0;
+                       
+                       let hovered_pane_idx = if state.inactive_panes.is_empty() {
+                           0
+                       } else {
+                           if state.mouse_x < sidebar_original + pane_width { 0 } else { 1 }
+                       };
+                       
+                       let is_in_tabbar = state.mouse_y >= main_y && state.mouse_y < main_y + ui.tabbar_height;
+                       
+                       if is_in_tabbar {
+                           if hovered_pane_idx != state.active_pane_idx {
+                               // Move tab to the other pane!
+                               let tab_to_move = state.tabs.remove(dragged_idx);
+                               state.inactive_panes[0].tabs.push(tab_to_move);
+                               state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
+                               
+                               // If active pane became empty, collapse the split
+                               if state.tabs.is_empty() {
+                                   let target_pane = state.inactive_panes.remove(0);
+                                   state.tabs = target_pane.tabs;
+                                   state.active_tab_idx = target_pane.active_tab_idx;
+                                   state.active_pane_idx = 0;
+                               } else {
+                                   state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                                   let target_pane = 1 - state.active_pane_idx;
+                                   state.switch_pane(target_pane);
+                               }
+                               if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+                                   ui.scroll_x = active_tab.scroll_x;
+                                   ui.scroll_y = active_tab.scroll_y;
+                               }
+                           }
+                       } else {
+                           if state.inactive_panes.is_empty() {
+                               // Split editor
+                               let tab_to_move = if state.tabs.len() > 1 {
+                                   state.tabs.remove(dragged_idx)
+                               } else {
+                                   state.tabs[dragged_idx].clone()
+                               };
+                               if state.tabs.len() > dragged_idx {
+                                   state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                               }
+                               state.inactive_panes.push(crate::app::state::Pane {
+                                   tabs: vec![tab_to_move],
+                                   active_tab_idx: 0,
+                               });
+                               state.switch_pane(1);
+                               if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+                                   ui.scroll_x = active_tab.scroll_x;
+                                   ui.scroll_y = active_tab.scroll_y;
+                               }
+                           } else {
+                               if hovered_pane_idx != state.active_pane_idx {
+                                   // Move to the other pane
+                                   let tab_to_move = state.tabs.remove(dragged_idx);
+                                   state.inactive_panes[0].tabs.push(tab_to_move);
+                                   
+                                   // If active pane became empty, collapse
+                                   if state.tabs.is_empty() {
+                                       let target_pane = state.inactive_panes.remove(0);
+                                       state.tabs = target_pane.tabs;
+                                       state.active_tab_idx = target_pane.active_tab_idx;
+                                       state.active_pane_idx = 0;
+                                   } else {
+                                       state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                                       let target_pane = 1 - state.active_pane_idx;
+                                       state.switch_pane(target_pane);
+                                   }
+                                   if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+                                       ui.scroll_x = active_tab.scroll_x;
+                                       ui.scroll_y = active_tab.scroll_y;
+                                   }
+                               }
+                           }
+                       }
+                    } else {
+                        state.drag_start_pos = None;
+                    }
+                }
+
+               if let Some((s_l, s_c, e_l, e_c)) = state.tabs[state.active_tab_idx].cursor.selection_range() {
                   if s_l == e_l && s_c == e_c {
                       state.tabs[state.active_tab_idx].cursor.clear_selection();
                   }
