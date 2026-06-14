@@ -188,4 +188,16 @@ impl AppState {
         }
         self.internal_clipboard.clone()
     }
+
+    pub fn is_actually_dragging_tab(&self) -> bool {
+        if let Some(_) = self.dragged_tab_idx {
+            if let Some((sx, sy)) = self.drag_start_pos {
+                let dx = self.mouse_x - sx;
+                let dy = self.mouse_y - sy;
+                return (dx * dx + dy * dy).sqrt() >= 8.0;
+            }
+        }
+        false
+    }
 }
+
