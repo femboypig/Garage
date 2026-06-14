@@ -52,7 +52,7 @@ pub fn draw_sidebar(
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
         .unwrap_or_else(|| "Project".to_string());
 
-    let icon_sz = (ui.ui_font_size * 1.05).round().max(13.0);
+    let icon_sz = (ui.ui_font_size * 1.25).round().max(16.0);
     let root_icon_x = activity_bar_width + 10.0;
 
     let total_rows = 1 + ui.visible_nodes.len();
