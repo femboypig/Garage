@@ -118,7 +118,7 @@ pub fn handle_keyboard_input(
                     }
                 }
                 ui.active_modal = None;
-                state.rebuild_tree();
+                ui.rebuild_tree();
                 window.request_redraw();
             }
             Key::Named(NamedKey::Backspace) => {
