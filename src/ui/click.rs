@@ -613,7 +613,7 @@ impl UiState {
         // 6. Check Statusbar Button Clicks
         let status_y = height - self.status_height;
         if my >= status_y {
-            let sb_btn_w = 26.0f32;
+            let sb_btn_w = 28.0f32;
             let term_btn_x = width - 10.0 - sb_btn_w;
 
             // Check if clicked the terminal toggle button
