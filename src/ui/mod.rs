@@ -105,6 +105,7 @@ pub struct UiState {
     pub collapsed_diagnostics: std::collections::HashSet<String>,
     pub diagnostics_changed: bool,
     pub synced_revisions: std::collections::HashMap<String, usize>,
+    pub keymap: crate::editor::keymap::Keymap,
 }
 
 
@@ -243,6 +244,7 @@ impl UiState {
             collapsed_diagnostics: std::collections::HashSet::new(),
             diagnostics_changed: true,
             synced_revisions: std::collections::HashMap::new(),
+            keymap: crate::editor::keymap::Keymap::load(),
         };
 
         state.rebuild_tree();
