@@ -365,7 +365,7 @@ pub fn handle_mouse_input(
                             } else {
                                 let _ = std::fs::remove_file(&target_path);
                             }
-                            state.rebuild_tree();
+                            ui.rebuild_tree();
                             window.request_redraw();
                             return;
                         }
@@ -424,7 +424,7 @@ pub fn handle_mouse_input(
                         }
                     }
                     ui.active_modal = None;
-                    state.rebuild_tree();
+                    ui.rebuild_tree();
                     window.request_redraw();
                     return;
                 }
