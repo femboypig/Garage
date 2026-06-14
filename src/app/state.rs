@@ -43,6 +43,7 @@ pub struct AppState {
     pub mouse_y: f32,
     pub dragged_tab_idx: Option<usize>,
     pub drag_start_pos: Option<(f32, f32)>,
+    pub pending_open_files: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 impl AppState {
@@ -71,6 +72,7 @@ impl AppState {
             mouse_y: 0.0,
             dragged_tab_idx: None,
             drag_start_pos: None,
+            pending_open_files: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
