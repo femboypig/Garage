@@ -35,12 +35,13 @@ pub fn handle_action(
         }
     };
 
+    let line_to_jump = match &action {
+        UiAction::OpenFileAt(_, l) => Some(*l),
+        _ => None,
+    };
+
     match action {
         UiAction::OpenFile(path) | UiAction::OpenFileAt(path, _) => {
-            let line_to_jump = match action {
-                UiAction::OpenFileAt(_, l) => Some(l),
-                _ => None,
-            };
             let current_dir = std::env::current_dir().unwrap_or_default();
             let path_str = path.to_string_lossy().to_string();
             let path_str = if path_str.starts_with("diagnostics://") {
