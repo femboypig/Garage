@@ -353,6 +353,39 @@ impl UiState {
             }
         }
 
+        if modal == ModalType::GlobalSearch {
+            let input_y = modal_y + 15.0;
+            let sep_y = input_y + self.ui_line_height + 15.0;
+            let list_y = sep_y + 1.0;
+            let item_height = (self.ui_line_height * 1.6).round().max(26.0);
+            let results_len = self.global_search_results.len();
+            let max_visible_items = ((modal_y + modal_h - list_y) / item_height).floor() as usize;
+
+            // Scrollbar click detection
+            if results_len > max_visible_items {
+                let track_x = modal_x + modal_w - 12.0;
+                if mx >= track_x && mx <= modal_x + modal_w && my >= list_y && my <= modal_y + modal_h {
+                    let track_h = max_visible_items as f32 * item_height;
+                    let relative_y = (my - list_y).clamp(0.0, track_h);
+                    let scroll_ratio = relative_y / track_h;
+                    let max_scroll = results_len.saturating_sub(max_visible_items);
+                    self.global_search_scroll = (scroll_ratio * max_scroll as f32).round() as usize;
+                    return UiAction::None;
+                }
+            }
+
+            let list_w = if results_len > max_visible_items { modal_w - 12.0 } else { modal_w };
+            if mx >= modal_x && mx <= modal_x + list_w && my >= list_y && my <= modal_y + modal_h {
+                let idx = ((my - list_y) / item_height).floor() as usize + self.global_search_scroll;
+                if idx < results_len {
+                    let (path, line_idx, _) = &self.global_search_results[idx];
+                    self.active_modal = None;
+                    return UiAction::OpenFileAt(path.clone(), *line_idx);
+                }
+            }
+            return UiAction::None;
+        }
+
         if modal == ModalType::UnsavedChanges {
             let btn_w = 130.0f32;
             let btn_h = 34.0f32;
