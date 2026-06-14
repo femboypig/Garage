@@ -139,17 +139,36 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
     let mut sidebar_width = ui.sidebar_width;
     let mut w_width = size.width as f32;
 
+    let hovered_pane_idx = if state.inactive_panes.is_empty() {
+        0
+    } else {
+        let editor_area_width = size.width as f32 - sidebar_original;
+        let pane_width = editor_area_width / 2.0;
+        if mouse_x < sidebar_original + pane_width { 0 } else { 1 }
+    };
+
     if !state.inactive_panes.is_empty() {
         let editor_area_width = size.width as f32 - sidebar_original;
         let pane_width = editor_area_width / 2.0;
-        if state.active_pane_idx == 0 {
+        if hovered_pane_idx == 0 {
             w_width = sidebar_original + pane_width;
         } else {
             sidebar_width = sidebar_original + pane_width;
         }
     }
 
-    let active_tab = &state.tabs[state.active_tab_idx];
+    let (hovered_tabs, hovered_active_tab_idx) = if hovered_pane_idx == state.active_pane_idx {
+        (&state.tabs, state.active_tab_idx)
+    } else {
+        (&state.inactive_panes[0].tabs, state.inactive_panes[0].active_tab_idx)
+    };
+
+    if hovered_tabs.is_empty() {
+        window.set_cursor_icon(winit::window::CursorIcon::Default);
+        return;
+    }
+
+    let active_tab = &hovered_tabs[hovered_active_tab_idx.min(hovered_tabs.len() - 1)];
     let buffer = &active_tab.buffer;
     let is_diagnostics = active_tab.path.as_deref().map_or(false, |p| p.starts_with("diagnostics://"));
     let max_line_digits = buffer.len().to_string().len().max(3);
