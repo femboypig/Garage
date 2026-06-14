@@ -86,6 +86,58 @@ pub fn handle_keyboard_input(
         }
     };
 
+    // Handle typing inside the SidebarInput modal
+    if ui.active_modal == Some(crate::ui::ModalType::SidebarInput) {
+        match &logical_key {
+            Key::Named(NamedKey::Escape) => {
+                ui.active_modal = None;
+                window.request_redraw();
+            }
+            Key::Named(NamedKey::Enter) => {
+                let target = &ui.sidebar_input_target;
+                let val = &ui.sidebar_input_value;
+                if !val.is_empty() {
+                    match ui.sidebar_input_type.as_str() {
+                        "new_file" => {
+                            let parent = if target.is_dir() { target.clone() } else { target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")) };
+                            let new_path = parent.join(val);
+                            let _ = std::fs::File::create(new_path);
+                        }
+                        "new_folder" => {
+                            let parent = if target.is_dir() { target.clone() } else { target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")) };
+                            let new_path = parent.join(val);
+                            let _ = std::fs::create_dir_all(new_path);
+                        }
+                        "rename" => {
+                            if let Some(parent) = target.parent() {
+                                let new_path = parent.join(val);
+                                let _ = std::fs::rename(target, new_path);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                ui.active_modal = None;
+                state.rebuild_tree();
+                window.request_redraw();
+            }
+            Key::Named(NamedKey::Backspace) => {
+                ui.sidebar_input_value.pop();
+                window.request_redraw();
+            }
+            Key::Character(text) => {
+                for c in text.chars() {
+                    if !c.is_control() {
+                        ui.sidebar_input_value.push(c);
+                    }
+                }
+                window.request_redraw();
+            }
+            _ => {}
+        }
+        return;
+    }
+
     // 2. Delegate to command palette modal handler if command palette is active
     if handle_command_palette_input(ui, state, window, elwt, gpu, atlas, font_bytes, &logical_key) {
         return;
