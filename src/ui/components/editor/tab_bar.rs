@@ -15,6 +15,7 @@ pub fn draw_tab_bar(
     active_tab_idx: usize,
     main_y: f32,
     activity_bar_width: f32,
+    dragged_tab_idx: Option<usize>,
 ) {
     let white_uv = atlas.white_pixel_uv();
     let tabbar_start_x = activity_bar_width + ui.sidebar_width;
@@ -103,7 +104,7 @@ pub fn draw_tab_bar(
         let dot_reserved = 18.0f32;
         let close_reserved = 8.0f32 + tab_close_icon_sz;
         let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
-        if idx == active_tab_idx {
+        if idx == active_tab_idx && Some(idx) != dragged_tab_idx {
             active_tab_x = temp_x - ui.tab_scroll_x;
             active_tab_w = tab_w;
             has_active_tab = true;
@@ -197,11 +198,14 @@ pub fn draw_tab_bar(
 
         if clip_left < clip_right {
             // Draw tab background
-            let bg_color = if is_active {
+            let mut bg_color = if is_active {
                 ui.config.theme.tab_active_bg
             } else {
                 ui.config.theme.tabbar_bg
             };
+            if Some(idx) == dragged_tab_idx {
+                bg_color[3] *= 0.15;
+            }
             let tab_h = if is_active {
                 ui.tabbar_height
             } else {
@@ -249,7 +253,7 @@ pub fn draw_tab_bar(
             }
 
             // Draw unsaved circle icon if modified
-            if is_modified && !is_diagnostics {
+            if is_modified && !is_diagnostics && Some(idx) != dragged_tab_idx {
                 let dot_size = (ui.ui_font_size * 0.55).round().max(7.0);
                 let dot_x = (draw_x + 10.0).round();
                 let dot_y = (main_y + ui.tabbar_height / 2.0 - dot_size / 2.0).round();
@@ -270,13 +274,16 @@ pub fn draw_tab_bar(
 
             // Draw tab label (with char-by-char clipping)
             let label_x = draw_x + 12.0 + dot_reserved;
-            let label_color = if is_active {
+            let mut label_color = if is_active {
                 ui.config.theme.tab_text
             } else {
                 let mut c = ui.config.theme.tab_text;
                 c[3] *= 0.6;
                 c
             };
+            if Some(idx) == dragged_tab_idx {
+                label_color[3] *= 0.15;
+            }
             
             let mut cur_char_x = label_x;
             for (char_idx, c) in file_name.chars().enumerate() {
@@ -332,6 +339,7 @@ pub fn draw_tab_bar(
 
             // Draw close button SVG icon if hovered
             let is_tab_hovered = ui.active_modal.is_none()
+                && Some(idx) != dragged_tab_idx
                 && mouse_x >= draw_x
                 && mouse_x < draw_x + tab_w
                 && mouse_y >= main_y
@@ -423,4 +431,159 @@ pub fn draw_tab_bar(
             );
         }
     }
+}
+
+pub fn draw_floating_tab(
+    ui: &mut UiState,
+    vertices: &mut Vec<Vertex>,
+    indices: &mut Vec<u16>,
+    atlas: &mut FontAtlas,
+    queue: &wgpu::Queue,
+    mouse_x: f32,
+    mouse_y: f32,
+    tab_path: Option<&str>,
+    is_modified: bool,
+) {
+    let white_uv = atlas.white_pixel_uv();
+    let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+    
+    let is_diagnostics = tab_path == Some("diagnostics://project");
+    let file_name = if is_diagnostics {
+        let mut err_count = 0;
+        let mut warn_count = 0;
+        for (e, w) in ui.lsp_diagnostics.values() {
+            err_count += *e;
+            warn_count += *w;
+        }
+        if err_count > 0 {
+            format!("  ⊗ {}", err_count)
+        } else if warn_count > 0 {
+            format!("  ⚠ {}", warn_count)
+        } else {
+            "  ⊗ 0".to_string()
+        }
+    } else {
+        tab_path
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "untitled.txt".to_string())
+    };
+    
+    let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+    let dot_reserved = 18.0f32;
+    let close_reserved = 8.0f32 + tab_close_icon_sz;
+    let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+    let tab_h = ui.tabbar_height;
+    
+    let draw_x = mouse_x - tab_w / 2.0;
+    let draw_y = mouse_y - tab_h / 2.0;
+    
+    // Background (semi-transparent active tab color)
+    let mut bg_color = ui.config.theme.tab_active_bg;
+    bg_color[3] = 0.85; // slightly transparent
+    
+    ui.push_quad(
+        vertices,
+        indices,
+        draw_x,
+        draw_y,
+        tab_w,
+        tab_h,
+        white_uv,
+        bg_color,
+    );
+    
+    // Subtle border around the floating tab
+    let border_color = [0.25, 0.55, 0.95, 0.9]; // Premium blue border
+    ui.push_quad(vertices, indices, draw_x, draw_y, tab_w, 1.0, white_uv, border_color);
+    ui.push_quad(vertices, indices, draw_x, draw_y + tab_h - 1.0, tab_w, 1.0, white_uv, border_color);
+    ui.push_quad(vertices, indices, draw_x, draw_y, 1.0, tab_h, white_uv, border_color);
+    ui.push_quad(vertices, indices, draw_x + tab_w - 1.0, draw_y, 1.0, tab_h, white_uv, border_color);
+    
+    // Draw unsaved dot
+    if is_modified && !is_diagnostics {
+        let dot_size = (ui.ui_font_size * 0.55).round().max(7.0);
+        let dot_x = (draw_x + 10.0).round();
+        let dot_y = (draw_y + tab_h / 2.0 - dot_size / 2.0).round();
+        ui.push_icon(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            "circle",
+            dot_x,
+            dot_y,
+            ui.config.theme.tab_text,
+            dot_size,
+        );
+    }
+    
+    // Draw label
+    let label_x = draw_x + 12.0 + dot_reserved;
+    let label_color = ui.config.theme.tab_text;
+    let tab_baseline = (draw_y + tab_h / 2.0 + ui.ui_font_ascent / 2.0 - 3.5).round();
+    
+    let mut cur_char_x = label_x;
+    for (char_idx, c) in file_name.chars().enumerate() {
+        if cur_char_x + ui.ui_char_width > draw_x + tab_w - 18.0 {
+            break;
+        }
+        if is_diagnostics && char_idx == 0 {
+            let mut err_count = 0;
+            let mut warn_count = 0;
+            for (e, w) in ui.lsp_diagnostics.values() {
+                err_count += *e;
+                warn_count += *w;
+            }
+            let dot_color = if err_count > 0 {
+                [0.95, 0.25, 0.25, 1.0]
+            } else if warn_count > 0 {
+                [0.95, 0.70, 0.15, 1.0]
+            } else {
+                [0.5, 0.5, 0.5, 0.6]
+            };
+            let dot_size = (ui.ui_font_size * 0.65).round().max(8.0);
+            let dot_y = (draw_y + tab_h / 2.0 - dot_size / 2.0).round();
+            ui.push_icon(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                "circle",
+                cur_char_x,
+                dot_y,
+                dot_color,
+                dot_size,
+            );
+        } else {
+            ui.push_char(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                c,
+                cur_char_x,
+                tab_baseline,
+                label_color,
+                ui.ui_font_size,
+                ui.ui_char_width,
+            );
+        }
+        cur_char_x += ui.ui_char_width;
+    }
+    
+    // Draw close icon
+    let close_x = draw_x + tab_w - 10.0 - tab_close_icon_sz;
+    let close_y = (draw_y + tab_h / 2.0 - tab_close_icon_sz / 2.0).round();
+    ui.push_icon(
+        vertices,
+        indices,
+        atlas,
+        queue,
+        "close",
+        close_x,
+        close_y,
+        ui.config.theme.tab_text,
+        tab_close_icon_sz,
+    );
 }
