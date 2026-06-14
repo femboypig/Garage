@@ -248,20 +248,20 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     files = std::mem::take(&mut *pending);
                 }
                 if gpu.is_some() && ui.is_some() && atlas.is_some() {
-                    let gpu_ref = gpu.as_mut().unwrap();
                     let ui_ref = ui.as_mut().unwrap();
                     let atlas_ref = atlas.as_mut().unwrap();
+                    let mut mut_window = window.clone();
                     for f in files {
                         let open_action = crate::ui::UiAction::OpenFile(std::path::PathBuf::from(f));
                         crate::app::handler::handle_action(
                             ui_ref,
                             &mut state,
                             open_action,
-                            &window,
+                            &mut mut_window,
                             elwt,
-                            gpu_ref,
+                            &mut gpu,
                             atlas_ref,
-                            &font_bytes,
+                            font_bytes,
                         );
                     }
                 }
