@@ -541,6 +541,99 @@ pub fn handle_editor_keyboard(
                 active_tab.buffer.commit_transaction();
                 active_tab.cursor.clear_selection();
             }
+            crate::editor::actions::Action::MoveLineUp => {
+                let active_tab = &mut state.tabs[state.active_tab_idx];
+                let cursor_line = active_tab.cursor.line;
+                if cursor_line > 0 {
+                    active_tab.buffer.commit_transaction();
+                    active_tab.buffer.start_transaction();
+                    
+                    let line_text = active_tab.buffer.lines()[cursor_line].clone();
+                    if cursor_line == active_tab.buffer.len() - 1 {
+                        let prev_len = active_tab.buffer.lines()[cursor_line - 1].chars().count();
+                        active_tab.buffer.delete(cursor_line - 1, prev_len, cursor_line, line_text.chars().count());
+                        active_tab.buffer.insert(cursor_line - 1, 0, &format!("{}\n", line_text));
+                    } else {
+                        active_tab.buffer.delete(cursor_line, 0, cursor_line + 1, 0);
+                        active_tab.buffer.insert(cursor_line - 1, 0, &format!("{}\n", line_text));
+                    }
+                    active_tab.buffer.commit_transaction();
+                    
+                    active_tab.cursor.line -= 1;
+                    active_tab.cursor.col = active_tab.cursor.col.min(active_tab.buffer.lines()[active_tab.cursor.line].chars().count());
+                    active_tab.cursor.intended_col = active_tab.cursor.col;
+                    active_tab.cursor.clear_selection();
+                }
+            }
+            crate::editor::actions::Action::MoveLineDown => {
+                let active_tab = &mut state.tabs[state.active_tab_idx];
+                let cursor_line = active_tab.cursor.line;
+                if cursor_line < active_tab.buffer.len() - 1 {
+                    active_tab.buffer.commit_transaction();
+                    active_tab.buffer.start_transaction();
+                    
+                    let target_line = cursor_line + 1;
+                    let line_text = active_tab.buffer.lines()[target_line].clone();
+                    if target_line == active_tab.buffer.len() - 1 {
+                        let prev_len = active_tab.buffer.lines()[target_line - 1].chars().count();
+                        active_tab.buffer.delete(target_line - 1, prev_len, target_line, line_text.chars().count());
+                        active_tab.buffer.insert(target_line - 1, 0, &format!("{}\n", line_text));
+                    } else {
+                        active_tab.buffer.delete(target_line, 0, target_line + 1, 0);
+                        active_tab.buffer.insert(target_line - 1, 0, &format!("{}\n", line_text));
+                    }
+                    active_tab.buffer.commit_transaction();
+                    
+                    active_tab.cursor.line += 1;
+                    active_tab.cursor.col = active_tab.cursor.col.min(active_tab.buffer.lines()[active_tab.cursor.line].chars().count());
+                    active_tab.cursor.intended_col = active_tab.cursor.col;
+                    active_tab.cursor.clear_selection();
+                }
+            }
+            crate::editor::actions::Action::DuplicateLine => {
+                let active_tab = &mut state.tabs[state.active_tab_idx];
+                let cursor_line = active_tab.cursor.line;
+                active_tab.buffer.commit_transaction();
+                active_tab.buffer.start_transaction();
+                
+                let line_text = active_tab.buffer.lines()[cursor_line].clone();
+                if cursor_line == active_tab.buffer.len() - 1 {
+                    active_tab.buffer.insert(cursor_line, line_text.chars().count(), &format!("\n{}", line_text));
+                } else {
+                    active_tab.buffer.insert(cursor_line + 1, 0, &format!("{}\n", line_text));
+                }
+                active_tab.buffer.commit_transaction();
+                
+                active_tab.cursor.line += 1;
+                active_tab.cursor.col = active_tab.cursor.col.min(active_tab.buffer.lines()[active_tab.cursor.line].chars().count());
+                active_tab.cursor.intended_col = active_tab.cursor.col;
+                active_tab.cursor.clear_selection();
+            }
+            crate::editor::actions::Action::DeleteLine => {
+                let active_tab = &mut state.tabs[state.active_tab_idx];
+                let cursor_line = active_tab.cursor.line;
+                active_tab.buffer.commit_transaction();
+                active_tab.buffer.start_transaction();
+                
+                if active_tab.buffer.len() == 1 {
+                    let col_count = active_tab.buffer.lines()[0].chars().count();
+                    if col_count > 0 {
+                        active_tab.buffer.delete(0, 0, 0, col_count);
+                    }
+                } else if cursor_line < active_tab.buffer.len() - 1 {
+                    active_tab.buffer.delete(cursor_line, 0, cursor_line + 1, 0);
+                } else {
+                    let prev_line = cursor_line - 1;
+                    let prev_col = active_tab.buffer.lines()[prev_line].chars().count();
+                    active_tab.buffer.delete(prev_line, prev_col, cursor_line, active_tab.buffer.lines()[cursor_line].chars().count());
+                }
+                active_tab.buffer.commit_transaction();
+                
+                active_tab.cursor.line = cursor_line.min(active_tab.buffer.len() - 1);
+                active_tab.cursor.col = active_tab.cursor.col.min(active_tab.buffer.lines()[active_tab.cursor.line].chars().count());
+                active_tab.cursor.intended_col = active_tab.cursor.col;
+                active_tab.cursor.clear_selection();
+            }
             crate::editor::actions::Action::MoveLeft { select, word } => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
