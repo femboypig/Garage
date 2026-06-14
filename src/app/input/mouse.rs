@@ -11,10 +11,6 @@ use crate::app::state::AppState;
 use crate::app::handler::handle_action;
 
 pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
-    if state.tabs.is_empty() {
-        window.set_cursor_icon(winit::window::CursorIcon::Default);
-        return;
-    }
     let size = window.inner_size();
     let mouse_x = state.mouse_x;
     let mouse_y = state.mouse_y;
@@ -28,6 +24,8 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
         // 1. Check Terminal toggle button
         if mouse_x >= term_btn_x && mouse_x < term_btn_x + sb_btn_w {
             true
+        } else if state.tabs.is_empty() {
+            false
         } else {
             // Calculate left side (diagnostics)
             let mut pen_x = 10.0;
@@ -128,13 +126,39 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
         return;
     }
 
+    if state.tabs.is_empty() {
+        window.set_cursor_icon(winit::window::CursorIcon::Default);
+        return;
+    }
+
+    let sidebar_original = ui.sidebar_width;
+    let mut sidebar_width = ui.sidebar_width;
+    let mut w_width = size.width as f32;
+
+    if !state.inactive_panes.is_empty() {
+        let editor_area_width = size.width as f32 - sidebar_original;
+        let pane_width = editor_area_width / 2.0;
+        if state.active_pane_idx == 0 {
+            w_width = sidebar_original + pane_width;
+        } else {
+            sidebar_width = sidebar_original + pane_width;
+        }
+    }
+
     let active_tab = &state.tabs[state.active_tab_idx];
     let buffer = &active_tab.buffer;
+    let is_diagnostics = active_tab.path.as_deref().map_or(false, |p| p.starts_with("diagnostics://"));
     let max_line_digits = buffer.len().to_string().len().max(3);
-    let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
-    let text_area_x = ui.sidebar_width + gutter_width;
+    let gutter_width = if is_diagnostics { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
+    let activity_bar_width = 0.0;
+    let text_area_x = activity_bar_width + sidebar_width + gutter_width;
     
-    let on_sidebar_border = ui.sidebar_width > 0.0 && (mouse_x - ui.sidebar_width).abs() <= 4.0;
+    let scrollbar_width = ui.scrollbar_width();
+    let minimap_width = if is_diagnostics { 0.0 } else { ui.minimap_width() };
+    let sb_x = w_width - scrollbar_width;
+    let minimap_x = sb_x - minimap_width;
+
+    let on_sidebar_border = sidebar_original > 0.0 && (mouse_x - sidebar_original).abs() <= 4.0;
     
     let main_y = ui.titlebar_height;
     let mut dock_start_y = size.height as f32 - ui.status_height;
@@ -148,11 +172,6 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
     } else if on_dock_border {
         window.set_cursor_icon(winit::window::CursorIcon::RowResize);
     } else {
-        let scrollbar_width = ui.scrollbar_width();
-        let minimap_width = ui.minimap_width();
-        let sb_x = size.width as f32 - scrollbar_width;
-        let minimap_x = sb_x - minimap_width;
- 
         let is_in_editor = ui.active_modal.is_none()
             && ui.active_menu.is_none()
             && mouse_x >= text_area_x
@@ -163,7 +182,76 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
         if is_in_editor {
             window.set_cursor_icon(winit::window::CursorIcon::Text);
         } else {
-            window.set_cursor_icon(winit::window::CursorIcon::Default);
+            let mut is_pointer = false;
+            
+            // 1. Sidebar items
+            if sidebar_original > 0.0 && mouse_x < sidebar_original && mouse_y >= ui.titlebar_height && mouse_y < dock_start_y {
+                is_pointer = true;
+            }
+            // 2. Tabbar
+            else if mouse_y >= ui.titlebar_height && mouse_y < ui.titlebar_height + ui.tabbar_height && mouse_x < size.width as f32 {
+                is_pointer = true;
+            }
+            // 3. Titlebar (Menu)
+            else if mouse_y < ui.titlebar_height {
+                is_pointer = true;
+            }
+            // 4. Scrollbar/Minimap area
+            else if mouse_x >= minimap_x && mouse_x < w_width && mouse_y >= ui.titlebar_height + ui.tabbar_height && mouse_y < dock_start_y {
+                is_pointer = true;
+            }
+            // 5. Active modal interactive areas
+            else if let Some(modal) = ui.active_modal {
+                let modal_w = match modal {
+                    crate::ui::ModalType::Settings => (45.0 * ui.ui_char_width).max(500.0).round(),
+                    crate::ui::ModalType::About => 520.0,
+                    crate::ui::ModalType::CommandPalette => (50.0 * ui.ui_char_width).max(500.0).round(),
+                    crate::ui::ModalType::UnsavedChanges => 520.0,
+                    crate::ui::ModalType::SidebarInput => 400.0,
+                    crate::ui::ModalType::GlobalSearch => 650.0,
+                };
+                let modal_h = match modal {
+                    crate::ui::ModalType::Settings => {
+                        let row_height = (ui.ui_line_height * 2.2).round();
+                        (row_height * 8.2).max(430.0).round()
+                    }
+                    crate::ui::ModalType::About => 190.0,
+                    crate::ui::ModalType::CommandPalette => {
+                        let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
+                        let filtered_len = ui.get_filtered_commands().len();
+                        let visible_items = filtered_len.min(10);
+                        let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
+                        (header_h + visible_items as f32 * item_height).round()
+                    }
+                    crate::ui::ModalType::UnsavedChanges => 200.0,
+                    crate::ui::ModalType::SidebarInput => 150.0,
+                    crate::ui::ModalType::GlobalSearch => {
+                        let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
+                        let count = ui.global_search_results.len().min(10).max(1);
+                        let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
+                        (header_h + count as f32 * item_height).round()
+                    }
+                };
+                let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
+                let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
+                
+                if mouse_x >= modal_x && mouse_x <= modal_x + modal_w && mouse_y >= modal_y && mouse_y <= modal_y + modal_h {
+                    if modal == crate::ui::ModalType::CommandPalette || modal == crate::ui::ModalType::GlobalSearch {
+                        let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
+                        if mouse_y >= modal_y + header_h {
+                            is_pointer = true;
+                        }
+                    } else {
+                        is_pointer = true;
+                    }
+                }
+            }
+            
+            if is_pointer {
+                window.set_cursor_icon(winit::window::CursorIcon::Pointer);
+            } else {
+                window.set_cursor_icon(winit::window::CursorIcon::Default);
+            }
         }
     }
 }
@@ -177,6 +265,7 @@ pub fn handle_cursor_moved(
 ) {
     state.mouse_x = position_x;
     state.mouse_y = position_y;
+    update_cursor_icon(window, ui, state);
  
     let size = window.inner_size();
     ui.hover_pos = None;
@@ -524,6 +613,17 @@ pub fn handle_mouse_input(
                         ui.scroll_x = active_tab.scroll_x;
                         ui.scroll_y = active_tab.scroll_y;
                     }
+                    // Recalculate w_width and sidebar_width since active_pane_idx changed!
+                    let editor_area_width = size.width as f32 - sidebar_original;
+                    let pane_width = editor_area_width / 2.0;
+                    if state.active_pane_idx == 0 {
+                        w_width = sidebar_original + pane_width;
+                        sidebar_width = sidebar_original;
+                    } else {
+                        sidebar_width = sidebar_original + pane_width;
+                        w_width = size.width as f32;
+                    }
+                    ui.sidebar_width = sidebar_width;
                 }
             }
         }
@@ -916,6 +1016,7 @@ pub fn handle_mouse_input(
                     ui.handle_click(
                         state.mouse_x,
                         state.mouse_y,
+                        size.width as f32,
                         w_width,
                         size.height as f32,
                         &mut active_tab.buffer,
@@ -940,6 +1041,7 @@ pub fn handle_mouse_input(
                         ui.handle_click(
                             state.mouse_x,
                             state.mouse_y,
+                            size.width as f32,
                             w_width,
                             size.height as f32,
                             &mut active_tab.buffer,
