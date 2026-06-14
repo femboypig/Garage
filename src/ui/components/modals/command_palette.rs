@@ -126,13 +126,45 @@ pub fn draw_command_palette(
                     icon_key = "rust";
                     icon_color = [0.87, 0.29, 0.15, 1.0];
                 }
-                "TOML" => {
-                    icon_key = "toml";
-                    icon_color = [0.65, 0.53, 0.43, 1.0];
+                "Python" => {
+                    icon_key = "python";
+                    icon_color = [0.21, 0.47, 0.68, 1.0];
+                }
+                "JavaScript" => {
+                    icon_key = "javascript";
+                    icon_color = [0.93, 0.8, 0.19, 1.0];
+                }
+                "TypeScript" => {
+                    icon_key = "typescript";
+                    icon_color = [0.18, 0.47, 0.76, 1.0];
+                }
+                "HTML" => {
+                    icon_key = "html";
+                    icon_color = [0.89, 0.31, 0.13, 1.0];
+                }
+                "CSS" => {
+                    icon_key = "css";
+                    icon_color = [0.18, 0.49, 0.74, 1.0];
                 }
                 "JSON" => {
                     icon_key = "json";
                     icon_color = [0.8, 0.68, 0.0, 1.0];
+                }
+                "TOML" => {
+                    icon_key = "toml";
+                    icon_color = [0.65, 0.53, 0.43, 1.0];
+                }
+                "C" => {
+                    icon_key = "c";
+                    icon_color = [0.37, 0.48, 0.67, 1.0];
+                }
+                "C++" => {
+                    icon_key = "cpp";
+                    icon_color = [0.96, 0.4, 0.58, 1.0];
+                }
+                "Go" => {
+                    icon_key = "go";
+                    icon_color = [0.0, 0.66, 0.84, 1.0];
                 }
                 "Markdown" => {
                     icon_key = "md";
@@ -142,6 +174,9 @@ pub fn draw_command_palette(
                     icon_key = "file";
                 }
             }
+        } else if ui.command_palette_mode == crate::ui::CommandPaletteMode::Encodings {
+            icon_key = "binary";
+            icon_color = [0.38, 0.69, 0.94, 1.0];
         }
 
         let has_icon = ui.command_palette_mode != crate::ui::CommandPaletteMode::Commands;
