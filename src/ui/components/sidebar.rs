@@ -440,7 +440,7 @@ pub fn draw_sidebar(
             }
             
             let text_baseline = (item_y + item_height / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
-            ui.push_string(vertices, indices, atlas, queue, label, menu_x + 10.0, text_baseline, ui.config.theme.modal_text_normal, ui.ui_font_size);
+            ui.push_str(vertices, indices, atlas, queue, label, menu_x + 10.0, text_baseline, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
         }
     }
 }
