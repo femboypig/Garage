@@ -107,6 +107,37 @@ pub fn handle_keyboard_input(
                     window.request_redraw();
                     return;
                 }
+                crate::editor::actions::Action::Split => {
+                    if state.inactive_panes.is_empty() {
+                        if state.active_tab_idx < state.tabs.len() {
+                            let active_tab = state.tabs[state.active_tab_idx].clone();
+                            let new_pane = crate::app::state::Pane {
+                                tabs: vec![active_tab],
+                                active_tab_idx: 0,
+                            };
+                            state.inactive_panes.push(new_pane);
+                        } else {
+                            let initial_tab = crate::app::Tab {
+                                path: None,
+                                buffer: Buffer::new(),
+                                cursor: Cursor::new(),
+                                scroll_x: 0,
+                                scroll_y: 0,
+                            };
+                            let new_pane = crate::app::state::Pane {
+                                tabs: vec![initial_tab],
+                                active_tab_idx: 0,
+                            };
+                            state.inactive_panes.push(new_pane);
+                        }
+                        state.switch_pane(1);
+                    } else {
+                        let target_pane = if state.active_pane_idx == 0 { 1 } else { 0 };
+                        state.switch_pane(target_pane);
+                    }
+                    window.request_redraw();
+                    return;
+                }
                 crate::editor::actions::Action::Escape => {
                     ui.show_search_panel = false;
                     window.request_redraw();
@@ -708,6 +739,35 @@ pub fn handle_editor_keyboard(
                     }
                 }
                 ui.perform_search(state);
+            }
+            crate::editor::actions::Action::Split => {
+                if state.inactive_panes.is_empty() {
+                    if state.active_tab_idx < state.tabs.len() {
+                        let active_tab = state.tabs[state.active_tab_idx].clone();
+                        let new_pane = crate::app::state::Pane {
+                            tabs: vec![active_tab],
+                            active_tab_idx: 0,
+                        };
+                        state.inactive_panes.push(new_pane);
+                    } else {
+                        let initial_tab = crate::app::Tab {
+                            path: None,
+                            buffer: Buffer::new(),
+                            cursor: Cursor::new(),
+                            scroll_x: 0,
+                            scroll_y: 0,
+                        };
+                        let new_pane = crate::app::state::Pane {
+                            tabs: vec![initial_tab],
+                            active_tab_idx: 0,
+                        };
+                        state.inactive_panes.push(new_pane);
+                    }
+                    state.switch_pane(1);
+                } else {
+                    let target_pane = if state.active_pane_idx == 0 { 1 } else { 0 };
+                    state.switch_pane(target_pane);
+                }
             }
             crate::editor::actions::Action::ZoomIn => {
                 let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
