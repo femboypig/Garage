@@ -3,7 +3,7 @@ use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
 use crate::terminal::TerminalInstance;
-use super::{UiState, UiAction, ModalType};
+use super::{UiState, UiAction, ModalType, CommandPaletteMode};
 
 impl UiState {
     pub fn get_max_line_len(&mut self, buffer: &Buffer, active_file_path: Option<&str>, cursor_line: usize) -> usize {
@@ -256,18 +256,40 @@ impl UiState {
     }
 
     pub fn get_all_commands(&self) -> Vec<(&'static str, &'static str)> {
-        vec![
-            ("Theme: Light Theme", "Switch to the Light Theme"),
-            ("Theme: Dark Theme", "Switch to the default Dark Theme"),
-            ("Sidebar: Toggle Visibility", "Show or hide the file tree sidebar"),
-            ("Font Size: Increase Editor Font", "Increase the text size of the editor"),
-            ("Font Size: Decrease Editor Font", "Decrease the text size of the editor"),
-            ("Git Blame: Toggle Inline Annotations", "Enable/disable inline git blame"),
-            ("Git Branch: Toggle Branch Statusbar", "Enable/disable git branch status"),
-            ("Settings: Open settings modal", "Configure editor options"),
-            ("About: Open about dialog", "View editor information"),
-            ("Exit: Quit Garage", "Close the code editor"),
-        ]
+        match self.command_palette_mode {
+            CommandPaletteMode::Commands => vec![
+                ("Theme: Light Theme", "Switch to the Light Theme"),
+                ("Theme: Dark Theme", "Switch to the default Dark Theme"),
+                ("Sidebar: Toggle Visibility", "Show or hide the file tree sidebar"),
+                ("Font Size: Increase Editor Font", "Increase the text size of the editor"),
+                ("Font Size: Decrease Editor Font", "Decrease the text size of the editor"),
+                ("Git Blame: Toggle Inline Annotations", "Enable/disable inline git blame"),
+                ("Git Branch: Toggle Branch Statusbar", "Enable/disable git branch status"),
+                ("Settings: Open settings modal", "Configure editor options"),
+                ("About: Open about dialog", "View editor information"),
+                ("Exit: Quit Garage", "Close the code editor"),
+            ],
+            CommandPaletteMode::Languages => vec![
+                ("Language: Rust", "Set syntax highlighting to Rust"),
+                ("Language: Python", "Set syntax highlighting to Python"),
+                ("Language: JavaScript", "Set syntax highlighting to JavaScript"),
+                ("Language: TypeScript", "Set syntax highlighting to TypeScript"),
+                ("Language: HTML", "Set syntax highlighting to HTML"),
+                ("Language: CSS", "Set syntax highlighting to CSS"),
+                ("Language: JSON", "Set syntax highlighting to JSON"),
+                ("Language: TOML", "Set syntax highlighting to TOML"),
+                ("Language: C", "Set syntax highlighting to C"),
+                ("Language: C++", "Set syntax highlighting to C++"),
+                ("Language: Go", "Set syntax highlighting to Go"),
+                ("Language: Plain Text", "Disable syntax highlighting"),
+            ],
+            CommandPaletteMode::Encodings => vec![
+                ("Encoding: UTF-8", "Unicode Transfer Format 8-bit"),
+                ("Encoding: UTF-16", "Unicode Transfer Format 16-bit"),
+                ("Encoding: ASCII", "American Standard Code for Information Interchange"),
+                ("Encoding: ISO-8859-1", "Latin-1 encoding"),
+            ],
+        }
     }
 
     pub fn get_filtered_commands(&self) -> Vec<(&'static str, &'static str)> {
@@ -288,7 +310,10 @@ impl UiState {
         cmd: (&'static str, &'static str),
         _buffer: &mut Buffer,
         _cursor: &mut Cursor,
+        active_path: Option<&str>,
     ) -> UiAction {
+        let path_key = active_path.unwrap_or("").to_string();
+        self.command_palette_mode = CommandPaletteMode::Commands;
         match cmd.0 {
             "Theme: Light Theme" => UiAction::ChangeTheme("Light Theme".to_string()),
             "Theme: Dark Theme" => UiAction::ChangeTheme("Dark Theme".to_string()),
@@ -312,6 +337,24 @@ impl UiState {
                 UiAction::None
             }
             "Exit: Quit Garage" => UiAction::Exit,
+            // Languages
+            "Language: Rust" => { self.forced_languages.insert(path_key, "rs".to_string()); UiAction::None }
+            "Language: Python" => { self.forced_languages.insert(path_key, "py".to_string()); UiAction::None }
+            "Language: JavaScript" => { self.forced_languages.insert(path_key, "js".to_string()); UiAction::None }
+            "Language: TypeScript" => { self.forced_languages.insert(path_key, "ts".to_string()); UiAction::None }
+            "Language: HTML" => { self.forced_languages.insert(path_key, "html".to_string()); UiAction::None }
+            "Language: CSS" => { self.forced_languages.insert(path_key, "css".to_string()); UiAction::None }
+            "Language: JSON" => { self.forced_languages.insert(path_key, "json".to_string()); UiAction::None }
+            "Language: TOML" => { self.forced_languages.insert(path_key, "toml".to_string()); UiAction::None }
+            "Language: C" => { self.forced_languages.insert(path_key, "c".to_string()); UiAction::None }
+            "Language: C++" => { self.forced_languages.insert(path_key, "cpp".to_string()); UiAction::None }
+            "Language: Go" => { self.forced_languages.insert(path_key, "go".to_string()); UiAction::None }
+            "Language: Plain Text" => { self.forced_languages.insert(path_key, "".to_string()); UiAction::None }
+            // Encodings
+            "Encoding: UTF-8" => { self.forced_encodings.insert(path_key, "UTF-8".to_string()); UiAction::None }
+            "Encoding: UTF-16" => { self.forced_encodings.insert(path_key, "UTF-16".to_string()); UiAction::None }
+            "Encoding: ASCII" => { self.forced_encodings.insert(path_key, "ASCII".to_string()); UiAction::None }
+            "Encoding: ISO-8859-1" => { self.forced_encodings.insert(path_key, "ISO-8859-1".to_string()); UiAction::None }
             _ => UiAction::None,
         }
     }
