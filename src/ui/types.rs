@@ -30,6 +30,8 @@ pub enum UiAction {
     CloseTerminal(usize),
     SelectTerminal(usize),
     ToggleDock,
+    SplitVertical,
+    SplitHorizontal,
     None,
 }
 
