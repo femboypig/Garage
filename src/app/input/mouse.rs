@@ -436,7 +436,120 @@ pub fn handle_mouse_input(
                 }
                 return;
             }
-            
+
+            // Check Search Panel click
+            if ui.show_search_panel {
+                let panel_w = 360.0f32;
+                let panel_h = 80.0f32;
+                let sb_width = ui.scrollbar_width() + ui.minimap_width();
+                let panel_x = (size.width as f32 - panel_w - sb_width - 15.0).max(ui.sidebar_width + 10.0);
+                let panel_y = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height + 10.0;
+                
+                if state.mouse_x >= panel_x && state.mouse_x < panel_x + panel_w && state.mouse_y >= panel_y && state.mouse_y < panel_y + panel_h {
+                    let label_w = 60.0f32;
+                    let input_w = 180.0f32;
+                    let input_h = ui.ui_line_height + 4.0;
+                    let r1_y = panel_y + 10.0;
+                    let in1_x = panel_x + 10.0 + label_w;
+                    
+                    // Click on Find input
+                    if state.mouse_x >= in1_x && state.mouse_x < in1_x + input_w && state.mouse_y >= r1_y && state.mouse_y < r1_y + input_h {
+                        ui.search_focus_replace = false;
+                        window.request_redraw();
+                        return;
+                    }
+                    
+                    // Click on Close button
+                    let close_btn_x = panel_x + panel_w - 25.0;
+                    let close_btn_y = panel_y + 8.0;
+                    if state.mouse_x >= close_btn_x && state.mouse_x < close_btn_x + 18.0 && state.mouse_y >= close_btn_y && state.mouse_y < close_btn_y + 18.0 {
+                        ui.show_search_panel = false;
+                        window.request_redraw();
+                        return;
+                    }
+                    
+                    // Click on Replace input
+                    let r2_y = r1_y + input_h + 8.0;
+                    let in2_x = panel_x + 10.0 + label_w;
+                    if state.mouse_x >= in2_x && state.mouse_x < in2_x + input_w && state.mouse_y >= r2_y && state.mouse_y < r2_y + input_h {
+                        ui.search_focus_replace = true;
+                        window.request_redraw();
+                        return;
+                    }
+                    
+                    // Click on Prev button (◀)
+                    let btn_w = 24.0f32;
+                    let btn_h = input_h;
+                    let prev_x = in2_x + input_w + 10.0;
+                    if state.mouse_x >= prev_x && state.mouse_x < prev_x + btn_w && state.mouse_y >= r2_y && state.mouse_y < r2_y + btn_h {
+                        if !ui.search_matches.is_empty() {
+                            if ui.active_search_match_idx == 0 {
+                                ui.active_search_match_idx = ui.search_matches.len() - 1;
+                            } else {
+                                ui.active_search_match_idx -= 1;
+                            }
+                            // Scroll to active match
+                            if state.active_tab_idx < state.tabs.len() {
+                                let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
+                                state.tabs[state.active_tab_idx].cursor.line = m_line;
+                                state.tabs[state.active_tab_idx].cursor.col = m_col;
+                                state.tabs[state.active_tab_idx].cursor.clear_selection();
+                            }
+                        }
+                        window.request_redraw();
+                        return;
+                    }
+                    
+                    // Click on Next button (▶)
+                    let next_x = prev_x + btn_w + 4.0;
+                    if state.mouse_x >= next_x && state.mouse_x < next_x + btn_w && state.mouse_y >= r2_y && state.mouse_y < r2_y + btn_h {
+                        if !ui.search_matches.is_empty() {
+                            if ui.active_search_match_idx >= ui.search_matches.len() - 1 {
+                                ui.active_search_match_idx = 0;
+                            } else {
+                                ui.active_search_match_idx += 1;
+                            }
+                            // Scroll to active match
+                            if state.active_tab_idx < state.tabs.len() {
+                                let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
+                                state.tabs[state.active_tab_idx].cursor.line = m_line;
+                                state.tabs[state.active_tab_idx].cursor.col = m_col;
+                                state.tabs[state.active_tab_idx].cursor.clear_selection();
+                            }
+                        }
+                        window.request_redraw();
+                        return;
+                    }
+                    
+                    // Click on Replace button
+                    let rep_x = next_x + btn_w + 8.0;
+                    let rep_w = 60.0f32;
+                    if state.mouse_x >= rep_x && state.mouse_x < rep_x + rep_w && state.mouse_y >= r2_y && state.mouse_y < r2_y + btn_h {
+                        if !ui.search_matches.is_empty() && state.active_tab_idx < state.tabs.len() {
+                            let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
+                            let active_tab = &mut state.tabs[state.active_tab_idx];
+                            active_tab.buffer.commit_transaction();
+                            active_tab.buffer.start_transaction();
+                            
+                            let q_len = ui.search_query.chars().count();
+                            active_tab.buffer.delete(m_line, m_col, m_line, m_col + q_len);
+                            active_tab.buffer.insert(m_line, m_col, &ui.replace_query);
+                            active_tab.buffer.commit_transaction();
+                            
+                            active_tab.cursor.line = m_line;
+                            active_tab.cursor.col = m_col + ui.replace_query.chars().count();
+                            active_tab.cursor.clear_selection();
+                            
+                            ui.perform_search(state);
+                        }
+                        window.request_redraw();
+                        return;
+                    }
+                    
+                    return;
+                }
+            }
+
             // Check if click is on tab scrollbar
             let tabbar_start_x = ui.sidebar_width;
             let visible_width = size.width as f32 - tabbar_start_x;
