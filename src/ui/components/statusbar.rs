@@ -87,6 +87,65 @@ pub fn draw_statusbar(
 
 
 
+    // 2. Draw Diagnostics Indicators
+    let mut err_count = 0;
+    let mut warn_count = 0;
+    for (e, w) in ui.lsp_diagnostics.values() {
+        err_count += *e;
+        warn_count += *w;
+    }
+
+    let err_str = format!("⊗ {}  ", err_count);
+    let warn_str = format!("⚠ {}", warn_count);
+    let diag_str = format!("⊗ {}  ⚠ {}", err_count, warn_count);
+    let diag_w = diag_str.chars().count() as f32 * ui.ui_char_width;
+
+    let is_diag_hovered = ui.active_modal.is_none()
+        && mouse_y >= status_y
+        && mouse_x >= pen_x
+        && mouse_x < pen_x + diag_w;
+
+    if is_diag_hovered {
+        ui.push_quad(
+            vertices,
+            indices,
+            pen_x - 4.0,
+            status_y + 1.0,
+            diag_w + 8.0,
+            ui.status_height - 1.0,
+            white_uv,
+            ui.config.theme.titlebar_hover_bg,
+        );
+    }
+
+    let err_color = if err_count > 0 { [0.95, 0.25, 0.25, 1.0] } else { ui.config.theme.statusbar_text };
+    pen_x += ui.push_str(
+        vertices,
+        indices,
+        atlas,
+        queue,
+        &err_str,
+        pen_x,
+        baseline_y,
+        err_color,
+        ui.ui_font_size,
+        ui.ui_char_width,
+    );
+
+    let warn_color = if warn_count > 0 { [0.95, 0.70, 0.15, 1.0] } else { ui.config.theme.statusbar_text };
+    pen_x += ui.push_str(
+        vertices,
+        indices,
+        atlas,
+        queue,
+        &warn_str,
+        pen_x,
+        baseline_y,
+        warn_color,
+        ui.ui_font_size,
+        ui.ui_char_width,
+    );
+
     // 3. Right Side Components (drawn from right to left)
     let sb_btn_w = 26.0f32;
     let sb_btn_h = ui.status_height - 1.0;
@@ -140,19 +199,42 @@ pub fn draw_statusbar(
     ];
 
     let mut cur_right_x = term_btn_x - 10.0;
-    for comp in &right_components {
+    for (i, comp) in right_components.iter().enumerate() {
         let comp_len = comp.chars().count() as f32;
         let comp_w = comp_len * ui.ui_char_width;
+        let item_left = cur_right_x - comp_w - 16.0;
+        let item_right = cur_right_x;
         cur_right_x -= comp_w + 16.0;
 
         if cur_right_x > pen_x {
+            // Index 1 is language, Index 2 is encoding
+            let is_hoverable = i == 1 || i == 2;
+            let is_hovered = is_hoverable
+                && ui.active_modal.is_none()
+                && mouse_y >= status_y
+                && mouse_x >= item_left
+                && mouse_x < item_right;
+
+            if is_hovered {
+                ui.push_quad(
+                    vertices,
+                    indices,
+                    item_left + 1.0,
+                    status_y + 1.0,
+                    item_right - item_left - 1.0,
+                    ui.status_height - 1.0,
+                    white_uv,
+                    ui.config.theme.titlebar_hover_bg,
+                );
+            }
+
             ui.push_str(
                 vertices,
                 indices,
                 atlas,
                 queue,
                 comp,
-                cur_right_x + 8.0,
+                item_left + 8.0,
                 baseline_y,
                 text_color,
                 ui.ui_font_size,
@@ -163,7 +245,7 @@ pub fn draw_statusbar(
             ui.push_quad(
                 vertices,
                 indices,
-                cur_right_x,
+                item_left,
                 status_y + 6.0,
                 1.0,
                 ui.status_height - 12.0,
