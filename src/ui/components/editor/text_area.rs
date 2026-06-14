@@ -594,6 +594,51 @@ pub fn draw_text_area(
             }
         }
 
+        // Draw Search Match Highlights
+        if ui.show_search_panel && !ui.search_query.is_empty() {
+            let query_len = ui.search_query.chars().count();
+            for (match_idx, &(m_line, m_col)) in ui.search_matches.iter().enumerate() {
+                if m_line == line_idx {
+                    let col_start = m_col;
+                    let col_end = m_col + query_len;
+                    let visible_start = col_start.saturating_sub(ui.scroll_x);
+                    let visible_end = col_end.saturating_sub(ui.scroll_x);
+                    if visible_start < visible_end {
+                        let match_x = text_area_x + visible_start as f32 * ui.buffer_char_width;
+                        let mut match_w = (visible_end - visible_start) as f32 * ui.buffer_char_width;
+                        if match_x < minimap_x {
+                            if match_x + match_w > minimap_x {
+                                match_w = minimap_x - match_x;
+                            }
+                            let is_active = match_idx == ui.active_search_match_idx;
+                            let highlight_color = if is_active {
+                                [1.0, 0.5, 0.0, 0.45] // Bright orange
+                            } else {
+                                [0.9, 0.9, 0.0, 0.25] // Soft yellow
+                            };
+                            ui.push_quad(
+                                vertices,
+                                indices,
+                                match_x,
+                                row_y,
+                                match_w,
+                                ui.buffer_line_height,
+                                white_uv,
+                                highlight_color,
+                            );
+                            
+                            if is_active {
+                                ui.push_quad(vertices, indices, match_x, row_y, match_w, 1.0, white_uv, [1.0, 0.5, 0.0, 0.9]);
+                                ui.push_quad(vertices, indices, match_x, row_y + ui.buffer_line_height - 1.0, match_w, 1.0, white_uv, [1.0, 0.5, 0.0, 0.9]);
+                                ui.push_quad(vertices, indices, match_x, row_y, 1.0, ui.buffer_line_height, white_uv, [1.0, 0.5, 0.0, 0.9]);
+                                ui.push_quad(vertices, indices, match_x + match_w - 1.0, row_y, 1.0, ui.buffer_line_height, white_uv, [1.0, 0.5, 0.0, 0.9]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Draw source code text characters (plain style, no syntax highlighting)
         let line_text = &buffer.lines()[line_idx];
         let mut pen_x = text_area_x;
