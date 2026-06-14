@@ -86,6 +86,129 @@ pub fn handle_keyboard_input(
         }
     };
 
+    // Handle typing inside the Search Panel
+    if ui.show_search_panel {
+        // First, check if there's an action mapped
+        if let Some(action) = crate::editor::keymap::map_key(&ui.keymap, &logical_key, physical_key, ctrl, shift, alt, &["Editor", "Workspace"]) {
+            match action {
+                crate::editor::actions::Action::Find => {
+                    // Seed search panel with selection if any
+                    if state.active_tab_idx < state.tabs.len() {
+                        let active_tab = &state.tabs[state.active_tab_idx];
+                        if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                            let selected_text = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
+                            if !selected_text.contains('\n') && !selected_text.is_empty() {
+                                ui.search_query = selected_text;
+                            }
+                        }
+                    }
+                    ui.search_focus_replace = false;
+                    ui.perform_search(state);
+                    window.request_redraw();
+                    return;
+                }
+                crate::editor::actions::Action::Escape => {
+                    ui.show_search_panel = false;
+                    window.request_redraw();
+                    return;
+                }
+                crate::editor::actions::Action::ZoomIn => {
+                    let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
+                    ui.update_buffer_font_size(&atlas.font, new_size);
+                    window.request_redraw();
+                    return;
+                }
+                crate::editor::actions::Action::ZoomOut => {
+                    let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
+                    ui.update_buffer_font_size(&atlas.font, new_size);
+                    window.request_redraw();
+                    return;
+                }
+                crate::editor::actions::Action::CommandPalette => {
+                    ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
+                    ui.command_palette_query.clear();
+                    ui.command_palette_selected = 0;
+                    window.request_redraw();
+                    return;
+                }
+                crate::editor::actions::Action::SaveFile => {
+                    handle_action(ui, state, UiAction::SaveFile, window, elwt, gpu, atlas, font_bytes);
+                    window.request_redraw();
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        // Otherwise handle input editing
+        match &logical_key {
+            Key::Named(NamedKey::Escape) => {
+                ui.show_search_panel = false;
+                window.request_redraw();
+                return;
+            }
+            Key::Named(NamedKey::Tab) => {
+                ui.search_focus_replace = !ui.search_focus_replace;
+                window.request_redraw();
+                return;
+            }
+            Key::Named(NamedKey::Enter) => {
+                if !ui.search_matches.is_empty() {
+                    if shift {
+                        if ui.active_search_match_idx == 0 {
+                            ui.active_search_match_idx = ui.search_matches.len() - 1;
+                        } else {
+                            ui.active_search_match_idx -= 1;
+                        }
+                    } else {
+                        if ui.active_search_match_idx >= ui.search_matches.len() - 1 {
+                            ui.active_search_match_idx = 0;
+                        } else {
+                            ui.active_search_match_idx += 1;
+                        }
+                    }
+                    if state.active_tab_idx < state.tabs.len() {
+                        let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
+                        state.tabs[state.active_tab_idx].cursor.line = m_line;
+                        state.tabs[state.active_tab_idx].cursor.col = m_col;
+                        state.tabs[state.active_tab_idx].cursor.clear_selection();
+                    }
+                }
+                window.request_redraw();
+                return;
+            }
+            Key::Named(NamedKey::Backspace) => {
+                if ui.search_focus_replace {
+                    ui.replace_query.pop();
+                } else {
+                    ui.search_query.pop();
+                    ui.perform_search(state);
+                }
+                window.request_redraw();
+                return;
+            }
+            Key::Character(text) => {
+                if !ctrl && !alt {
+                    for c in text.chars() {
+                        if !c.is_control() {
+                            if ui.search_focus_replace {
+                                ui.replace_query.push(c);
+                            } else {
+                                ui.search_query.push(c);
+                            }
+                        }
+                    }
+                    if !ui.search_focus_replace {
+                        ui.perform_search(state);
+                    }
+                    window.request_redraw();
+                    return;
+                }
+            }
+            _ => {}
+        }
+    }
+
     // Handle typing inside the SidebarInput modal
     if ui.active_modal == Some(crate::ui::ModalType::SidebarInput) {
         match &logical_key {
@@ -572,6 +695,20 @@ pub fn handle_editor_keyboard(
 ) {
     if let Some(action) = crate::editor::keymap::map_key(&ui.keymap, logical_key, physical_key, ctrl, shift, alt, &["Editor", "Workspace"]) {
         match action {
+            crate::editor::actions::Action::Find => {
+                ui.show_search_panel = true;
+                ui.search_focus_replace = false;
+                if state.active_tab_idx < state.tabs.len() {
+                    let active_tab = &state.tabs[state.active_tab_idx];
+                    if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                        let selected_text = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
+                        if !selected_text.contains('\n') && !selected_text.is_empty() {
+                            ui.search_query = selected_text;
+                        }
+                    }
+                }
+                ui.perform_search(state);
+            }
             crate::editor::actions::Action::ZoomIn => {
                 let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
                 ui.update_buffer_font_size(&atlas.font, new_size);
