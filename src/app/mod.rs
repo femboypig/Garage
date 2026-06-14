@@ -21,6 +21,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let mut builder = env_logger::Builder::from_default_env();
     if std::env::var("RUST_LOG").is_err() {
         builder.filter_level(log::LevelFilter::Warn);
+        builder.filter(Some("wgpu_hal"), log::LevelFilter::Error);
+        builder.filter(Some("wgpu_core"), log::LevelFilter::Error);
     }
     builder.init();
 
