@@ -47,6 +47,7 @@ pub enum ModalType {
     About,
     CommandPalette,
     UnsavedChanges,
+    SidebarInput,
 }
 
 pub struct FileNode {
