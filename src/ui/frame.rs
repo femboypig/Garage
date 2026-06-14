@@ -314,6 +314,8 @@ impl UiState {
                 ("Settings: Open settings modal", "Configure editor options"),
                 ("About: Open about dialog", "View editor information"),
                 ("Exit: Quit Garage", "Close the code editor"),
+                ("Split Editor: Vertical", "Split the active editor vertically"),
+                ("Split Editor: Horizontal", "Split the active editor horizontally"),
             ],
             CommandPaletteMode::Languages => vec![
                 ("Rust", ""),
@@ -361,6 +363,8 @@ impl UiState {
         let path_key = active_path.unwrap_or("").to_string();
         self.command_palette_mode = CommandPaletteMode::Commands;
         match cmd.0 {
+            "Split Editor: Vertical" => UiAction::SplitVertical,
+            "Split Editor: Horizontal" => UiAction::SplitHorizontal,
             "Theme: Light Theme" => UiAction::ChangeTheme("Light Theme".to_string()),
             "Theme: Dark Theme" => UiAction::ChangeTheme("Dark Theme".to_string()),
             "Sidebar: Toggle Visibility" => UiAction::ToggleSidebar,
@@ -425,6 +429,7 @@ impl UiState {
         dragged_tab_idx: Option<usize>,
         inactive_panes: &[crate::app::state::Pane],
         active_pane_idx: usize,
+        is_split_horizontal: bool,
         terminals: &[TerminalInstance],
         active_terminal_idx: usize,
         terminal_focus: bool,
@@ -548,6 +553,111 @@ impl UiState {
                 tab_modified,
                 active_tab_idx,
                 status_y,
+            );
+        } else if is_split_horizontal {
+            let editor_area_height = status_y - main_y;
+            let pane_height = (editor_area_height / 2.0).round();
+            
+            // Draw Top Pane (Pane 0)
+            let (p0_buffer, p0_cursor, p0_paths, p0_modified, p0_active_idx) = if active_pane_idx == 0 {
+                (buffer, cursor, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
+            } else {
+                let inactive_pane = &inactive_panes[0];
+                let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
+                let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
+                let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
+                let active_tab = &inactive_pane.tabs[in_active_idx];
+                (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
+            };
+            
+            let orig_scroll_x = self.scroll_x;
+            let orig_scroll_y = self.scroll_y;
+            if active_pane_idx != 0 {
+                let inactive_pane = &inactive_panes[0];
+                if let Some(tab) = inactive_pane.tabs.get(p0_active_idx) {
+                    self.scroll_x = tab.scroll_x;
+                    self.scroll_y = tab.scroll_y;
+                }
+            }
+
+            crate::ui::components::editor_view::draw_editor_view(
+                self,
+                vertices,
+                indices,
+                atlas,
+                queue,
+                p0_buffer,
+                p0_cursor,
+                width,
+                mouse_x,
+                mouse_y,
+                &p0_paths,
+                &p0_modified,
+                p0_active_idx,
+                main_y + pane_height,
+            );
+            
+            self.scroll_x = orig_scroll_x;
+            self.scroll_y = orig_scroll_y;
+            
+            // Draw Bottom Pane (Pane 1)
+            let (p1_buffer, p1_cursor, p1_paths, p1_modified, p1_active_idx) = if active_pane_idx == 1 {
+                (buffer, cursor, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
+            } else {
+                let inactive_pane = &inactive_panes[0];
+                let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
+                let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
+                let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
+                let active_tab = &inactive_pane.tabs[in_active_idx];
+                (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
+            };
+            
+            let orig_scroll_x = self.scroll_x;
+            let orig_scroll_y = self.scroll_y;
+            if active_pane_idx != 1 {
+                let inactive_pane = &inactive_panes[0];
+                if let Some(tab) = inactive_pane.tabs.get(p1_active_idx) {
+                    self.scroll_x = tab.scroll_x;
+                    self.scroll_y = tab.scroll_y;
+                }
+            }
+
+            // Temporarily shift titlebar_height to start bottom pane at main_y + pane_height
+            let orig_titlebar_height = self.titlebar_height;
+            self.titlebar_height = main_y + pane_height;
+            
+            crate::ui::components::editor_view::draw_editor_view(
+                self,
+                vertices,
+                indices,
+                atlas,
+                queue,
+                p1_buffer,
+                p1_cursor,
+                width,
+                mouse_x,
+                mouse_y,
+                &p1_paths,
+                &p1_modified,
+                p1_active_idx,
+                status_y,
+            );
+
+            self.scroll_x = orig_scroll_x;
+            self.scroll_y = orig_scroll_y;
+            self.titlebar_height = orig_titlebar_height;
+            
+            // Draw horizontal split separator border line between the two panes
+            let white_uv = atlas.white_pixel_uv();
+            self.push_quad(
+                vertices,
+                indices,
+                sidebar_original,
+                main_y + pane_height - 1.0,
+                width - sidebar_original,
+                1.0,
+                white_uv,
+                self.config.theme.modal_border,
             );
         } else {
             let editor_area_width = width - sidebar_original;
@@ -721,8 +831,15 @@ impl UiState {
                 height - self.status_height
             };
             
+            let is_in_tabbar = if !inactive_panes.is_empty() && is_split_horizontal {
+                let editor_area_height = editor_bottom_limit - main_y;
+                let pane_height = (editor_area_height / 2.0).round();
+                (mouse_y >= main_y && mouse_y < main_y + self.tabbar_height)
+                    || (mouse_y >= main_y + pane_height && mouse_y < main_y + pane_height + self.tabbar_height)
+            } else {
+                mouse_y >= main_y && mouse_y < main_y + self.tabbar_height
+            };
             let is_in_editor_area = mouse_y >= main_y + self.tabbar_height && mouse_y < editor_bottom_limit;
-            let is_in_tabbar = mouse_y >= main_y && mouse_y < main_y + self.tabbar_height;
             let white_uv = atlas.white_pixel_uv();
             let overlay_color = [0.2, 0.45, 0.85, 0.25]; // Premium semi-transparent blue highlight
 
@@ -731,8 +848,21 @@ impl UiState {
                     // Split editor visual cue
                     let editor_area_width = width - sidebar_original;
                     let half_w = editor_area_width / 2.0;
+                    let editor_area_height = editor_bottom_limit - (main_y + self.tabbar_height);
                     
-                    if mouse_x < sidebar_original + half_w {
+                    if mouse_y >= main_y + self.tabbar_height + editor_area_height * 0.5 {
+                        // Bottom pane preview split
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            sidebar_original,
+                            main_y + self.tabbar_height + editor_area_height * 0.5,
+                            editor_area_width,
+                            editor_area_height * 0.5,
+                            white_uv,
+                            overlay_color,
+                        );
+                    } else if mouse_x < sidebar_original + half_w {
                         // Left pane preview split
                         self.push_quad(
                             vertices,
@@ -740,7 +870,7 @@ impl UiState {
                             sidebar_original,
                             main_y + self.tabbar_height,
                             half_w,
-                            editor_bottom_limit - (main_y + self.tabbar_height),
+                            editor_area_height,
                             white_uv,
                             overlay_color,
                         );
@@ -752,24 +882,110 @@ impl UiState {
                             sidebar_original + half_w,
                             main_y + self.tabbar_height,
                             half_w,
-                            editor_bottom_limit - (main_y + self.tabbar_height),
+                            editor_area_height,
                             white_uv,
                             overlay_color,
                         );
                     }
                 } else {
                     // Two panes, highlight hovered pane
+                    if is_split_horizontal {
+                        let editor_area_height = editor_bottom_limit - main_y;
+                        let pane_height = (editor_area_height / 2.0).round();
+                        
+                        if mouse_y < main_y + pane_height {
+                            // Top pane highlight
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                sidebar_original,
+                                main_y + self.tabbar_height,
+                                width - sidebar_original,
+                                pane_height - self.tabbar_height,
+                                white_uv,
+                                overlay_color,
+                            );
+                        } else {
+                            // Bottom pane highlight
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                sidebar_original,
+                                main_y + pane_height + self.tabbar_height,
+                                width - sidebar_original,
+                                editor_bottom_limit - (main_y + pane_height + self.tabbar_height),
+                                white_uv,
+                                overlay_color,
+                            );
+                        }
+                    } else {
+                        let editor_area_width = width - sidebar_original;
+                        let pane_width = editor_area_width / 2.0;
+                        
+                        if mouse_x < sidebar_original + pane_width {
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                sidebar_original,
+                                main_y + self.tabbar_height,
+                                pane_width,
+                                editor_bottom_limit - (main_y + self.tabbar_height),
+                                white_uv,
+                                overlay_color,
+                            );
+                        } else {
+                            self.push_quad(
+                                vertices,
+                                indices,
+                                sidebar_original + pane_width,
+                                main_y + self.tabbar_height,
+                                pane_width,
+                                editor_bottom_limit - (main_y + self.tabbar_height),
+                                white_uv,
+                                overlay_color,
+                            );
+                        }
+                    }
+                }
+            } else if is_in_tabbar && !inactive_panes.is_empty() {
+                // Highlight hovered pane's tabbar
+                if is_split_horizontal {
+                    let editor_area_height = editor_bottom_limit - main_y;
+                    let pane_height = (editor_area_height / 2.0).round();
+                    if mouse_y < main_y + pane_height {
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            sidebar_original,
+                            main_y,
+                            width - sidebar_original,
+                            self.tabbar_height,
+                            white_uv,
+                            overlay_color,
+                        );
+                    } else {
+                        self.push_quad(
+                            vertices,
+                            indices,
+                            sidebar_original,
+                            main_y + pane_height,
+                            width - sidebar_original,
+                            self.tabbar_height,
+                            white_uv,
+                            overlay_color,
+                        );
+                    }
+                } else {
                     let editor_area_width = width - sidebar_original;
                     let pane_width = editor_area_width / 2.0;
-                    
                     if mouse_x < sidebar_original + pane_width {
                         self.push_quad(
                             vertices,
                             indices,
                             sidebar_original,
-                            main_y + self.tabbar_height,
+                            main_y,
                             pane_width,
-                            editor_bottom_limit - (main_y + self.tabbar_height),
+                            self.tabbar_height,
                             white_uv,
                             overlay_color,
                         );
@@ -778,41 +994,13 @@ impl UiState {
                             vertices,
                             indices,
                             sidebar_original + pane_width,
-                            main_y + self.tabbar_height,
+                            main_y,
                             pane_width,
-                            editor_bottom_limit - (main_y + self.tabbar_height),
+                            self.tabbar_height,
                             white_uv,
                             overlay_color,
                         );
                     }
-                }
-            } else if is_in_tabbar && !inactive_panes.is_empty() {
-                // Highlight hovered pane's tabbar
-                let editor_area_width = width - sidebar_original;
-                let pane_width = editor_area_width / 2.0;
-                
-                if mouse_x < sidebar_original + pane_width {
-                    self.push_quad(
-                        vertices,
-                        indices,
-                        sidebar_original,
-                        main_y,
-                        pane_width,
-                        self.tabbar_height,
-                        white_uv,
-                        overlay_color,
-                    );
-                } else {
-                    self.push_quad(
-                        vertices,
-                        indices,
-                        sidebar_original + pane_width,
-                        main_y,
-                        pane_width,
-                        self.tabbar_height,
-                        white_uv,
-                        overlay_color,
-                    );
                 }
             }
         }
