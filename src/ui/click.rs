@@ -346,7 +346,8 @@ impl UiState {
                 if idx < filtered.len() {
                     let cmd = filtered[idx];
                     self.active_modal = None;
-                    return self.execute_command(cmd, buffer, cursor);
+                    let active_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
+                    return self.execute_command(cmd, buffer, cursor, active_path);
                 }
             }
         }
