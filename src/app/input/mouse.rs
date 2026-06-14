@@ -67,6 +67,25 @@ pub fn handle_cursor_moved(
     ui.hovered_diagnostic = None;
     ui.mouse_in_popup = false;
     ui.hovered_copy_button = false;
+    
+    let sidebar_original = ui.sidebar_width;
+    let mut sidebar_width = ui.sidebar_width;
+    let mut w_width = size.width as f32;
+    
+    if !state.inactive_panes.is_empty() {
+        let editor_area_width = size.width as f32 - sidebar_original;
+        let pane_width = editor_area_width / 2.0;
+        
+        if state.active_pane_idx == 0 {
+            w_width = sidebar_original + pane_width;
+        } else {
+            sidebar_width = sidebar_original + pane_width;
+        }
+    }
+    
+    if !state.is_dragging_sidebar {
+        ui.sidebar_width = sidebar_width;
+    }
  
     if state.is_dragging_sidebar {
         let new_width = if state.mouse_x < 30.0 { 0.0 } else { state.mouse_x.clamp(50.0, 600.0) };
@@ -74,7 +93,7 @@ pub fn handle_cursor_moved(
         ui.target_sidebar_width = new_width;
     } else if ui.tab_scroll_is_dragging {
         let tabbar_start_x = ui.sidebar_width;
-        let visible_width = size.width as f32 - tabbar_start_x;
+        let visible_width = w_width - tabbar_start_x;
         
         let mut total_tabs_width = 0.0f32;
         let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
@@ -91,11 +110,11 @@ pub fn handle_cursor_moved(
             let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
             total_tabs_width += tab_w;
         }
-
+ 
         let ratio = visible_width / total_tabs_width;
         let thumb_w = (visible_width * ratio).clamp(20.0, visible_width);
         let max_scroll_x = (total_tabs_width - visible_width).max(0.0);
-
+ 
         if max_scroll_x > 0.0 {
             let target_thumb_x = state.mouse_x - state.scroll_drag_offset_x;
             let scroll_range = visible_width - thumb_w;
@@ -118,10 +137,10 @@ pub fn handle_cursor_moved(
     } else if state.is_dragging_scroll {
         let active_path = state.tabs[state.active_tab_idx].path.as_deref().unwrap_or("");
         let is_diagnostics = active_path.starts_with("diagnostics://");
-
+ 
         let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
         let status_y = (size.height as f32 - ui.status_height).round();
-
+ 
         let show_horizontal_scrollbar = if is_diagnostics {
             false
         } else {
@@ -131,7 +150,7 @@ pub fn handle_cursor_moved(
             let text_area_x = ui.sidebar_width + gutter_width;
             let scrollbar_width = ui.scrollbar_width();
             let minimap_width = ui.minimap_width();
-            let sb_x = size.width as f32 - scrollbar_width;
+            let sb_x = w_width - scrollbar_width;
             let minimap_x = sb_x - minimap_width;
             let text_viewport_w = (minimap_x - text_area_x).max(10.0);
             let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
@@ -140,7 +159,7 @@ pub fn handle_cursor_moved(
         let hs_height = if show_horizontal_scrollbar { 14.0 } else { 0.0 };
         let editor_height = status_y - editor_top - hs_height;
         let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-
+ 
         let virtual_len = if is_diagnostics {
             let mut count = 0;
             for (file_path, diags) in &ui.lsp_diagnostics_details {
@@ -163,7 +182,7 @@ pub fn handle_cursor_moved(
         } else {
             state.tabs[state.active_tab_idx].buffer.len()
         };
-
+ 
         let ratio = visible_lines as f32 / virtual_len as f32;
         let thumb_h = (editor_height * ratio).clamp(20.0, editor_height);
         let max_scroll = (virtual_len as isize - visible_lines as isize).max(0) as f32;
@@ -177,7 +196,7 @@ pub fn handle_cursor_moved(
         let text_area_x = ui.sidebar_width + gutter_width;
         let scrollbar_width = ui.scrollbar_width();
         let minimap_width = ui.minimap_width();
-        let sb_x = size.width as f32 - scrollbar_width;
+        let sb_x = w_width - scrollbar_width;
         let minimap_x = sb_x - minimap_width;
         let text_viewport_w = (minimap_x - text_area_x).max(10.0);
  
@@ -224,7 +243,7 @@ pub fn handle_cursor_moved(
         let text_area_x = ui.sidebar_width + gutter_width;
         let scrollbar_width = ui.scrollbar_width();
         let minimap_width = if is_diagnostics { 0.0 } else { ui.minimap_width() };
-        let sb_x = size.width as f32 - scrollbar_width;
+        let sb_x = w_width - scrollbar_width;
         let minimap_x = sb_x - minimap_width;
   
         let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
@@ -233,7 +252,7 @@ pub fn handle_cursor_moved(
         } else {
             ui.scroll_y
         };
-
+ 
         let line_idx = if is_diagnostics {
             let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
             if visual_lines.is_empty() {
@@ -251,7 +270,7 @@ pub fn handle_cursor_moved(
         } else {
             0
         };
-
+ 
         let line_chars = if is_diagnostics {
             let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
             visual_lines.get(line_idx).map_or(0, |vl| match vl {
@@ -268,8 +287,10 @@ pub fn handle_cursor_moved(
         state.tabs[state.active_tab_idx].cursor.col = col_idx;
         state.tabs[state.active_tab_idx].cursor.intended_col = col_idx;
  
-        ui.scroll_to_cursor(&state.tabs[state.active_tab_idx].cursor, state.tabs[state.active_tab_idx].buffer.len(), size.width as f32, size.height as f32);
+        ui.scroll_to_cursor(&state.tabs[state.active_tab_idx].cursor, state.tabs[state.active_tab_idx].buffer.len(), w_width, size.height as f32);
     }
+ 
+    ui.sidebar_width = sidebar_original;
  
     let any_dragging = state.is_dragging_sidebar
         || state.is_dragging_dock_border
