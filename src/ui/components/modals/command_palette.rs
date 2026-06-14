@@ -61,7 +61,7 @@ pub fn draw_command_palette(
     // Draw Filtered List of Commands
     let list_y = sep_y + 1.0;
     let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
-    let max_visible_items = ((modal_y + modal_h - 15.0 - list_y) / item_height).floor() as usize;
+    let max_visible_items = ((modal_y + modal_h - list_y) / item_height).floor() as usize;
 
     let filtered = ui.get_filtered_commands();
     
@@ -101,11 +101,68 @@ pub fn draw_command_palette(
         }
 
         // Left text: display name
-        let display_name = item.0;
+        let mut display_name = item.0.to_string();
+        if ui.command_palette_mode == crate::ui::CommandPaletteMode::Languages {
+            if let Some(stripped) = display_name.strip_prefix("Language: ") {
+                display_name = stripped.to_string();
+            }
+        } else if ui.command_palette_mode == crate::ui::CommandPaletteMode::Encodings {
+            if let Some(stripped) = display_name.strip_prefix("Encoding: ") {
+                display_name = stripped.to_string();
+            }
+        }
+
         let item_text_color = if is_selected {
             ui.config.theme.modal_text_title
         } else {
             ui.config.theme.modal_text_normal
+        };
+
+        let mut icon_key = "file";
+        let mut icon_color = item_text_color;
+        if ui.command_palette_mode == crate::ui::CommandPaletteMode::Languages {
+            match display_name.as_str() {
+                "Rust" => {
+                    icon_key = "rust";
+                    icon_color = [0.87, 0.29, 0.15, 1.0];
+                }
+                "TOML" => {
+                    icon_key = "toml";
+                    icon_color = [0.65, 0.53, 0.43, 1.0];
+                }
+                "JSON" => {
+                    icon_key = "json";
+                    icon_color = [0.8, 0.68, 0.0, 1.0];
+                }
+                "Markdown" => {
+                    icon_key = "md";
+                    icon_color = [0.26, 0.53, 0.79, 1.0];
+                }
+                _ => {
+                    icon_key = "file";
+                }
+            }
+        }
+
+        let has_icon = ui.command_palette_mode != crate::ui::CommandPaletteMode::Commands;
+        let text_offset_x = if has_icon {
+            let icon_sz = 14.0f32;
+            let icon_x = modal_x + 20.0;
+            let icon_y = (item_y + (item_height - icon_sz) / 2.0).round();
+            ui.push_icon(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                icon_key,
+                icon_x,
+                icon_y,
+                icon_color,
+                icon_sz,
+            );
+            icon_sz + 6.0
+        } else {
+            0.0
         };
 
         ui.push_str(
@@ -113,8 +170,8 @@ pub fn draw_command_palette(
             indices,
             atlas,
             queue,
-            display_name,
-            modal_x + 20.0,
+            &display_name,
+            modal_x + 20.0 + text_offset_x,
             (item_y + item_height / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round(),
             item_text_color,
             ui.ui_font_size,
@@ -132,7 +189,7 @@ pub fn draw_command_palette(
         let name_len = display_name.chars().count() as f32;
         let name_w = name_len * ui.ui_char_width;
         
-        if desc_x > modal_x + name_w + 40.0 {
+        if ui.command_palette_mode == crate::ui::CommandPaletteMode::Commands && desc_x > modal_x + name_w + 40.0 {
             ui.push_str(
                 vertices,
                 indices,
