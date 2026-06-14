@@ -41,6 +41,7 @@ pub struct AppState {
     pub mouse_x: f32,
     pub mouse_y: f32,
     pub dragged_tab_idx: Option<usize>,
+    pub drag_start_pos: Option<(f32, f32)>,
 }
 
 impl AppState {
@@ -67,6 +68,7 @@ impl AppState {
             mouse_x: 0.0,
             mouse_y: 0.0,
             dragged_tab_idx: None,
+            drag_start_pos: None,
         }
     }
 
