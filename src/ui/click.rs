@@ -208,7 +208,7 @@ impl UiState {
                 let filtered_len = self.get_filtered_commands().len();
                 let visible_items = filtered_len.min(10);
                 let header_h = 15.0 + self.ui_line_height + 15.0 + 1.0;
-                (header_h + visible_items as f32 * item_height + 15.0).round()
+                (header_h + visible_items as f32 * item_height).round()
             }
             ModalType::UnsavedChanges => 200.0,
             ModalType::SidebarInput => 150.0,
