@@ -297,9 +297,145 @@ pub fn handle_mouse_input(
     input_state: ElementState,
     button: MouseButton,
 ) {
+    if button == MouseButton::Right && input_state == ElementState::Pressed {
+        ui.active_menu = None;
+        ui.sidebar_context_menu = None;
+        let size = window.inner_size();
+        let main_y = ui.titlebar_height;
+        if ui.sidebar_width > 0.0 && state.mouse_x >= 0.0 && state.mouse_x < ui.sidebar_width && state.mouse_y > main_y && state.mouse_y < size.height as f32 - ui.status_height {
+            let tree_y = state.mouse_y - main_y;
+            let row_idx = (tree_y / ui.ui_line_height).floor() as usize;
+            let r = row_idx + ui.sidebar_scroll;
+            
+            let mut target_path = std::path::PathBuf::from(".");
+            let mut is_dir = true;
+            if r >= 1 {
+                let node_idx = r - 1;
+                if node_idx < ui.visible_nodes.len() {
+                    target_path = ui.visible_nodes[node_idx].path.clone();
+                    is_dir = ui.visible_nodes[node_idx].is_dir;
+                }
+            }
+            ui.sidebar_context_menu = Some((state.mouse_x, state.mouse_y, target_path, is_dir));
+            window.request_redraw();
+            return;
+        }
+    }
+
     if button == MouseButton::Left {
         let size = window.inner_size();
         if input_state == ElementState::Pressed {
+            // Check sidebar context menu click
+            if let Some((menu_x, menu_y, target_path, _is_dir)) = ui.sidebar_context_menu.clone() {
+                ui.sidebar_context_menu = None;
+                let menu_w = 120.0f32;
+                let item_height = ui.ui_line_height;
+                let menu_h = 4.0 * item_height;
+                
+                if state.mouse_x >= menu_x && state.mouse_x < menu_x + menu_w && state.mouse_y >= menu_y && state.mouse_y < menu_y + menu_h {
+                    let idx = ((state.mouse_y - menu_y) / item_height).floor() as usize;
+                    match idx {
+                        0 => { // New File
+                            ui.active_modal = Some(crate::ui::ModalType::SidebarInput);
+                            ui.sidebar_input_type = "new_file".to_string();
+                            ui.sidebar_input_target = target_path;
+                            ui.sidebar_input_value.clear();
+                            window.request_redraw();
+                            return;
+                        }
+                        1 => { // New Folder
+                            ui.active_modal = Some(crate::ui::ModalType::SidebarInput);
+                            ui.sidebar_input_type = "new_folder".to_string();
+                            ui.sidebar_input_target = target_path;
+                            ui.sidebar_input_value.clear();
+                            window.request_redraw();
+                            return;
+                        }
+                        2 => { // Rename
+                            ui.active_modal = Some(crate::ui::ModalType::SidebarInput);
+                            ui.sidebar_input_type = "rename".to_string();
+                            ui.sidebar_input_target = target_path.clone();
+                            ui.sidebar_input_value = target_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                            window.request_redraw();
+                            return;
+                        }
+                        3 => { // Delete
+                            if target_path.is_dir() {
+                                let _ = std::fs::remove_dir_all(&target_path);
+                            } else {
+                                let _ = std::fs::remove_file(&target_path);
+                            }
+                            state.rebuild_tree();
+                            window.request_redraw();
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+                window.request_redraw();
+                return;
+            }
+
+            // Check SidebarInput modal click
+            if ui.active_modal == Some(crate::ui::ModalType::SidebarInput) {
+                let modal_w = 400.0f32;
+                let modal_h = 150.0f32;
+                let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
+                let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
+                
+                let title_y = modal_y + 20.0;
+                let input_y = title_y + ui.ui_line_height + 15.0;
+                let input_h = ui.ui_line_height + 8.0;
+                
+                let btn_w = 80.0f32;
+                let btn_h = 24.0f32;
+                let cancel_x = modal_x + modal_w - 20.0 - btn_w * 2.0 - 10.0;
+                let confirm_x = modal_x + modal_w - 20.0 - btn_w;
+                let btn_y = input_y + input_h + 15.0;
+                
+                if state.mouse_x >= cancel_x && state.mouse_x <= cancel_x + btn_w && state.mouse_y >= btn_y && state.mouse_y <= btn_y + btn_h {
+                    ui.active_modal = None;
+                    window.request_redraw();
+                    return;
+                }
+                
+                if state.mouse_x >= confirm_x && state.mouse_x <= confirm_x + btn_w && state.mouse_y >= btn_y && state.mouse_y <= btn_y + btn_h {
+                    let target = &ui.sidebar_input_target;
+                    let val = &ui.sidebar_input_value;
+                    if !val.is_empty() {
+                        match ui.sidebar_input_type.as_str() {
+                            "new_file" => {
+                                let parent = if target.is_dir() { target.clone() } else { target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")) };
+                                let new_path = parent.join(val);
+                                let _ = std::fs::File::create(new_path);
+                            }
+                            "new_folder" => {
+                                let parent = if target.is_dir() { target.clone() } else { target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")) };
+                                let new_path = parent.join(val);
+                                let _ = std::fs::create_dir_all(new_path);
+                            }
+                            "rename" => {
+                                if let Some(parent) = target.parent() {
+                                    let new_path = parent.join(val);
+                                    let _ = std::fs::rename(target, new_path);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    ui.active_modal = None;
+                    state.rebuild_tree();
+                    window.request_redraw();
+                    return;
+                }
+                
+                let clicked_outside = state.mouse_x < modal_x || state.mouse_x > modal_x + modal_w || state.mouse_y < modal_y || state.mouse_y > modal_y + modal_h;
+                if clicked_outside {
+                    ui.active_modal = None;
+                    window.request_redraw();
+                }
+                return;
+            }
             
             // Check if click is on tab scrollbar
             let tabbar_start_x = ui.sidebar_width;
