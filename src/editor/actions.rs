@@ -36,5 +36,6 @@ pub enum Action {
 
     // Search
     Find,
+    GlobalSearch,
     Split,
 }
