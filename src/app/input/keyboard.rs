@@ -24,6 +24,14 @@ pub fn handle_keyboard_input(
     logical_key: Key,
     physical_key: PhysicalKey,
 ) {
+    if !state.tabs.is_empty() {
+        state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+    }
+    for p in &mut state.inactive_panes {
+        if !p.tabs.is_empty() {
+            p.active_tab_idx = p.active_tab_idx.min(p.tabs.len() - 1);
+        }
+    }
     let ctrl = state.modifiers.control_key();
     let shift = state.modifiers.shift_key();
     let alt = state.modifiers.alt_key();
