@@ -1,7 +1,7 @@
 use std::path::Path;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
-use super::{UiState, UiAction, MenuType, ModalType};
+use super::{UiState, UiAction, MenuType, ModalType, CommandPaletteMode};
 
 impl UiState {
     /// Handle click coordinates to determine if a menu, tree, or scroll item was clicked
@@ -16,6 +16,7 @@ impl UiState {
         tab_paths: &[Option<String>],
         tab_modified: &[bool],
         terminals: &[crate::terminal::TerminalInstance],
+        active_tab_idx: usize,
     ) -> UiAction {
         // 1. Delegate to modal click handler if a modal is open
         if let Some(modal) = self.active_modal {
@@ -28,7 +29,7 @@ impl UiState {
         }
 
         // 3. Delegate to workspace clicks (tabs, sidebar file tree, terminal dock, status bar)
-        self.handle_workspace_click(mx, my, width, height, tab_paths, tab_modified, terminals)
+        self.handle_workspace_click(mx, my, width, height, tab_paths, tab_modified, terminals, active_tab_idx)
     }
 
     pub fn handle_menu_click(
@@ -417,6 +418,7 @@ impl UiState {
         tab_paths: &[Option<String>],
         tab_modified: &[bool],
         terminals: &[crate::terminal::TerminalInstance],
+        active_tab_idx: usize,
     ) -> UiAction {
         // 3. Check Tabbar Clicks
         let main_y = self.titlebar_height;
@@ -597,6 +599,81 @@ impl UiState {
 
             if mx >= pen_x && mx <= pen_x + diag_w {
                 return UiAction::OpenFile("diagnostics://project".into());
+            }
+
+            // Check right-hand status bar component clicks (Language & Encoding)
+            let raw_ext = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
+                .and_then(|p| std::path::Path::new(p).extension())
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("");
+            let mut extension = raw_ext.to_string();
+            if let Some(path) = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref()) {
+                if let Some(forced_ext) = self.forced_languages.get(path) {
+                    extension = forced_ext.clone();
+                }
+            }
+
+            let language = self.languages.get(&extension)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    if extension.is_empty() {
+                        "Plain Text".to_string()
+                    } else {
+                        let mut chars = extension.chars();
+                        match chars.next() {
+                            None => "Plain Text".to_string(),
+                            Some(first) => {
+                                let mut s = first.to_uppercase().to_string();
+                                s.push_str(&chars.as_str().to_lowercase());
+                                s
+                            }
+                        }
+                    }
+                });
+
+            let encoding = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
+                .and_then(|path| self.forced_encodings.get(path))
+                .map(|s| s.as_str())
+                .unwrap_or("UTF-8");
+
+            let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
+
+            let mut cur_right_x = term_btn_x - 10.0;
+            
+            // First component: Cursor position
+            let cursor_w = cursor_str.chars().count() as f32 * self.ui_char_width;
+            cur_right_x -= cursor_w + 16.0;
+
+            // Second component: Language
+            let lang_w = language.chars().count() as f32 * self.ui_char_width;
+            let lang_left = cur_right_x - lang_w - 16.0;
+            let lang_right = cur_right_x;
+            cur_right_x -= lang_w + 16.0;
+
+            // Third component: Encoding
+            let enc_w = encoding.chars().count() as f32 * self.ui_char_width;
+            let enc_left = cur_right_x - enc_w - 16.0;
+            let enc_right = cur_right_x;
+            cur_right_x -= enc_w + 16.0;
+
+            // Check if Language was clicked
+            if mx >= lang_left && mx < lang_right {
+                self.command_palette_mode = CommandPaletteMode::Languages;
+                self.command_palette_query = String::new();
+                self.command_palette_selected = 0;
+                self.command_palette_scroll = 0;
+                self.active_modal = Some(ModalType::CommandPalette);
+                return UiAction::None;
+            }
+
+            // Check if Encoding was clicked
+            if mx >= enc_left && mx < enc_right {
+                self.command_palette_mode = CommandPaletteMode::Encodings;
+                self.command_palette_query = String::new();
+                self.command_palette_selected = 0;
+                self.command_palette_scroll = 0;
+                self.active_modal = Some(ModalType::CommandPalette);
+                return UiAction::None;
             }
         }
 
