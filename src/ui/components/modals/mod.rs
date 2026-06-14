@@ -3,6 +3,7 @@ pub mod command_palette;
 pub mod unsaved_changes;
 pub mod about;
 pub mod settings;
+pub mod global_search;
 
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
@@ -154,6 +155,7 @@ pub fn draw_modals(
             ModalType::CommandPalette => (50.0 * ui.ui_char_width).max(500.0).round(),
             ModalType::UnsavedChanges => 520.0,
             ModalType::SidebarInput => 400.0,
+            ModalType::GlobalSearch => 650.0,
         };
         let modal_h = match modal {
             ModalType::Settings => {
@@ -170,6 +172,12 @@ pub fn draw_modals(
             }
             ModalType::UnsavedChanges => 200.0,
             ModalType::SidebarInput => 150.0,
+            ModalType::GlobalSearch => {
+                let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
+                let count = ui.global_search_results.len().min(10).max(1);
+                let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
+                (header_h + count as f32 * item_height).round()
+            }
         };
         let modal_x = ((width - modal_w) / 2.0).round();
         let modal_y = ((height - modal_h) / 2.0).round();
@@ -230,6 +238,20 @@ pub fn draw_modals(
         match modal {
             ModalType::CommandPalette => {
                 command_palette::draw_command_palette(
+                    ui,
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    modal_x,
+                    modal_y,
+                    modal_w,
+                    modal_h,
+                    white_uv,
+                );
+            }
+            ModalType::GlobalSearch => {
+                global_search::draw_global_search(
                     ui,
                     vertices,
                     indices,
