@@ -326,12 +326,12 @@ impl UiState {
             let list_y = sep_y + 1.0;
             let item_height = (self.ui_line_height * 1.6).round().max(26.0);
             let filtered = self.get_filtered_commands();
-            let max_visible_items = ((modal_y + modal_h - 15.0 - list_y) / item_height).floor() as usize;
+            let max_visible_items = ((modal_y + modal_h - list_y) / item_height).floor() as usize;
             
             // Scrollbar click detection
             if filtered.len() > max_visible_items {
                 let track_x = modal_x + modal_w - 12.0;
-                if mx >= track_x && mx <= modal_x + modal_w && my >= list_y && my <= modal_y + modal_h - 15.0 {
+                if mx >= track_x && mx <= modal_x + modal_w && my >= list_y && my <= modal_y + modal_h {
                     let track_h = max_visible_items as f32 * item_height;
                     let relative_y = (my - list_y).clamp(0.0, track_h);
                     let scroll_ratio = relative_y / track_h;
@@ -342,7 +342,7 @@ impl UiState {
             }
 
             let list_w = if filtered.len() > max_visible_items { modal_w - 12.0 } else { modal_w };
-            if mx >= modal_x && mx <= modal_x + list_w && my >= list_y && my <= modal_y + modal_h - 15.0 {
+            if mx >= modal_x && mx <= modal_x + list_w && my >= list_y && my <= modal_y + modal_h {
                 let idx = ((my - list_y) / item_height).floor() as usize + self.command_palette_scroll;
                 if idx < filtered.len() {
                     let cmd = filtered[idx];
