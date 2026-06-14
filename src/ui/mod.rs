@@ -88,6 +88,13 @@ pub struct UiState {
     pub forced_encodings: std::collections::HashMap<String, String>,
 
     pub command_palette_query: String,
+    pub global_search_query: String,
+    pub global_search_results: Vec<(std::path::PathBuf, usize, String)>,
+    pub global_search_selected: usize,
+    pub global_search_scroll: usize,
+    pub global_search_rx: Option<std::sync::mpsc::Receiver<Vec<(std::path::PathBuf, usize, String)>>>,
+    pub global_search_tx: std::sync::mpsc::Sender<Vec<(std::path::PathBuf, usize, String)>>,
+    pub is_searching_globally: bool,
     pub command_palette_selected: usize,
     pub command_palette_scroll: usize,
     pub sidebar_scroll: usize,
@@ -181,6 +188,7 @@ impl UiState {
         let (blame_file_tx, blame_file_rx) = std::sync::mpsc::channel();
         let (tree_tx, tree_rx) = std::sync::mpsc::channel();
         let (diagnostics_file_tx, diagnostics_file_rx) = std::sync::mpsc::channel();
+        let (global_search_tx, global_search_rx) = std::sync::mpsc::channel();
 
         let mut languages = std::collections::HashMap::new();
         if let Ok(content) = std::fs::read_to_string("assets/languages.json") {
@@ -250,6 +258,13 @@ impl UiState {
             forced_languages: std::collections::HashMap::new(),
             forced_encodings: std::collections::HashMap::new(),
             command_palette_query: String::new(),
+            global_search_query: String::new(),
+            global_search_results: Vec::new(),
+            global_search_selected: 0,
+            global_search_scroll: 0,
+            global_search_rx: Some(global_search_rx),
+            global_search_tx,
+            is_searching_globally: false,
             command_palette_selected: 0,
             command_palette_scroll: 0,
             sidebar_scroll: 0,
