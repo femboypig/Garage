@@ -172,7 +172,7 @@ pub fn draw_command_palette(
 
         let has_icon = ui.command_palette_mode != crate::ui::CommandPaletteMode::Commands;
         let text_offset_x = if has_icon {
-            let icon_sz = 14.0f32;
+            let icon_sz = 16.0f32;
             let icon_x = modal_x + 20.0;
             let icon_y = (item_y + (item_height - icon_sz) / 2.0).round();
             ui.push_icon(
@@ -186,7 +186,7 @@ pub fn draw_command_palette(
                 icon_color,
                 icon_sz,
             );
-            icon_sz + 6.0
+            icon_sz + 8.0
         } else {
             0.0
         };
