@@ -297,6 +297,7 @@ pub fn handle_action(
                         state.tabs = target_pane.tabs;
                         state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                         state.active_pane_idx = 0;
+                        state.is_split_horizontal = false;
                     } else {
                         state.tabs.push(Tab {
                             path: None,
@@ -329,6 +330,7 @@ pub fn handle_action(
                     state.tabs = target_pane.tabs;
                     state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                     state.active_pane_idx = 0;
+                    state.is_split_horizontal = false;
                 } else {
                     state.tabs.push(Tab {
                         path: None,
@@ -374,6 +376,7 @@ pub fn handle_action(
                     state.tabs = target_pane.tabs;
                     state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                     state.active_pane_idx = 0;
+                    state.is_split_horizontal = false;
                 } else {
                     state.tabs.push(Tab {
                         path: None,
@@ -462,6 +465,68 @@ pub fn handle_action(
             if idx < state.dock_terminals.len() {
                 state.active_terminal_idx = idx;
                 state.terminal_focus = true;
+            }
+        }
+        UiAction::SplitVertical => {
+            if state.inactive_panes.is_empty() {
+                if state.active_tab_idx < state.tabs.len() {
+                    let active_tab = state.tabs[state.active_tab_idx].clone();
+                    let new_pane = crate::app::state::Pane {
+                        tabs: vec![active_tab],
+                        active_tab_idx: 0,
+                    };
+                    state.inactive_panes.push(new_pane);
+                } else {
+                    let initial_tab = crate::app::Tab {
+                        path: None,
+                        buffer: Buffer::new(),
+                        cursor: Cursor::new(),
+                        scroll_x: 0,
+                        scroll_y: 0,
+                    };
+                    let new_pane = crate::app::state::Pane {
+                        tabs: vec![initial_tab],
+                        active_tab_idx: 0,
+                    };
+                    state.inactive_panes.push(new_pane);
+                }
+                state.is_split_horizontal = false;
+                state.switch_pane(1);
+            } else {
+                let target_pane = if state.active_pane_idx == 0 { 1 } else { 0 };
+                state.is_split_horizontal = false;
+                state.switch_pane(target_pane);
+            }
+        }
+        UiAction::SplitHorizontal => {
+            if state.inactive_panes.is_empty() {
+                if state.active_tab_idx < state.tabs.len() {
+                    let active_tab = state.tabs[state.active_tab_idx].clone();
+                    let new_pane = crate::app::state::Pane {
+                        tabs: vec![active_tab],
+                        active_tab_idx: 0,
+                    };
+                    state.inactive_panes.push(new_pane);
+                } else {
+                    let initial_tab = crate::app::Tab {
+                        path: None,
+                        buffer: Buffer::new(),
+                        cursor: Cursor::new(),
+                        scroll_x: 0,
+                        scroll_y: 0,
+                    };
+                    let new_pane = crate::app::state::Pane {
+                        tabs: vec![initial_tab],
+                        active_tab_idx: 0,
+                    };
+                    state.inactive_panes.push(new_pane);
+                }
+                state.is_split_horizontal = true;
+                state.switch_pane(1);
+            } else {
+                let target_pane = if state.active_pane_idx == 0 { 1 } else { 0 };
+                state.is_split_horizontal = true;
+                state.switch_pane(target_pane);
             }
         }
         UiAction::Exit => {
