@@ -13,6 +13,13 @@ pub mod frame;
 pub use types::{UiAction, MenuType, ModalType, FileNode};
 pub use crate::renderer::wgpu::Vertex;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CommandPaletteMode {
+    Commands,
+    Languages,
+    Encodings,
+}
+
 pub struct UiState {
     pub ui_font_size: f32,
     pub buffer_font_size: f32,
@@ -73,13 +80,6 @@ pub struct UiState {
     pub git_diffs: std::collections::HashMap<String, Vec<types::GitDiffHunk>>,
     pub git_diff_rx: Option<std::sync::mpsc::Receiver<(String, Vec<types::GitDiffHunk>)>>,
     pub git_diff_tx: std::sync::mpsc::Sender<(String, Vec<types::GitDiffHunk>)>,
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum CommandPaletteMode {
-    Commands,
-    Languages,
-    Encodings,
-}
 
     pub languages: std::collections::HashMap<String, String>,
 
