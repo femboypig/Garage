@@ -44,9 +44,13 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
                 err_count += *e;
                 warn_count += *w;
             }
-            let err_str = format!("⊗ {}  ", err_count);
-            let warn_str = format!("⚠ {}", warn_count);
-            let diag_w = (err_str.chars().count() + warn_str.chars().count()) as f32 * ui.ui_char_width;
+            let err_val_str = format!("{}", err_count);
+            let warn_val_str = format!("{}", warn_count);
+            let err_icon_sz = 14.0f32;
+            let warn_icon_sz = 14.0f32;
+            let err_text_w = err_val_str.chars().count() as f32 * ui.ui_char_width;
+            let warn_text_w = warn_val_str.chars().count() as f32 * ui.ui_char_width;
+            let diag_w = err_icon_sz + 4.0 + err_text_w + 12.0 + warn_icon_sz + 4.0 + warn_text_w;
 
             if mouse_x >= pen_x && mouse_x <= pen_x + diag_w {
                 true
