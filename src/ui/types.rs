@@ -3,6 +3,7 @@ use std::path::PathBuf;
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiAction {
     OpenFile(PathBuf),
+    OpenFileAt(PathBuf, usize),
     SaveFile,
     Undo,
     Redo,
