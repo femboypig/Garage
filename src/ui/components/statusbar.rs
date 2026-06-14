@@ -95,12 +95,19 @@ pub fn draw_statusbar(
     let term_btn_x = width - 10.0 - sb_btn_w;
 
     // Detect file type / extension to show programming language
-    let extension = active_path
+    let mut extension = active_path
         .and_then(|p| std::path::Path::new(p).extension())
         .and_then(|ext| ext.to_str())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_string();
 
-    let language = ui.languages.get(extension)
+    if let Some(path) = active_path {
+        if let Some(forced_ext) = ui.forced_languages.get(path) {
+            extension = forced_ext.clone();
+        }
+    }
+
+    let language = ui.languages.get(&extension)
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
             if extension.is_empty() {
@@ -118,12 +125,17 @@ pub fn draw_statusbar(
             }
         });
 
+    let encoding = active_path
+        .and_then(|path| ui.forced_encodings.get(path))
+        .map(|s| s.as_str())
+        .unwrap_or("UTF-8");
+
     let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
 
     let right_components = [
         cursor_str.as_str(),
         language.as_str(),
-        "UTF-8",
+        encoding,
         "LF",
     ];
 
