@@ -40,6 +40,7 @@ pub struct AppState {
     pub last_click_time: Option<Instant>,
     pub mouse_x: f32,
     pub mouse_y: f32,
+    pub dragged_tab_idx: Option<usize>,
 }
 
 impl AppState {
@@ -65,6 +66,7 @@ impl AppState {
             last_click_time: None,
             mouse_x: 0.0,
             mouse_y: 0.0,
+            dragged_tab_idx: None,
         }
     }
 
