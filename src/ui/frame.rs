@@ -560,7 +560,7 @@ impl UiState {
                 let inactive_pane = &inactive_panes[0];
                 let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
                 let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
-                let in_active_idx = inactive_pane.active_tab_idx;
+                let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
                 let active_tab = &inactive_pane.tabs[in_active_idx];
                 (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
             };
@@ -605,7 +605,7 @@ impl UiState {
                 let inactive_pane = &inactive_panes[0];
                 let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
                 let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
-                let in_active_idx = inactive_pane.active_tab_idx;
+                let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
                 let active_tab = &inactive_pane.tabs[in_active_idx];
                 (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
             };
