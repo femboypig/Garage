@@ -514,6 +514,16 @@ impl UiState {
             // Left pane ends at sidebar_original + pane_width
             let left_pane_width = sidebar_original + pane_width;
             
+            let orig_scroll_x = self.scroll_x;
+            let orig_scroll_y = self.scroll_y;
+            if active_pane_idx != 0 {
+                let inactive_pane = &inactive_panes[0];
+                if let Some(tab) = inactive_pane.tabs.get(p0_active_idx) {
+                    self.scroll_x = tab.scroll_x;
+                    self.scroll_y = tab.scroll_y;
+                }
+            }
+
             crate::ui::components::editor_view::draw_editor_view(
                 self,
                 vertices,
@@ -531,6 +541,9 @@ impl UiState {
                 status_y,
             );
             
+            self.scroll_x = orig_scroll_x;
+            self.scroll_y = orig_scroll_y;
+            
             // Draw Right Pane (Pane 1)
             let (p1_buffer, p1_cursor, p1_paths, p1_modified, p1_active_idx) = if active_pane_idx == 1 {
                 (buffer, cursor, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
@@ -543,6 +556,16 @@ impl UiState {
                 (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
             };
             
+            let orig_scroll_x = self.scroll_x;
+            let orig_scroll_y = self.scroll_y;
+            if active_pane_idx != 1 {
+                let inactive_pane = &inactive_panes[0];
+                if let Some(tab) = inactive_pane.tabs.get(p1_active_idx) {
+                    self.scroll_x = tab.scroll_x;
+                    self.scroll_y = tab.scroll_y;
+                }
+            }
+
             // Temporarily shift sidebar_width to start right pane at sidebar_original + pane_width
             self.sidebar_width = sidebar_original + pane_width;
             
@@ -562,6 +585,9 @@ impl UiState {
                 p1_active_idx,
                 status_y,
             );
+
+            self.scroll_x = orig_scroll_x;
+            self.scroll_y = orig_scroll_y;
             
             // Draw vertical split separator border line between the two panes
             let white_uv = atlas.white_pixel_uv();
