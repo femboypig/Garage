@@ -111,6 +111,7 @@ pub fn draw_editor_view(
         width,
         main_y,
         activity_bar_width,
+        active_file_path,
     );
 
     // 3. Draw Gutter
