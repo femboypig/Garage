@@ -22,6 +22,7 @@ pub enum Action {
     },
 }
 
+#[derive(Clone)]
 pub struct Buffer {
     lines: Vec<String>,
     undo_stack: Vec<Vec<Action>>,
