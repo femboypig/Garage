@@ -83,7 +83,53 @@ pub fn handle_cursor_moved(
         }
     }
  
-    if state.is_dragging_sidebar {
+    if let Some(dragged_idx) = state.dragged_tab_idx {
+        let main_y = ui.titlebar_height;
+        let is_inside_tabbar = state.mouse_y >= main_y && state.mouse_y < main_y + ui.tabbar_height;
+        if is_inside_tabbar {
+            let tabbar_start_x = sidebar_width;
+            let mut tab_widths = Vec::new();
+            let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+            let close_reserved = 8.0f32 + tab_close_icon_sz;
+            let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
+            for idx in 0..tab_paths.len() {
+                let path_opt = &tab_paths[idx];
+                let file_name = path_opt.as_ref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "untitled.txt".to_string());
+                let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+                let dot_reserved = 18.0f32;
+                let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+                tab_widths.push(tab_w);
+            }
+
+            let mut hovered_idx = None;
+            let mut current_tab_x = tabbar_start_x;
+            for idx in 0..state.tabs.len() {
+                let tab_w = tab_widths[idx];
+                let draw_x = current_tab_x - ui.tab_scroll_x;
+                let clip_left = draw_x.max(tabbar_start_x);
+                let clip_right = (draw_x + tab_w).min(w_width);
+                
+                if clip_left < clip_right && state.mouse_x >= clip_left && state.mouse_x < clip_right {
+                    hovered_idx = Some(idx);
+                    break;
+                }
+                current_tab_x += tab_w;
+            }
+
+            if let Some(h_idx) = hovered_idx {
+                if h_idx != dragged_idx {
+                    let tab = state.tabs.remove(dragged_idx);
+                    state.tabs.insert(h_idx, tab);
+                    state.dragged_tab_idx = Some(h_idx);
+                    state.active_tab_idx = h_idx;
+                    window.request_redraw();
+                }
+            }
+        }
+    } else if state.is_dragging_sidebar {
         let new_width = if state.mouse_x < 30.0 { 0.0 } else { state.mouse_x.clamp(50.0, 600.0) };
         ui.sidebar_width = new_width;
         ui.target_sidebar_width = new_width;
@@ -1017,32 +1063,61 @@ pub fn handle_mouse_input(
                                  }
                              }
                          }
-                         act => {
-                             handle_action(ui, state, act, window, elwt, gpu, atlas, font_bytes);
-                         }
-                     }
-                 }
-             }
-         } else {
-             // Button Released
-             ui.tab_scroll_is_dragging = false;
-             let was_dragging_sidebar = state.is_dragging_sidebar;
-             state.is_dragging = false;
-             state.is_dragging_scroll = false;
-             state.is_dragging_horizontal_scroll = false;
-             state.is_dragging_minimap = false;
-             state.is_dragging_sidebar = false;
-             state.is_dragging_dock_border = false;
-             if was_dragging_sidebar {
-                 ui.config.sidebar_width = ui.sidebar_width;
-                 ui.config.save_in_background();
-             }
-             if let Some((s_l, s_c, e_l, e_c)) = state.tabs[state.active_tab_idx].cursor.selection_range() {
-                 if s_l == e_l && s_c == e_c {
-                     state.tabs[state.active_tab_idx].cursor.clear_selection();
-                 }
-             }
-         }
+                         UiAction::SelectTab(idx) => {
+                              state.dragged_tab_idx = Some(idx);
+                              handle_action(ui, state, UiAction::SelectTab(idx), window, elwt, gpu, atlas, font_bytes);
+                          }
+                          act => {
+                              handle_action(ui, state, act, window, elwt, gpu, atlas, font_bytes);
+                          }
+                      }
+                  }
+              }
+          } else {
+              // Button Released
+              ui.tab_scroll_is_dragging = false;
+              let was_dragging_sidebar = state.is_dragging_sidebar;
+              state.is_dragging = false;
+              state.is_dragging_scroll = false;
+              state.is_dragging_horizontal_scroll = false;
+              state.is_dragging_minimap = false;
+              state.is_dragging_sidebar = false;
+              state.is_dragging_dock_border = false;
+              if was_dragging_sidebar {
+                  ui.config.sidebar_width = ui.sidebar_width;
+                  ui.config.save_in_background();
+              }
+              
+              if let Some(dragged_idx) = state.dragged_tab_idx.take() {
+                  let main_y = ui.titlebar_height;
+                  let is_outside_tabbar = state.mouse_y < main_y || state.mouse_y >= main_y + ui.tabbar_height;
+                  
+                  if is_outside_tabbar && state.tabs.len() > 1 {
+                      if state.inactive_panes.is_empty() {
+                          let tab_to_move = state.tabs.remove(dragged_idx);
+                          state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                          state.inactive_panes.push(crate::app::state::Pane {
+                              tabs: vec![tab_to_move],
+                              active_tab_idx: 0,
+                          });
+                          state.switch_pane(1);
+                      } else {
+                          let tab_to_move = state.tabs.remove(dragged_idx);
+                          state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                          state.inactive_panes[0].tabs.push(tab_to_move);
+                          state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
+                          let target_pane = 1 - state.active_pane_idx;
+                          state.switch_pane(target_pane);
+                      }
+                  }
+              }
+
+              if let Some((s_l, s_c, e_l, e_c)) = state.tabs[state.active_tab_idx].cursor.selection_range() {
+                  if s_l == e_l && s_c == e_c {
+                      state.tabs[state.active_tab_idx].cursor.clear_selection();
+                  }
+              }
+          }
          update_cursor_icon(window, ui, &state.tabs[state.active_tab_idx].buffer, state.mouse_x, state.mouse_y);
          window.request_redraw();
      }
