@@ -418,4 +418,29 @@ pub fn draw_sidebar(
             ui.config.theme.scrollbar_thumb,
         );
     }
+
+    if let Some((menu_x, menu_y, _, _)) = ui.sidebar_context_menu {
+        let items = &["New File", "New Folder", "Rename", "Delete"];
+        let item_height = ui.ui_line_height;
+        let menu_w = 120.0f32;
+        let menu_h = items.len() as f32 * item_height;
+        
+        ui.push_quad(vertices, indices, menu_x, menu_y, menu_w, menu_h, white_uv, ui.config.theme.modal_bg);
+        ui.push_quad(vertices, indices, menu_x, menu_y, menu_w, 1.0, white_uv, ui.config.theme.modal_border);
+        ui.push_quad(vertices, indices, menu_x, menu_y + menu_h - 1.0, menu_w, 1.0, white_uv, ui.config.theme.modal_border);
+        ui.push_quad(vertices, indices, menu_x, menu_y, 1.0, menu_h, white_uv, ui.config.theme.modal_border);
+        ui.push_quad(vertices, indices, menu_x + menu_w - 1.0, menu_y, 1.0, menu_h, white_uv, ui.config.theme.modal_border);
+        
+        for (idx, label) in items.iter().enumerate() {
+            let item_y = menu_y + idx as f32 * item_height;
+            let is_hovered = mouse_x >= menu_x && mouse_x < menu_x + menu_w && mouse_y >= item_y && mouse_y < item_y + item_height;
+            
+            if is_hovered {
+                ui.push_quad(vertices, indices, menu_x + 1.0, item_y + 1.0, menu_w - 2.0, item_height - 2.0, white_uv, ui.config.theme.dropdown_hover_bg);
+            }
+            
+            let text_baseline = (item_y + item_height / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
+            ui.push_string(vertices, indices, atlas, queue, label, menu_x + 10.0, text_baseline, ui.config.theme.modal_text_normal, ui.ui_font_size);
+        }
+    }
 }
