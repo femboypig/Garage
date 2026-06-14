@@ -110,6 +110,12 @@ pub struct UiState {
     pub sidebar_input_target: std::path::PathBuf,
     pub sidebar_input_value: String,
     pub sidebar_context_menu: Option<(f32, f32, std::path::PathBuf, bool)>,
+    pub show_search_panel: bool,
+    pub search_query: String,
+    pub replace_query: String,
+    pub search_focus_replace: bool,
+    pub search_matches: Vec<(usize, usize)>,
+    pub active_search_match_idx: usize,
 }
 
 
@@ -253,6 +259,12 @@ impl UiState {
             sidebar_input_target: std::path::PathBuf::new(),
             sidebar_input_value: String::new(),
             sidebar_context_menu: None,
+            show_search_panel: false,
+            search_query: String::new(),
+            replace_query: String::new(),
+            search_focus_replace: false,
+            search_matches: Vec::new(),
+            active_search_match_idx: 0,
         };
 
         state.rebuild_tree();
