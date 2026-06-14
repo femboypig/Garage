@@ -1215,6 +1215,6 @@ pub fn handle_editor_keyboard(
     
     let active_tab = &state.tabs[state.active_tab_idx];
     ui.scroll_to_cursor(&active_tab.cursor, active_tab.buffer.len(), window.inner_size().width as f32, window.inner_size().height as f32);
-    update_cursor_icon(window, ui, &active_tab.buffer, state.mouse_x, state.mouse_y);
+    update_cursor_icon(window, ui, state);
     window.request_redraw();
 }
