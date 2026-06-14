@@ -27,4 +27,10 @@ pub enum Action {
     InsertNewLine,
     InsertTab,
     InsertChar(char),
+
+    // Line Manipulation
+    MoveLineUp,
+    MoveLineDown,
+    DuplicateLine,
+    DeleteLine,
 }
