@@ -333,6 +333,8 @@ impl UiState {
         tab_paths: &[Option<String>],
         tab_modified: &[bool],
         active_tab_idx: usize,
+        inactive_panes: &[crate::app::state::Pane],
+        active_pane_idx: usize,
         terminals: &[TerminalInstance],
         active_terminal_idx: usize,
         terminal_focus: bool,
@@ -430,22 +432,109 @@ impl UiState {
         );
 
         // --- 3. Draw Editor Tabbar, Breadcrumbs, Text Area, Gutter, Scrollbars & Minimap ---
-        crate::ui::components::editor_view::draw_editor_view(
-            self,
-            vertices,
-            indices,
-            atlas,
-            queue,
-            buffer,
-            cursor,
-            width,
-            mouse_x,
-            mouse_y,
-            tab_paths,
-            tab_modified,
-            active_tab_idx,
-            status_y,
-        );
+        let sidebar_original = self.sidebar_width;
+        
+        if inactive_panes.is_empty() {
+            crate::ui::components::editor_view::draw_editor_view(
+                self,
+                vertices,
+                indices,
+                atlas,
+                queue,
+                buffer,
+                cursor,
+                width,
+                mouse_x,
+                mouse_y,
+                tab_paths,
+                tab_modified,
+                active_tab_idx,
+                status_y,
+            );
+        } else {
+            let editor_area_width = width - sidebar_original;
+            let pane_width = editor_area_width / 2.0;
+            
+            // Draw Left Pane (Pane 0)
+            let (p0_buffer, p0_cursor, p0_paths, p0_modified, p0_active_idx) = if active_pane_idx == 0 {
+                (buffer, cursor, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
+            } else {
+                let inactive_pane = &inactive_panes[0];
+                let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
+                let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
+                let in_active_idx = inactive_pane.active_tab_idx;
+                let active_tab = &inactive_pane.tabs[in_active_idx];
+                (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
+            };
+            
+            // Left pane ends at sidebar_original + pane_width
+            let left_pane_width = sidebar_original + pane_width;
+            
+            crate::ui::components::editor_view::draw_editor_view(
+                self,
+                vertices,
+                indices,
+                atlas,
+                queue,
+                p0_buffer,
+                p0_cursor,
+                left_pane_width,
+                mouse_x,
+                mouse_y,
+                &p0_paths,
+                &p0_modified,
+                p0_active_idx,
+                status_y,
+            );
+            
+            // Draw Right Pane (Pane 1)
+            let (p1_buffer, p1_cursor, p1_paths, p1_modified, p1_active_idx) = if active_pane_idx == 1 {
+                (buffer, cursor, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
+            } else {
+                let inactive_pane = &inactive_panes[0];
+                let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
+                let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
+                let in_active_idx = inactive_pane.active_tab_idx;
+                let active_tab = &inactive_pane.tabs[in_active_idx];
+                (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
+            };
+            
+            // Temporarily shift sidebar_width to start right pane at sidebar_original + pane_width
+            self.sidebar_width = sidebar_original + pane_width;
+            
+            crate::ui::components::editor_view::draw_editor_view(
+                self,
+                vertices,
+                indices,
+                atlas,
+                queue,
+                p1_buffer,
+                p1_cursor,
+                width,
+                mouse_x,
+                mouse_y,
+                &p1_paths,
+                &p1_modified,
+                p1_active_idx,
+                status_y,
+            );
+            
+            // Draw vertical split separator border line between the two panes
+            let white_uv = atlas.white_pixel_uv();
+            self.push_quad(
+                vertices,
+                indices,
+                sidebar_original + pane_width - 1.0,
+                self.titlebar_height,
+                1.0,
+                status_y - self.titlebar_height,
+                white_uv,
+                self.config.theme.modal_border,
+            );
+            
+            // Restore sidebar_width
+            self.sidebar_width = sidebar_original;
+        }
 
         // --- 4.5. Draw Bottom Dock ---
         crate::ui::components::dock::draw_dock(
