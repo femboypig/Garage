@@ -24,6 +24,46 @@ pub fn handle_keyboard_input(
     logical_key: Key,
     physical_key: PhysicalKey,
 ) {
+    let ctrl = state.modifiers.control_key();
+    let shift = state.modifiers.shift_key();
+    let alt = state.modifiers.alt_key();
+
+    // If terminal is focused, check if key maps to a workspace action first
+    if state.terminal_focus && !state.dock_terminals.is_empty() {
+        if let Some(action) = crate::editor::keymap::map_key(
+            &ui.keymap,
+            &logical_key,
+            physical_key,
+            ctrl,
+            shift,
+            alt,
+            &["Workspace"],
+        ) {
+            match action {
+                crate::editor::actions::Action::ZoomIn => {
+                    let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
+                    ui.update_buffer_font_size(&atlas.font, new_size);
+                    window.request_redraw();
+                    return;
+                }
+                crate::editor::actions::Action::ZoomOut => {
+                    let new_size = (ui.buffer_font_size - 1.0).clamp(8.0, 36.0);
+                    ui.update_buffer_font_size(&atlas.font, new_size);
+                    window.request_redraw();
+                    return;
+                }
+                crate::editor::actions::Action::CommandPalette => {
+                    ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
+                    ui.command_palette_query.clear();
+                    ui.command_palette_selected = 0;
+                    window.request_redraw();
+                    return;
+                }
+                _ => {}
+            }
+        }
+    }
+
     // 1. Delegate to terminal input handler if terminal is focused
     if handle_terminal_input(state, window, &logical_key) {
         return;
@@ -45,10 +85,6 @@ pub fn handle_keyboard_input(
             (None, None)
         }
     };
-
-    let ctrl = state.modifiers.control_key();
-    let shift = state.modifiers.shift_key();
-    let alt = state.modifiers.alt_key();
 
     // 2. Delegate to command palette modal handler if command palette is active
     if handle_command_palette_input(ui, state, window, elwt, gpu, atlas, font_bytes, &logical_key) {
@@ -231,7 +267,7 @@ pub fn handle_diagnostics_keyboard(
     alt: bool,
 ) -> bool {
     if state.tabs[state.active_tab_idx].path.as_deref() == Some("diagnostics://project") {
-        if let Some(action) = crate::editor::keymap::map_key(logical_key, physical_key, ctrl, shift, alt) {
+        if let Some(action) = crate::editor::keymap::map_key(&ui.keymap, logical_key, physical_key, ctrl, shift, alt, &["Editor", "Workspace"]) {
             let is_navigation_action = match &action {
                 crate::editor::actions::Action::MoveUp { .. } |
                 crate::editor::actions::Action::MoveDown { .. } |
@@ -482,7 +518,7 @@ pub fn handle_editor_keyboard(
     active_path_start: Option<String>,
     old_revision: Option<usize>,
 ) {
-    if let Some(action) = crate::editor::keymap::map_key(logical_key, physical_key, ctrl, shift, alt) {
+    if let Some(action) = crate::editor::keymap::map_key(&ui.keymap, logical_key, physical_key, ctrl, shift, alt, &["Editor", "Workspace"]) {
         match action {
             crate::editor::actions::Action::ZoomIn => {
                 let new_size = (ui.buffer_font_size + 1.0).clamp(8.0, 36.0);
