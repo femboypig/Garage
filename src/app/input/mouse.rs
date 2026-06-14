@@ -307,6 +307,17 @@ pub fn handle_cursor_moved(
     update_cursor_icon(window, ui, &state.tabs[state.active_tab_idx].buffer, state.mouse_x, state.mouse_y);
 }
 
+struct SidebarGuard<'a> {
+    sidebar_width_ref: &'a mut f32,
+    original_value: f32,
+}
+
+impl<'a> Drop for SidebarGuard<'a> {
+    fn drop(&mut self) {
+        *self.sidebar_width_ref = self.original_value;
+    }
+}
+
 pub fn handle_mouse_input(
     ui: &mut UiState,
     state: &mut AppState,
@@ -318,6 +329,53 @@ pub fn handle_mouse_input(
     input_state: ElementState,
     button: MouseButton,
 ) {
+    let size = window.inner_size();
+    let sidebar_original = ui.sidebar_width;
+    let mut sidebar_width = ui.sidebar_width;
+    let mut w_width = size.width as f32;
+
+    if input_state == ElementState::Pressed {
+        if !state.inactive_panes.is_empty() {
+            let main_y = ui.titlebar_height;
+            let mut dock_start_y = size.height as f32 - ui.status_height;
+            if ui.show_dock {
+                dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
+            }
+            let editor_bottom_limit = if ui.show_dock {
+                dock_start_y
+            } else {
+                size.height as f32 - ui.status_height
+            };
+            
+            if state.mouse_y >= main_y && state.mouse_y < editor_bottom_limit {
+                let editor_area_width = size.width as f32 - sidebar_original;
+                let pane_width = editor_area_width / 2.0;
+                let divider_x = sidebar_original + pane_width;
+                
+                let clicked_pane_idx = if state.mouse_x < divider_x { 0 } else { 1 };
+                if clicked_pane_idx != state.active_pane_idx {
+                    state.switch_pane(clicked_pane_idx);
+                }
+            }
+        }
+    }
+
+    if !state.inactive_panes.is_empty() {
+        let editor_area_width = size.width as f32 - sidebar_original;
+        let pane_width = editor_area_width / 2.0;
+        if state.active_pane_idx == 0 {
+            w_width = sidebar_original + pane_width;
+        } else {
+            sidebar_width = sidebar_original + pane_width;
+        }
+    }
+
+    let _sidebar_guard = SidebarGuard {
+        sidebar_width_ref: &mut ui.sidebar_width,
+        original_value: sidebar_original,
+    };
+    ui.sidebar_width = sidebar_width;
+
     if button == MouseButton::Right && input_state == ElementState::Pressed {
         ui.active_menu = None;
         ui.sidebar_context_menu = None;
@@ -573,7 +631,7 @@ pub fn handle_mouse_input(
 
             // Check if click is on tab scrollbar
             let tabbar_start_x = ui.sidebar_width;
-            let visible_width = size.width as f32 - tabbar_start_x;
+            let visible_width = w_width - tabbar_start_x;
             
             // Calculate total width of all tabs
             let mut total_tabs_width = 0.0f32;
@@ -597,7 +655,7 @@ pub fn handle_mouse_input(
                 let is_on_scrollbar = state.mouse_y >= main_y + ui.tabbar_height - 6.0
                     && state.mouse_y < main_y + ui.tabbar_height
                     && state.mouse_x >= tabbar_start_x
-                    && state.mouse_x < size.width as f32;
+                    && state.mouse_x < w_width;
 
                 if is_on_scrollbar {
                     let ratio = visible_width / total_tabs_width;
@@ -689,7 +747,7 @@ pub fn handle_mouse_input(
                     ui.handle_click(
                         state.mouse_x,
                         state.mouse_y,
-                        size.width as f32,
+                        w_width,
                         size.height as f32,
                         &mut active_tab.buffer,
                         &mut active_tab.cursor,
@@ -712,7 +770,7 @@ pub fn handle_mouse_input(
                         ui.handle_click(
                             state.mouse_x,
                             state.mouse_y,
-                            size.width as f32,
+                            w_width,
                             size.height as f32,
                             &mut active_tab.buffer,
                             &mut active_tab.cursor,
@@ -744,7 +802,7 @@ pub fn handle_mouse_input(
                             let text_area_x = ui.sidebar_width + gutter_width;
                             let scrollbar_width = ui.scrollbar_width();
                             let minimap_width = if is_diagnostics { 0.0 } else { ui.minimap_width() };
-                            let sb_x = size.width as f32 - scrollbar_width;
+                            let sb_x = w_width - scrollbar_width;
                             let minimap_x = sb_x - minimap_width;
                             let text_viewport_w = (minimap_x - text_area_x).max(10.0);
  
@@ -1015,13 +1073,38 @@ pub fn handle_mouse_wheel(
     }
  
     let size = window.inner_size();
+    let sidebar_original = ui.sidebar_width;
+    let mut sidebar_width = ui.sidebar_width;
+    let mut w_width = size.width as f32;
+
+    if !state.inactive_panes.is_empty() {
+        let editor_area_width = size.width as f32 - sidebar_original;
+        let pane_width = editor_area_width / 2.0;
+        
+        let mouse_pane_idx = if state.mouse_x < sidebar_original + pane_width { 0 } else { 1 };
+        if mouse_pane_idx != state.active_pane_idx {
+            state.switch_pane(mouse_pane_idx);
+        }
+
+        if state.active_pane_idx == 0 {
+            w_width = sidebar_original + pane_width;
+        } else {
+            sidebar_width = sidebar_original + pane_width;
+        }
+    }
+
+    let _sidebar_guard = SidebarGuard {
+        sidebar_width_ref: &mut ui.sidebar_width,
+        original_value: sidebar_original,
+    };
+    ui.sidebar_width = sidebar_width;
 
     // Handle Tab Bar Scroll
     let tabbar_start_x = ui.sidebar_width;
     if state.mouse_y >= ui.titlebar_height 
         && state.mouse_y < ui.titlebar_height + ui.tabbar_height
         && state.mouse_x >= tabbar_start_x
-        && state.mouse_x < size.width as f32 
+        && state.mouse_x < w_width 
     {
         let mut total_tabs_width = 0.0f32;
         let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
@@ -1039,7 +1122,7 @@ pub fn handle_mouse_wheel(
             total_tabs_width += tab_w;
         }
 
-        let visible_width = size.width as f32 - tabbar_start_x;
+        let visible_width = w_width - tabbar_start_x;
         let max_scroll_x = (total_tabs_width - visible_width).max(0.0);
 
         let scroll_amount = match delta {
@@ -1115,7 +1198,7 @@ pub fn handle_mouse_wheel(
         let text_area_x = ui.sidebar_width + gutter_width;
         let scrollbar_width = ui.scrollbar_width();
         let minimap_width = ui.minimap_width();
-        let sb_x = size.width as f32 - scrollbar_width;
+        let sb_x = w_width - scrollbar_width;
         let minimap_x = sb_x - minimap_width;
         let text_viewport_w = (minimap_x - text_area_x).max(10.0);
         let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
@@ -1149,7 +1232,7 @@ pub fn handle_mouse_wheel(
         let text_area_x = ui.sidebar_width + gutter_width;
         let scrollbar_width = ui.scrollbar_width();
         let minimap_width = ui.minimap_width();
-        let sb_x = size.width as f32 - scrollbar_width;
+        let sb_x = w_width - scrollbar_width;
         let minimap_x = sb_x - minimap_width;
         let text_viewport_w = (minimap_x - text_area_x).max(10.0);
         let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
