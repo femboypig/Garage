@@ -11,8 +11,126 @@ use crate::editor::buffer::Buffer;
 use crate::app::state::AppState;
 use crate::app::handler::handle_action;
 
-pub fn update_cursor_icon(window: &Window, ui: &UiState, buffer: &Buffer, mouse_x: f32, mouse_y: f32) {
+pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
+    if state.tabs.is_empty() {
+        window.set_cursor_icon(winit::window::CursorIcon::Default);
+        return;
+    }
     let size = window.inner_size();
+    let mouse_x = state.mouse_x;
+    let mouse_y = state.mouse_y;
+
+    // Check status bar first
+    let status_y = size.height as f32 - ui.status_height;
+    let is_on_statusbar_item = if ui.active_modal.is_none() && mouse_y >= status_y {
+        let sb_btn_w = 26.0f32;
+        let term_btn_x = size.width as f32 - 10.0 - sb_btn_w;
+
+        // 1. Check Terminal toggle button
+        if mouse_x >= term_btn_x && mouse_x < term_btn_x + sb_btn_w {
+            true
+        } else {
+            // Calculate left side (diagnostics)
+            let mut pen_x = 10.0;
+            if ui.config.show_git_branch {
+                if let Some(ref branch) = ui.git_branch {
+                    let icon_sz = (ui.ui_font_size * 0.9).round().max(12.0);
+                    pen_x += icon_sz + 4.0;
+                    let branch_len = branch.chars().count() as f32;
+                    pen_x += branch_len * ui.ui_char_width;
+                    pen_x += 15.0;
+                }
+            }
+            let mut err_count = 0;
+            let mut warn_count = 0;
+            for (e, w) in ui.lsp_diagnostics.values() {
+                err_count += *e;
+                warn_count += *w;
+            }
+            let err_str = format!("⊗ {}  ", err_count);
+            let warn_str = format!("⚠ {}", warn_count);
+            let diag_w = (err_str.chars().count() + warn_str.chars().count()) as f32 * ui.ui_char_width;
+
+            if mouse_x >= pen_x && mouse_x <= pen_x + diag_w {
+                true
+            } else {
+                // Check right-hand items (Language & Encoding)
+                let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+                let active_tab_idx = state.active_tab_idx;
+                let raw_ext = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
+                    .and_then(|p| std::path::Path::new(p).extension())
+                    .and_then(|ext| ext.to_str())
+                    .unwrap_or("");
+                let mut extension = raw_ext.to_string();
+                if let Some(path) = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref()) {
+                    if let Some(forced_ext) = ui.forced_languages.get(path) {
+                        extension = forced_ext.clone();
+                    }
+                }
+
+                let language = ui.languages.get(&extension)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| {
+                        if extension.is_empty() {
+                            "Plain Text".to_string()
+                        } else {
+                            let mut chars = extension.chars();
+                            match chars.next() {
+                                None => "Plain Text".to_string(),
+                                Some(first) => {
+                                    let mut s = first.to_uppercase().to_string();
+                                    s.push_str(&chars.as_str().to_lowercase());
+                                    s
+                                }
+                            }
+                        }
+                    });
+
+                let encoding = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
+                    .and_then(|path| ui.forced_encodings.get(path))
+                    .map(|s| s.as_str())
+                    .unwrap_or("UTF-8");
+
+                let cursor = &state.tabs[active_tab_idx].cursor;
+                let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
+
+                let mut cur_right_x = term_btn_x - 10.0;
+                
+                // First component: Cursor position
+                let cursor_w = cursor_str.chars().count() as f32 * ui.ui_char_width;
+                cur_right_x -= cursor_w + 16.0;
+
+                // Second component: Language
+                let lang_w = language.chars().count() as f32 * ui.ui_char_width;
+                let lang_left = cur_right_x - lang_w - 16.0;
+                let lang_right = cur_right_x;
+                cur_right_x -= lang_w + 16.0;
+
+                // Third component: Encoding
+                let enc_w = encoding.chars().count() as f32 * ui.ui_char_width;
+                let enc_left = cur_right_x - enc_w - 16.0;
+                let enc_right = cur_right_x;
+
+                if mouse_x >= lang_left && mouse_x < lang_right {
+                    true
+                } else if mouse_x >= enc_left && mouse_x < enc_right {
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    } else {
+        false
+    };
+
+    if is_on_statusbar_item {
+        window.set_cursor_icon(winit::window::CursorIcon::Hand);
+        return;
+    }
+
+    let active_tab = &state.tabs[state.active_tab_idx];
+    let buffer = &active_tab.buffer;
     let max_line_digits = buffer.len().to_string().len().max(3);
     let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
     let text_area_x = ui.sidebar_width + gutter_width;
@@ -341,13 +459,14 @@ pub fn handle_cursor_moved(
         || state.is_dragging_horizontal_scroll
         || state.is_dragging_minimap
         || state.is_dragging
-        || ui.tab_scroll_is_dragging;
+        || ui.tab_scroll_is_dragging
+        || state.dragged_tab_idx.is_some();
 
     if any_dragging {
         window.request_redraw();
     }
 
-    update_cursor_icon(window, ui, &state.tabs[state.active_tab_idx].buffer, state.mouse_x, state.mouse_y);
+    update_cursor_icon(window, ui, state);
 }
 
 struct SidebarGuard {
@@ -400,6 +519,10 @@ pub fn handle_mouse_input(
                 let clicked_pane_idx = if state.mouse_x < divider_x { 0 } else { 1 };
                 if clicked_pane_idx != state.active_pane_idx {
                     state.switch_pane(clicked_pane_idx);
+                    if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+                        ui.scroll_x = active_tab.scroll_x;
+                        ui.scroll_y = active_tab.scroll_y;
+                    }
                 }
             }
         }
@@ -1122,6 +1245,10 @@ pub fn handle_mouse_input(
                               let target_pane = 1 - state.active_pane_idx;
                               state.switch_pane(target_pane);
                           }
+                          if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+                              ui.scroll_x = active_tab.scroll_x;
+                              ui.scroll_y = active_tab.scroll_y;
+                          }
                       }
                   } else {
                       if state.inactive_panes.is_empty() {
@@ -1139,22 +1266,32 @@ pub fn handle_mouse_input(
                               active_tab_idx: 0,
                           });
                           state.switch_pane(1);
+                          if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+                              ui.scroll_x = active_tab.scroll_x;
+                              ui.scroll_y = active_tab.scroll_y;
+                          }
                       } else {
-                          // Move to the other pane
-                          let tab_to_move = state.tabs.remove(dragged_idx);
-                          state.inactive_panes[0].tabs.push(tab_to_move);
-                          state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
-                          
-                          // If active pane became empty, collapse
-                          if state.tabs.is_empty() {
-                              let target_pane = state.inactive_panes.remove(0);
-                              state.tabs = target_pane.tabs;
-                              state.active_tab_idx = target_pane.active_tab_idx;
-                              state.active_pane_idx = 0;
-                          } else {
-                              state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
-                              let target_pane = 1 - state.active_pane_idx;
-                              state.switch_pane(target_pane);
+                          if hovered_pane_idx != state.active_pane_idx {
+                              // Move to the other pane
+                              let tab_to_move = state.tabs.remove(dragged_idx);
+                              state.inactive_panes[0].tabs.push(tab_to_move);
+                              state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
+                              
+                              // If active pane became empty, collapse
+                              if state.tabs.is_empty() {
+                                  let target_pane = state.inactive_panes.remove(0);
+                                  state.tabs = target_pane.tabs;
+                                  state.active_tab_idx = target_pane.active_tab_idx;
+                                  state.active_pane_idx = 0;
+                              } else {
+                                  state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                                  let target_pane = 1 - state.active_pane_idx;
+                                  state.switch_pane(target_pane);
+                              }
+                              if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+                                  ui.scroll_x = active_tab.scroll_x;
+                                  ui.scroll_y = active_tab.scroll_y;
+                              }
                           }
                       }
                   }
@@ -1166,7 +1303,7 @@ pub fn handle_mouse_input(
                   }
               }
           }
-         update_cursor_icon(window, ui, &state.tabs[state.active_tab_idx].buffer, state.mouse_x, state.mouse_y);
+          update_cursor_icon(window, ui, state);
          window.request_redraw();
      }
  }
