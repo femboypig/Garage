@@ -20,7 +20,7 @@ impl UiState {
     ) -> UiAction {
         // 1. Delegate to modal click handler if a modal is open
         if let Some(modal) = self.active_modal {
-            return self.handle_modal_click(mx, my, width, height, buffer, cursor, tab_paths, tab_modified, modal);
+            return self.handle_modal_click(mx, my, width, height, buffer, cursor, tab_paths, tab_modified, modal, active_tab_idx);
         }
 
         // 2. Delegate to menu click handler (titlebar menu, dropdown menu)
@@ -29,7 +29,7 @@ impl UiState {
         }
 
         // 3. Delegate to workspace clicks (tabs, sidebar file tree, terminal dock, status bar)
-        self.handle_workspace_click(mx, my, width, height, tab_paths, tab_modified, terminals, active_tab_idx)
+        self.handle_workspace_click(mx, my, width, height, tab_paths, tab_modified, terminals, active_tab_idx, cursor)
     }
 
     pub fn handle_menu_click(
@@ -185,9 +185,10 @@ impl UiState {
         height: f32,
         buffer: &mut Buffer,
         cursor: &mut Cursor,
-        _tab_paths: &[Option<String>],
+        tab_paths: &[Option<String>],
         _tab_modified: &[bool],
         modal: ModalType,
+        active_tab_idx: usize,
     ) -> UiAction {
         let modal_w = match modal {
             ModalType::Settings => (45.0 * self.ui_char_width).max(500.0).round(),
@@ -420,6 +421,7 @@ impl UiState {
         tab_modified: &[bool],
         terminals: &[crate::terminal::TerminalInstance],
         active_tab_idx: usize,
+        cursor: &Cursor,
     ) -> UiAction {
         // 3. Check Tabbar Clicks
         let main_y = self.titlebar_height;
