@@ -57,7 +57,7 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
             } else {
                 // Check right-hand items (Language & Encoding)
                 let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
-                let active_tab_idx = state.active_tab_idx;
+                let active_tab_idx = state.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                 let raw_ext = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
                     .and_then(|p| std::path::Path::new(p).extension())
                     .and_then(|ext| ext.to_str())
@@ -396,6 +396,14 @@ pub fn handle_cursor_moved(
     position_x: f32,
     position_y: f32,
 ) {
+    if !state.tabs.is_empty() {
+        state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+    }
+    for p in &mut state.inactive_panes {
+        if !p.tabs.is_empty() {
+            p.active_tab_idx = p.active_tab_idx.min(p.tabs.len() - 1);
+        }
+    }
     state.mouse_x = position_x;
     state.mouse_y = position_y;
     update_cursor_icon(window, ui, state);
@@ -739,6 +747,14 @@ pub fn handle_mouse_input(
     input_state: ElementState,
     button: MouseButton,
 ) {
+    if !state.tabs.is_empty() {
+        state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+    }
+    for p in &mut state.inactive_panes {
+        if !p.tabs.is_empty() {
+            p.active_tab_idx = p.active_tab_idx.min(p.tabs.len() - 1);
+        }
+    }
     let size = window.inner_size();
     let sidebar_original = ui.sidebar_width;
     let mut sidebar_width = ui.sidebar_width;
@@ -1545,39 +1561,52 @@ pub fn handle_mouse_input(
 
                         let is_outside = state.mouse_x < 0.0 || state.mouse_x >= size.width as f32 || state.mouse_y < 0.0 || state.mouse_y >= size.height as f32;
                         if is_outside {
+                            let mut removed = false;
                             if let Some(ref path_str) = state.tabs[dragged_idx].path {
                                 if !path_str.starts_with("diagnostics://") {
-                                    if let Ok(exe_path) = std::env::current_exe() {
-                                        let _ = std::process::Command::new(exe_path)
-                                            .arg(path_str)
-                                            .spawn();
+                                    if state.tabs[dragged_idx].buffer.is_modified {
+                                        let _ = state.tabs[dragged_idx].buffer.save_file(path_str);
                                     }
+                                    let inner_pos = window.inner_position().unwrap_or(winit::dpi::PhysicalPosition::new(0, 0));
+                                    let global_x = inner_pos.x + state.mouse_x as i32;
+                                    let global_y = inner_pos.y + state.mouse_y as i32;
+                                    
+                                    if !crate::app::ipc::try_drop_to_other_window(global_x, global_y, path_str) {
+                                        if let Ok(exe_path) = std::env::current_exe() {
+                                            let _ = std::process::Command::new(exe_path)
+                                                .arg(path_str)
+                                                .spawn();
+                                        }
+                                    }
+                                    state.tabs.remove(dragged_idx);
+                                    removed = true;
                                 }
                             }
-                            state.tabs.remove(dragged_idx);
-                            if state.tabs.is_empty() {
-                                if !state.inactive_panes.is_empty() {
-                                    let target_pane = state.inactive_panes.remove(0);
-                                    state.tabs = target_pane.tabs;
-                                    state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
-                                    state.active_pane_idx = 0;
-                                    state.is_split_horizontal = false;
+                            if removed {
+                                if state.tabs.is_empty() {
+                                    if !state.inactive_panes.is_empty() {
+                                        let target_pane = state.inactive_panes.remove(0);
+                                        state.tabs = target_pane.tabs;
+                                        state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
+                                        state.active_pane_idx = 0;
+                                        state.is_split_horizontal = false;
+                                    } else {
+                                        state.tabs.push(crate::app::state::Tab {
+                                            path: None,
+                                            buffer: crate::editor::buffer::Buffer::new(),
+                                            cursor: crate::editor::cursor::Cursor::new(),
+                                            scroll_x: 0,
+                                            scroll_y: 0,
+                                        });
+                                        state.active_tab_idx = 0;
+                                    }
                                 } else {
-                                    state.tabs.push(crate::app::state::Tab {
-                                        path: None,
-                                        buffer: crate::editor::buffer::Buffer::new(),
-                                        cursor: crate::editor::cursor::Cursor::new(),
-                                        scroll_x: 0,
-                                        scroll_y: 0,
-                                    });
-                                    state.active_tab_idx = 0;
+                                    state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
                                 }
-                            } else {
-                                state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
-                            }
-                            if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
-                                ui.scroll_x = active_tab.scroll_x;
-                                ui.scroll_y = active_tab.scroll_y;
+                                if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+                                    ui.scroll_x = active_tab.scroll_x;
+                                    ui.scroll_y = active_tab.scroll_y;
+                                }
                             }
                             window.request_redraw();
                             update_cursor_icon(window, ui, state);
@@ -1640,7 +1669,7 @@ pub fn handle_mouse_input(
                                 } else {
                                     state.tabs[dragged_idx].clone()
                                 };
-                                if state.tabs.len() > dragged_idx {
+                                if !state.tabs.is_empty() {
                                     state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
                                 }
                                 
