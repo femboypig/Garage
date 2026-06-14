@@ -799,6 +799,7 @@ pub fn handle_mouse_input(
                         &tab_paths,
                         &tab_modified,
                         &state.dock_terminals,
+                        state.active_tab_idx,
                     )
                 };
                 handle_action(ui, state, action_res, window, elwt, gpu, atlas, font_bytes);
@@ -822,6 +823,7 @@ pub fn handle_mouse_input(
                             &tab_paths,
                             &tab_modified,
                             &state.dock_terminals,
+                            state.active_tab_idx,
                         )
                     };
  
@@ -1090,24 +1092,70 @@ pub fn handle_mouse_input(
               
               if let Some(dragged_idx) = state.dragged_tab_idx.take() {
                   let main_y = ui.titlebar_height;
-                  let is_outside_tabbar = state.mouse_y < main_y || state.mouse_y >= main_y + ui.tabbar_height;
+                  let sidebar_original = ui.config.sidebar_width;
+                  let editor_area_width = size.width as f32 - sidebar_original;
+                  let pane_width = editor_area_width / 2.0;
                   
-                  if is_outside_tabbar && state.tabs.len() > 1 {
-                      if state.inactive_panes.is_empty() {
+                  let hovered_pane_idx = if state.inactive_panes.is_empty() {
+                      0
+                  } else {
+                      if state.mouse_x < sidebar_original + pane_width { 0 } else { 1 }
+                  };
+                  
+                  let is_in_tabbar = state.mouse_y >= main_y && state.mouse_y < main_y + ui.tabbar_height;
+                  
+                  if is_in_tabbar {
+                      if hovered_pane_idx != state.active_pane_idx {
+                          // Move tab to the other pane!
                           let tab_to_move = state.tabs.remove(dragged_idx);
-                          state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                          state.inactive_panes[0].tabs.push(tab_to_move);
+                          state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
+                          
+                          // If active pane became empty, collapse the split
+                          if state.tabs.is_empty() {
+                              let target_pane = state.inactive_panes.remove(0);
+                              state.tabs = target_pane.tabs;
+                              state.active_tab_idx = target_pane.active_tab_idx;
+                              state.active_pane_idx = 0;
+                          } else {
+                              state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                              let target_pane = 1 - state.active_pane_idx;
+                              state.switch_pane(target_pane);
+                          }
+                      }
+                  } else {
+                      if state.inactive_panes.is_empty() {
+                          // Split editor
+                          let tab_to_move = if state.tabs.len() > 1 {
+                              state.tabs.remove(dragged_idx)
+                          } else {
+                              state.tabs[dragged_idx].clone()
+                          };
+                          if state.tabs.len() > dragged_idx {
+                              state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                          }
                           state.inactive_panes.push(crate::app::state::Pane {
                               tabs: vec![tab_to_move],
                               active_tab_idx: 0,
                           });
                           state.switch_pane(1);
                       } else {
+                          // Move to the other pane
                           let tab_to_move = state.tabs.remove(dragged_idx);
-                          state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
                           state.inactive_panes[0].tabs.push(tab_to_move);
                           state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
-                          let target_pane = 1 - state.active_pane_idx;
-                          state.switch_pane(target_pane);
+                          
+                          // If active pane became empty, collapse
+                          if state.tabs.is_empty() {
+                              let target_pane = state.inactive_panes.remove(0);
+                              state.tabs = target_pane.tabs;
+                              state.active_tab_idx = target_pane.active_tab_idx;
+                              state.active_pane_idx = 0;
+                          } else {
+                              state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                              let target_pane = 1 - state.active_pane_idx;
+                              state.switch_pane(target_pane);
+                          }
                       }
                   }
               }
