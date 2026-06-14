@@ -53,7 +53,7 @@ pub fn draw_statusbar(
     // 1. Draw Git Branch Info
     if ui.config.show_git_branch {
         if let Some(ref branch) = ui.git_branch {
-            let icon_sz = (ui.ui_font_size * 0.9).round().max(12.0);
+            let icon_sz = (ui.ui_font_size * 1.15).round().max(15.0);
             let icon_y = (status_y + (ui.status_height - icon_sz) / 2.0).round();
             ui.push_icon(
                 vertices,
@@ -147,9 +147,9 @@ pub fn draw_statusbar(
     );
 
     // 3. Right Side Components (drawn from right to left)
-    let sb_btn_w = 26.0f32;
+    let sb_btn_w = 28.0f32;
     let sb_btn_h = ui.status_height - 1.0;
-    let icon_sz = 14.0f32;
+    let icon_sz = 16.0f32;
     let icon_y = (status_y + (ui.status_height - icon_sz) / 2.0).round();
     let term_btn_x = width - 10.0 - sb_btn_w;
 
