@@ -1,6 +1,7 @@
 pub mod handler;
 pub mod input;
 pub mod state;
+pub mod ipc;
 
 use std::sync::Arc;
 use winit::{
@@ -156,6 +157,16 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let mut state = AppState::new(initial_tab);
     crate::experiments::startup::record_step("Initial File Load & State Setup");
 
+    let socket_path = ipc::start_ipc_server(state.pending_open_files.clone(), event_loop.create_proxy());
+    ipc::register_window(&window, &socket_path);
+    struct IpcGuard;
+    impl Drop for IpcGuard {
+        fn drop(&mut self) {
+            ipc::unregister_window();
+        }
+    }
+    let _ipc_guard = IpcGuard;
+
     // Track dynamic vertices and indices
     let mut vertices: Vec<Vertex> = Vec::new();
     let mut indices: Vec<u16> = Vec::new();
@@ -232,6 +243,28 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         crate::experiments::startup::report_startup_complete();
                     }
                 }
+                let mut files = Vec::new();
+                if let Ok(mut pending) = state.pending_open_files.lock() {
+                    files = std::mem::take(&mut *pending);
+                }
+                if gpu.is_some() && ui.is_some() && atlas.is_some() {
+                    let gpu_ref = gpu.as_mut().unwrap();
+                    let ui_ref = ui.as_mut().unwrap();
+                    let atlas_ref = atlas.as_mut().unwrap();
+                    for f in files {
+                        let open_action = crate::ui::UiAction::OpenFile(std::path::PathBuf::from(f));
+                        crate::app::handler::handle_action(
+                            ui_ref,
+                            &mut state,
+                            open_action,
+                            &window,
+                            elwt,
+                            gpu_ref,
+                            atlas_ref,
+                            &font_bytes,
+                        );
+                    }
+                }
                 redraw_requested = true;
             }
 
@@ -254,7 +287,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                     WindowEvent::Resized(physical_size) => {
                         gpu_ref.resize(physical_size);
+                        ipc::update_window_geometry(&window);
                         redraw_requested = true;
+                    }
+                    WindowEvent::Moved(_) => {
+                        ipc::update_window_geometry(&window);
                     }
 
                     WindowEvent::ScaleFactorChanged { .. } => {
