@@ -657,7 +657,6 @@ impl UiState {
             let enc_w = encoding.chars().count() as f32 * self.ui_char_width;
             let enc_left = cur_right_x - enc_w - 16.0;
             let enc_right = cur_right_x;
-            cur_right_x -= enc_w + 16.0;
 
             // Check if Language was clicked
             if mx >= lang_left && mx < lang_right {
