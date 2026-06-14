@@ -285,6 +285,39 @@ impl UiState {
         self.buffer_line_height = buf_font_metrics.new_line_size.round();
         self.buffer_font_ascent = buf_font_metrics.ascent.round();
     }
+    pub fn perform_search(&mut self, state: &crate::app::state::AppState) {
+        self.search_matches.clear();
+        if self.search_query.is_empty() {
+            self.active_search_match_idx = 0;
+            return;
+        }
+        
+        if state.active_tab_idx >= state.tabs.len() {
+            self.active_search_match_idx = 0;
+            return;
+        }
+        
+        let buffer = &state.tabs[state.active_tab_idx].buffer;
+        let query = &self.search_query;
+        
+        for (line_idx, line) in buffer.lines().iter().enumerate() {
+            let mut start_idx = 0;
+            let line_lower = line.to_lowercase();
+            let query_lower = query.to_lowercase();
+            while let Some(byte_offset) = line_lower[start_idx..].find(&query_lower) {
+                let actual_byte_idx = start_idx + byte_offset;
+                let char_idx = line[..actual_byte_idx].chars().count();
+                self.search_matches.push((line_idx, char_idx));
+                start_idx = actual_byte_idx + query.len().max(1);
+            }
+        }
+        
+        if !self.search_matches.is_empty() {
+            self.active_search_match_idx = self.active_search_match_idx.min(self.search_matches.len() - 1);
+        } else {
+            self.active_search_match_idx = 0;
+        }
+    }
 
     pub fn update_ui_font_size(&mut self, font: &fontdue::Font, new_size: f32) {
         self.ui_font_size = new_size;
