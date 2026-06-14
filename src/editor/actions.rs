@@ -33,4 +33,7 @@ pub enum Action {
     MoveLineDown,
     DuplicateLine,
     DeleteLine,
+
+    // Search
+    Find,
 }
