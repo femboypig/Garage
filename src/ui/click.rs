@@ -10,6 +10,7 @@ impl UiState {
         mx: f32,
         my: f32,
         width: f32,
+        pane_right_edge: f32,
         height: f32,
         buffer: &mut Buffer,
         cursor: &mut Cursor,
@@ -29,7 +30,7 @@ impl UiState {
         }
 
         // 3. Delegate to workspace clicks (tabs, sidebar file tree, terminal dock, status bar)
-        self.handle_workspace_click(mx, my, width, height, tab_paths, tab_modified, terminals, active_tab_idx, cursor)
+        self.handle_workspace_click(mx, my, width, pane_right_edge, height, tab_paths, tab_modified, terminals, active_tab_idx, cursor)
     }
 
     pub fn handle_menu_click(
@@ -196,6 +197,7 @@ impl UiState {
             ModalType::CommandPalette => (50.0 * self.ui_char_width).max(500.0).round(),
             ModalType::UnsavedChanges => 520.0,
             ModalType::SidebarInput => 400.0,
+            ModalType::GlobalSearch => 650.0,
         };
         let modal_h = match modal {
             ModalType::Settings => {
@@ -212,6 +214,12 @@ impl UiState {
             }
             ModalType::UnsavedChanges => 200.0,
             ModalType::SidebarInput => 150.0,
+            ModalType::GlobalSearch => {
+                let item_height = (self.ui_line_height * 1.6).round().max(26.0);
+                let count = self.global_search_results.len().min(10).max(1);
+                let header_h = 15.0 + self.ui_line_height + 15.0 + 1.0;
+                (header_h + count as f32 * item_height).round()
+            }
         };
         let modal_x = ((width - modal_w) / 2.0).round();
         let modal_y = ((height - modal_h) / 2.0).round();
@@ -326,7 +334,7 @@ impl UiState {
             let list_y = sep_y + 1.0;
             let item_height = (self.ui_line_height * 1.6).round().max(26.0);
             let filtered = self.get_filtered_commands();
-            let max_visible_items = ((modal_y + modal_h - list_y) / item_height).floor() as usize;
+            let max_visible_items = ((modal_y + modal_h - list_y) / item_height).round() as usize;
             
             // Scrollbar click detection
             if filtered.len() > max_visible_items {
@@ -359,7 +367,7 @@ impl UiState {
             let list_y = sep_y + 1.0;
             let item_height = (self.ui_line_height * 1.6).round().max(26.0);
             let results_len = self.global_search_results.len();
-            let max_visible_items = ((modal_y + modal_h - list_y) / item_height).floor() as usize;
+            let max_visible_items = ((modal_y + modal_h - list_y) / item_height).round() as usize;
 
             // Scrollbar click detection
             if results_len > max_visible_items {
@@ -434,7 +442,7 @@ impl UiState {
         let btn_x = modal_x + ((modal_w - btn_w) / 2.0).round();
         let btn_y = modal_y + modal_h - btn_h - (self.ui_line_height * 1.0).round();
 
-        let inside_close_btn = modal != ModalType::CommandPalette && modal != ModalType::UnsavedChanges && mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+        let inside_close_btn = modal != ModalType::CommandPalette && modal != ModalType::GlobalSearch && modal != ModalType::UnsavedChanges && mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
 
         if (inside_close_btn || clicked_outside) && modal != ModalType::UnsavedChanges {
             self.active_modal = None;
@@ -449,6 +457,7 @@ impl UiState {
         mx: f32,
         my: f32,
         width: f32,
+        pane_right_edge: f32,
         height: f32,
         tab_paths: &[Option<String>],
         tab_modified: &[bool],
@@ -468,7 +477,7 @@ impl UiState {
             }
 
             // Make sure the click is within the visible tab bar area
-            if mx >= tabbar_start_x && mx < width {
+            if mx >= tabbar_start_x && mx < pane_right_edge {
                 // Check actual file tabs
                 let tab_close_icon_sz = (self.ui_font_size * 0.8).round().max(10.0);
                 let mut current_tab_x = tabbar_start_x;
@@ -505,7 +514,7 @@ impl UiState {
 
                     let draw_x = current_tab_x - self.tab_scroll_x;
                     let clip_left = draw_x.max(tabbar_start_x);
-                    let clip_right = (draw_x + tab_w).min(width);
+                    let clip_right = (draw_x + tab_w).min(pane_right_edge);
 
                     if mx >= clip_left && mx < clip_right {
                         // Check if clicked the close button
