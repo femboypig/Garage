@@ -95,10 +95,14 @@ pub fn draw_statusbar(
         warn_count += *w;
     }
 
-    let err_str = format!("⊗ {}  ", err_count);
-    let warn_str = format!("⚠ {}", warn_count);
-    let diag_str = format!("⊗ {}  ⚠ {}", err_count, warn_count);
-    let diag_w = diag_str.chars().count() as f32 * ui.ui_char_width;
+    let err_val_str = format!("{}", err_count);
+    let warn_val_str = format!("{}", warn_count);
+    
+    let err_icon_sz = 14.0f32;
+    let warn_icon_sz = 14.0f32;
+    let err_text_w = err_val_str.chars().count() as f32 * ui.ui_char_width;
+    let warn_text_w = warn_val_str.chars().count() as f32 * ui.ui_char_width;
+    let diag_w = err_icon_sz + 4.0 + err_text_w + 12.0 + warn_icon_sz + 4.0 + warn_text_w;
 
     let is_diag_hovered = ui.active_modal.is_none()
         && mouse_y >= status_y
@@ -119,26 +123,55 @@ pub fn draw_statusbar(
     }
 
     let err_color = if err_count > 0 { [0.95, 0.25, 0.25, 1.0] } else { ui.config.theme.statusbar_text };
+    let err_icon_y = (status_y + (ui.status_height - err_icon_sz) / 2.0).round();
+    ui.push_icon(
+        vertices,
+        indices,
+        atlas,
+        queue,
+        "error",
+        pen_x,
+        err_icon_y,
+        err_color,
+        err_icon_sz,
+    );
+    pen_x += err_icon_sz + 4.0;
+
     pen_x += ui.push_str(
         vertices,
         indices,
         atlas,
         queue,
-        &err_str,
+        &err_val_str,
         pen_x,
         baseline_y,
         err_color,
         ui.ui_font_size,
         ui.ui_char_width,
     );
+    pen_x += 12.0;
 
     let warn_color = if warn_count > 0 { [0.95, 0.70, 0.15, 1.0] } else { ui.config.theme.statusbar_text };
+    let warn_icon_y = (status_y + (ui.status_height - warn_icon_sz) / 2.0).round();
+    ui.push_icon(
+        vertices,
+        indices,
+        atlas,
+        queue,
+        "warning",
+        pen_x,
+        warn_icon_y,
+        warn_color,
+        warn_icon_sz,
+    );
+    pen_x += warn_icon_sz + 4.0;
+
     pen_x += ui.push_str(
         vertices,
         indices,
         atlas,
         queue,
-        &warn_str,
+        &warn_val_str,
         pen_x,
         baseline_y,
         warn_color,
