@@ -234,6 +234,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         state.active_terminal_idx,
                         state.terminal_focus,
                         window.is_maximized(),
+                        state.tab_scroll_x,
                     );
                     
                     if let Err(e) = gpu_ref.render(&vertices, &indices) {
@@ -527,6 +528,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             state.active_terminal_idx,
                             state.terminal_focus,
                             window.is_maximized(),
+                            state.tab_scroll_x,
                         );
 
                         // Update cursor icon when screen redraws
