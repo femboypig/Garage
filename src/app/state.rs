@@ -17,11 +17,13 @@ pub struct Tab {
 pub struct Pane {
     pub tabs: Vec<Tab>,
     pub active_tab_idx: usize,
+    pub tab_scroll_x: f32,
 }
 
 pub struct AppState {
     pub tabs: Vec<Tab>,
     pub active_tab_idx: usize,
+    pub tab_scroll_x: f32,
     pub inactive_panes: Vec<Pane>,
     pub active_pane_idx: usize,
     pub is_split_horizontal: bool,
@@ -51,6 +53,7 @@ impl AppState {
         Self {
             tabs: vec![initial_tab],
             active_tab_idx: 0,
+            tab_scroll_x: 0.0,
             inactive_panes: Vec::new(),
             active_pane_idx: 0,
             is_split_horizontal: false,
@@ -87,12 +90,14 @@ impl AppState {
         let current_active_pane = Pane {
             tabs: std::mem::take(&mut self.tabs),
             active_tab_idx: self.active_tab_idx,
+            tab_scroll_x: self.tab_scroll_x,
         };
         
         let target_pane = std::mem::replace(&mut self.inactive_panes[0], current_active_pane);
         
         self.tabs = target_pane.tabs;
         self.active_tab_idx = target_pane.active_tab_idx;
+        self.tab_scroll_x = target_pane.tab_scroll_x;
         self.active_pane_idx = target_pane_idx;
     }
 
@@ -202,6 +207,24 @@ impl AppState {
             }
         }
         false
+    }
+
+    pub fn get_pane_scroll_x(&self, pane_idx: usize) -> f32 {
+        if pane_idx == self.active_pane_idx {
+            self.tab_scroll_x
+        } else if !self.inactive_panes.is_empty() {
+            self.inactive_panes[0].tab_scroll_x
+        } else {
+            0.0
+        }
+    }
+
+    pub fn set_pane_scroll_x(&mut self, pane_idx: usize, val: f32) {
+        if pane_idx == self.active_pane_idx {
+            self.tab_scroll_x = val;
+        } else if !self.inactive_panes.is_empty() {
+            self.inactive_panes[0].tab_scroll_x = val;
+        }
     }
 }
 
