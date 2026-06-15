@@ -20,6 +20,7 @@ pub fn draw_editor_view(
     active_tab_idx: usize,
     status_y: f32,
     dragged_tab_idx: Option<usize>,
+    tab_scroll_x: f32,
 ) {
     let active_file_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
     let is_diagnostics = active_file_path.map_or(false, |p| p.starts_with("diagnostics://"));
@@ -99,6 +100,7 @@ pub fn draw_editor_view(
         main_y,
         activity_bar_width,
         dragged_tab_idx,
+        tab_scroll_x,
     );
 
     // 2. Draw Breadcrumbs
