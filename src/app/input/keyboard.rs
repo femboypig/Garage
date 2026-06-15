@@ -131,6 +131,7 @@ pub fn handle_keyboard_input(
                             let new_pane = crate::app::state::Pane {
                                 tabs: vec![active_tab],
                                 active_tab_idx: 0,
+                                tab_scroll_x: 0.0,
                             };
                             state.inactive_panes.push(new_pane);
                         } else {
@@ -144,6 +145,7 @@ pub fn handle_keyboard_input(
                             let new_pane = crate::app::state::Pane {
                                 tabs: vec![initial_tab],
                                 active_tab_idx: 0,
+                                tab_scroll_x: 0.0,
                             };
                             state.inactive_panes.push(new_pane);
                         }
@@ -847,6 +849,7 @@ pub fn handle_editor_keyboard(
                         let new_pane = crate::app::state::Pane {
                             tabs: vec![active_tab],
                             active_tab_idx: 0,
+                            tab_scroll_x: 0.0,
                         };
                         state.inactive_panes.push(new_pane);
                     } else {
@@ -860,6 +863,7 @@ pub fn handle_editor_keyboard(
                         let new_pane = crate::app::state::Pane {
                             tabs: vec![initial_tab],
                             active_tab_idx: 0,
+                            tab_scroll_x: 0.0,
                         };
                         state.inactive_panes.push(new_pane);
                     }
