@@ -1,5 +1,4 @@
 use crate::ui::{UiState, Vertex, FontAtlas};
-use std::path::Path;
 
 pub fn draw_tab_bar(
     ui: &mut UiState,
@@ -16,6 +15,7 @@ pub fn draw_tab_bar(
     main_y: f32,
     activity_bar_width: f32,
     dragged_tab_idx: Option<usize>,
+    tab_scroll_x: f32,
 ) {
     let white_uv = atlas.white_pixel_uv();
     let tabbar_start_x = activity_bar_width + ui.sidebar_width;
@@ -39,27 +39,7 @@ pub fn draw_tab_bar(
     let mut total_tabs_width = 0.0f32;
     for idx in 0..tab_paths.len() {
         let path_opt = &tab_paths[idx];
-        let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
-        let file_name = if is_diagnostics {
-            let mut err_count = 0;
-            let mut warn_count = 0;
-            for (e, w) in ui.lsp_diagnostics.values() {
-                err_count += *e;
-                warn_count += *w;
-            }
-            if err_count > 0 {
-                format!("  ⊗ {}", err_count)
-            } else if warn_count > 0 {
-                format!("  ⚠ {}", warn_count)
-            } else {
-                "  ⊗ 0".to_string()
-            }
-        } else {
-            path_opt.as_ref()
-                .and_then(|p| Path::new(p).file_name())
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "untitled.txt".to_string())
-        };
+        let file_name = ui.get_tab_name(path_opt.as_deref());
         let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
         let dot_reserved = 18.0f32;
         let close_reserved = 8.0f32 + tab_close_icon_sz;
@@ -69,7 +49,7 @@ pub fn draw_tab_bar(
 
     // Clamp tab scroll offset
     let max_scroll_x = (total_tabs_width - visible_width).max(0.0);
-    ui.tab_scroll_x = ui.tab_scroll_x.clamp(0.0, max_scroll_x);
+    let tab_scroll_x = tab_scroll_x.clamp(0.0, max_scroll_x);
 
     // Pre-calculate active tab X and width to omit the border underneath it
     let mut active_tab_x = 0.0f32;
@@ -79,33 +59,13 @@ pub fn draw_tab_bar(
     let mut temp_x = tabbar_start_x;
     for idx in 0..tab_paths.len() {
         let path_opt = &tab_paths[idx];
-        let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
-        let file_name = if is_diagnostics {
-            let mut err_count = 0;
-            let mut warn_count = 0;
-            for (e, w) in ui.lsp_diagnostics.values() {
-                err_count += *e;
-                warn_count += *w;
-            }
-            if err_count > 0 {
-                format!("  ⊗ {}", err_count)
-            } else if warn_count > 0 {
-                format!("  ⚠ {}", warn_count)
-            } else {
-                "  ⊗ 0".to_string()
-            }
-        } else {
-            path_opt.as_ref()
-                .and_then(|p| Path::new(p).file_name())
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "untitled.txt".to_string())
-        };
+        let file_name = ui.get_tab_name(path_opt.as_deref());
         let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
         let dot_reserved = 18.0f32;
         let close_reserved = 8.0f32 + tab_close_icon_sz;
         let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
         if idx == active_tab_idx && Some(idx) != dragged_tab_idx {
-            active_tab_x = temp_x - ui.tab_scroll_x;
+            active_tab_x = temp_x - tab_scroll_x;
             active_tab_w = tab_w;
             has_active_tab = true;
         }
@@ -163,28 +123,9 @@ pub fn draw_tab_bar(
         let path_opt = &tab_paths[idx];
         let is_active = idx == active_tab_idx;
         let is_modified = tab_modified.get(idx).copied().unwrap_or(false);
-
         let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
-        let file_name = if is_diagnostics {
-            let mut err_count = 0;
-            let mut warn_count = 0;
-            for (e, w) in ui.lsp_diagnostics.values() {
-                err_count += *e;
-                warn_count += *w;
-            }
-            if err_count > 0 {
-                format!("  ⊗ {}", err_count)
-            } else if warn_count > 0 {
-                format!("  ⚠ {}", warn_count)
-            } else {
-                "  ⊗ 0".to_string()
-            }
-        } else {
-            path_opt.as_ref()
-                .and_then(|p| Path::new(p).file_name())
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "untitled.txt".to_string())
-        };
+
+        let file_name = ui.get_tab_name(path_opt.as_deref());
 
         // Compute tab width
         let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
@@ -192,7 +133,7 @@ pub fn draw_tab_bar(
         let close_reserved = 8.0f32 + tab_close_icon_sz;
         let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
 
-        let draw_x = current_tab_x - ui.tab_scroll_x;
+        let draw_x = current_tab_x - tab_scroll_x;
         let clip_left = draw_x.max(tabbar_start_x);
         let clip_right = (draw_x + tab_w).min(width);
 
@@ -409,7 +350,7 @@ pub fn draw_tab_bar(
             // Thumb
             let ratio = visible_width / total_tabs_width;
             let thumb_w = (visible_width * ratio).clamp(20.0_f32.min(visible_width), visible_width);
-            let scroll_ratio_x = if max_scroll_x > 0.0 { ui.tab_scroll_x / max_scroll_x } else { 0.0 };
+            let scroll_ratio_x = if max_scroll_x > 0.0 { tab_scroll_x / max_scroll_x } else { 0.0 };
             let thumb_x = tabbar_start_x + scroll_ratio_x * (visible_width - thumb_w);
             
             let is_thumb_hovered = mouse_x >= thumb_x && mouse_x < thumb_x + thumb_w && mouse_y >= sb_y && mouse_y < sb_y + sb_h;
