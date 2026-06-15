@@ -1,4 +1,3 @@
-use std::path::Path;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use super::{UiState, UiAction, MenuType, ModalType, CommandPaletteMode};
@@ -18,6 +17,7 @@ impl UiState {
         tab_modified: &[bool],
         terminals: &[crate::terminal::TerminalInstance],
         active_tab_idx: usize,
+        tab_scroll_x: f32,
     ) -> UiAction {
         // 1. Delegate to modal click handler if a modal is open
         if let Some(modal) = self.active_modal {
@@ -30,7 +30,7 @@ impl UiState {
         }
 
         // 3. Delegate to workspace clicks (tabs, sidebar file tree, terminal dock, status bar)
-        self.handle_workspace_click(mx, my, width, pane_right_edge, height, tab_paths, tab_modified, terminals, active_tab_idx, cursor)
+        self.handle_workspace_click(mx, my, width, pane_right_edge, height, tab_paths, tab_modified, terminals, active_tab_idx, cursor, tab_scroll_x)
     }
 
     pub fn handle_menu_click(
@@ -464,6 +464,7 @@ impl UiState {
         terminals: &[crate::terminal::TerminalInstance],
         active_tab_idx: usize,
         cursor: &Cursor,
+        tab_scroll_x: f32,
     ) -> UiAction {
         // 3. Check Tabbar Clicks
         let main_y = self.titlebar_height;
@@ -487,32 +488,12 @@ impl UiState {
                     let path_opt = &tab_paths[idx];
                     let _is_modified = tab_modified.get(idx).copied().unwrap_or(false);
                     let dot_reserved = 18.0f32;
-                    let is_diagnostics = path_opt.as_deref() == Some("diagnostics://project");
-                    let file_name = if is_diagnostics {
-                        let mut err_count = 0;
-                        let mut warn_count = 0;
-                        for (e, w) in self.lsp_diagnostics.values() {
-                            err_count += *e;
-                            warn_count += *w;
-                        }
-                        if err_count > 0 {
-                            format!("  ⊗ {}", err_count)
-                        } else if warn_count > 0 {
-                            format!("  ⚠ {}", warn_count)
-                        } else {
-                            "  ⊗ 0".to_string()
-                        }
-                    } else {
-                        path_opt.as_ref()
-                            .and_then(|p| Path::new(p).file_name())
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "untitled.txt".to_string())
-                    };
+                    let file_name = self.get_tab_name(path_opt.as_deref());
 
                     let name_w = file_name.chars().count() as f32 * self.ui_char_width;
                     let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
 
-                    let draw_x = current_tab_x - self.tab_scroll_x;
+                    let draw_x = current_tab_x - tab_scroll_x;
                     let clip_left = draw_x.max(tabbar_start_x);
                     let clip_right = (draw_x + tab_w).min(pane_right_edge);
 
