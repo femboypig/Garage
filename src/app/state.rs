@@ -42,7 +42,6 @@ pub struct AppState {
     pub mouse_x: f32,
     pub mouse_y: f32,
     pub dragged_tab_idx: Option<usize>,
-    pub dragged_sidebar_path: Option<String>,
     pub drag_start_pos: Option<(f32, f32)>,
     pub pending_open_files: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 }
@@ -72,7 +71,6 @@ impl AppState {
             mouse_x: 0.0,
             mouse_y: 0.0,
             dragged_tab_idx: None,
-            dragged_sidebar_path: None,
             drag_start_pos: None,
             pending_open_files: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
@@ -196,7 +194,7 @@ impl AppState {
     }
 
     pub fn is_actually_dragging_tab(&self) -> bool {
-        if self.dragged_tab_idx.is_some() || self.dragged_sidebar_path.is_some() {
+        if self.dragged_tab_idx.is_some() {
             if let Some((sx, sy)) = self.drag_start_pos {
                 let dx = self.mouse_x - sx;
                 let dy = self.mouse_y - sy;
