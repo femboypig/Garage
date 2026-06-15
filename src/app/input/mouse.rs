@@ -281,7 +281,7 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
                         let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
                         total_tabs_width += tab_w;
                     }
-                    if mouse_x >= start_x && mouse_x < (start_x + total_tabs_width - ui.tab_scroll_x).min(size.width as f32) {
+                    if mouse_x >= start_x && mouse_x < (start_x + total_tabs_width - state.tab_scroll_x).min(size.width as f32) {
                         in_tab_area = true;
                     }
                 } else {
@@ -294,17 +294,11 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
                         (sidebar_original, sidebar_original + pane_width, sidebar_original + pane_width, size.width as f32)
                     };
 
-                    let (tabs_0, scroll_x_0) = if state.active_pane_idx == 0 {
-                        (&state.tabs, ui.tab_scroll_x)
-                    } else {
-                        (&state.inactive_panes[0].tabs, 0.0)
-                    };
+                    let scroll_x_0 = state.get_pane_scroll_x(0);
+                    let scroll_x_1 = state.get_pane_scroll_x(1);
 
-                    let (tabs_1, scroll_x_1) = if state.active_pane_idx == 1 {
-                        (&state.tabs, ui.tab_scroll_x)
-                    } else {
-                        (&state.inactive_panes[0].tabs, 0.0)
-                    };
+                    let tabs_0 = if state.active_pane_idx == 0 { &state.tabs } else { &state.inactive_panes[0].tabs };
+                    let tabs_1 = if state.active_pane_idx == 1 { &state.tabs } else { &state.inactive_panes[0].tabs };
 
                     if hovered_pane_idx == 0 {
                         let mut total_w_0 = 0.0f32;
@@ -619,7 +613,7 @@ pub fn handle_cursor_moved(
                 let mut current_tab_x = tabbar_start_x;
                 for idx in 0..state.tabs.len() {
                     let tab_w = tab_widths[idx];
-                    let draw_x = current_tab_x - ui.tab_scroll_x;
+                    let draw_x = current_tab_x - state.tab_scroll_x;
                     let clip_left = draw_x.max(tabbar_start_x);
                     let clip_right = (draw_x + tab_w).min(w_width);
                     
@@ -677,9 +671,9 @@ pub fn handle_cursor_moved(
             } else {
                 0.0
             };
-            ui.tab_scroll_x = scroll_ratio * max_scroll_x;
+            state.tab_scroll_x = scroll_ratio * max_scroll_x;
         } else {
-            ui.tab_scroll_x = 0.0;
+            state.tab_scroll_x = 0.0;
         }
     } else if state.is_dragging_dock_border {
         let main_y = ui.titlebar_height;
@@ -900,18 +894,19 @@ pub fn handle_mouse_input(
     let mut sidebar_width = ui.sidebar_width;
     let mut w_width = size.width as f32;
 
+    let main_y = ui.titlebar_height;
+    let mut dock_start_y = size.height as f32 - ui.status_height;
+    if ui.show_dock {
+        dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
+    }
+    let editor_bottom_limit = if ui.show_dock {
+        dock_start_y
+    } else {
+        size.height as f32 - ui.status_height
+    };
+
     if input_state == ElementState::Pressed {
         if !state.inactive_panes.is_empty() {
-            let main_y = ui.titlebar_height;
-            let mut dock_start_y = size.height as f32 - ui.status_height;
-            if ui.show_dock {
-                dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
-            }
-            let editor_bottom_limit = if ui.show_dock {
-                dock_start_y
-            } else {
-                size.height as f32 - ui.status_height
-            };
             
             // Switch focus only if click is inside the editor area and outside sidebar
             if state.mouse_x >= sidebar_original && state.mouse_y >= main_y && state.mouse_y < editor_bottom_limit {
@@ -1219,23 +1214,16 @@ pub fn handle_mouse_input(
                     
                     return;
                 }
-            }
-
-            // Check if click is on tab scrollbar
+                 // Check if click is on tab scrollbar
             let tabbar_start_x = ui.sidebar_width;
             let visible_width = w_width - tabbar_start_x;
-            
-            // Calculate total width of all tabs
             let mut total_tabs_width = 0.0f32;
             let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
             let close_reserved = 8.0f32 + tab_close_icon_sz;
             let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
             for idx in 0..tab_paths.len() {
                 let path_opt = &tab_paths[idx];
-                let file_name = path_opt.as_ref()
-                    .and_then(|p| std::path::Path::new(p).file_name())
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "untitled.txt".to_string());
+                let file_name = ui.get_tab_name(path_opt.as_deref());
                 let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
                 let dot_reserved = 18.0f32;
                 let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
@@ -1244,8 +1232,17 @@ pub fn handle_mouse_input(
 
             if total_tabs_width > visible_width {
                 let main_y = ui.titlebar_height;
-                let is_on_scrollbar = state.mouse_y >= main_y + ui.tabbar_height - 6.0
-                    && state.mouse_y < main_y + ui.tabbar_height
+                let mut pane_top = main_y;
+                if !state.inactive_panes.is_empty() && state.is_split_horizontal {
+                    let editor_area_height = editor_bottom_limit - main_y;
+                    let pane_height = (editor_area_height / 2.0).round();
+                    if state.active_pane_idx == 1 {
+                        pane_top = main_y + pane_height;
+                    }
+                }
+
+                let is_on_scrollbar = state.mouse_y >= pane_top + ui.tabbar_height - 6.0
+                    && state.mouse_y < pane_top + ui.tabbar_height
                     && state.mouse_x >= tabbar_start_x
                     && state.mouse_x < w_width;
 
@@ -1253,7 +1250,7 @@ pub fn handle_mouse_input(
                     let ratio = visible_width / total_tabs_width;
                     let thumb_w = (visible_width * ratio).clamp(20.0_f32.min(visible_width), visible_width);
                     let max_scroll_x = total_tabs_width - visible_width;
-                    let scroll_ratio_x = if max_scroll_x > 0.0 { ui.tab_scroll_x / max_scroll_x } else { 0.0 };
+                    let scroll_ratio_x = if max_scroll_x > 0.0 { state.tab_scroll_x / max_scroll_x } else { 0.0 };
                     let thumb_x = tabbar_start_x + scroll_ratio_x * (visible_width - thumb_w);
 
                     ui.tab_scroll_is_dragging = true;
@@ -1268,8 +1265,8 @@ pub fn handle_mouse_input(
                         } else {
                             0.0
                         };
-                        ui.tab_scroll_x = (target_ratio * max_scroll_x).clamp(0.0, max_scroll_x);
-                    }
+                        state.tab_scroll_x = (target_ratio * max_scroll_x).clamp(0.0, max_scroll_x);
+                    }         }
                     window.request_redraw();
                     return;
                 }
@@ -1348,6 +1345,7 @@ pub fn handle_mouse_input(
                         &tab_modified,
                         &state.dock_terminals,
                         state.active_tab_idx,
+                        state.tab_scroll_x,
                     )
                 };
                 handle_action(ui, state, action_res, window, elwt, gpu, atlas, font_bytes);
@@ -1392,6 +1390,7 @@ pub fn handle_mouse_input(
                             &tab_modified,
                             &state.dock_terminals,
                             state.active_tab_idx,
+                            state.tab_scroll_x,
                         );
                         ui.titlebar_height = orig_titlebar_height;
                         res
@@ -1827,17 +1826,20 @@ pub fn handle_mouse_input(
                                     let existing_pane = crate::app::state::Pane {
                                         tabs: std::mem::take(&mut state.tabs),
                                         active_tab_idx: state.active_tab_idx,
+                                        tab_scroll_x: state.tab_scroll_x,
                                     };
                                     state.inactive_panes.push(existing_pane);
                                     state.tabs = vec![tab_to_move];
                                     state.active_tab_idx = 0;
                                     state.active_pane_idx = 0;
+                                    state.tab_scroll_x = 0.0;
                                 } else if state.mouse_y >= main_y + ui.tabbar_height + editor_area_height * 0.75 {
                                     // Bottom Split
                                     state.is_split_horizontal = true;
                                     state.inactive_panes.push(crate::app::state::Pane {
                                         tabs: vec![tab_to_move],
                                         active_tab_idx: 0,
+                                        tab_scroll_x: 0.0,
                                     });
                                     state.switch_pane(1);
                                 } else if state.mouse_x < sidebar_original + editor_area_width * 0.5 {
@@ -1846,17 +1848,20 @@ pub fn handle_mouse_input(
                                     let existing_pane = crate::app::state::Pane {
                                         tabs: std::mem::take(&mut state.tabs),
                                         active_tab_idx: state.active_tab_idx,
+                                        tab_scroll_x: state.tab_scroll_x,
                                     };
                                     state.inactive_panes.push(existing_pane);
                                     state.tabs = vec![tab_to_move];
                                     state.active_tab_idx = 0;
                                     state.active_pane_idx = 0;
+                                    state.tab_scroll_x = 0.0;
                                 } else {
                                     // Right Split
                                     state.is_split_horizontal = false;
                                     state.inactive_panes.push(crate::app::state::Pane {
                                         tabs: vec![tab_to_move],
                                         active_tab_idx: 0,
+                                        tab_scroll_x: 0.0,
                                     });
                                     state.switch_pane(1);
                                 }
@@ -1933,75 +1938,81 @@ pub fn handle_mouse_wheel(
     }
  
     let size = window.inner_size();
+    let w_width = size.width as f32;
     let sidebar_original = ui.sidebar_width;
-    let mut sidebar_width = ui.sidebar_width;
-    let mut w_width = size.width as f32;
-
-    if !state.inactive_panes.is_empty() {
-        let mouse_pane_idx = if state.is_split_horizontal {
-            let main_y = ui.titlebar_height;
-            let mut dock_start_y = size.height as f32 - ui.status_height;
-            if ui.show_dock {
-                dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
-            }
-            let editor_bottom_limit = if ui.show_dock {
-                dock_start_y
-            } else {
-                size.height as f32 - ui.status_height
-            };
-            let editor_area_height = editor_bottom_limit - main_y;
-            let pane_height = (editor_area_height / 2.0).round();
-            if state.mouse_y < main_y + pane_height { 0 } else { 1 }
-        } else {
-            let editor_area_width = size.width as f32 - sidebar_original;
-            let pane_width = editor_area_width / 2.0;
-            if state.mouse_x < sidebar_original + pane_width { 0 } else { 1 }
-        };
-        if mouse_pane_idx != state.active_pane_idx {
-            state.switch_pane(mouse_pane_idx);
-        }
-
-        if !state.is_split_horizontal {
-            let editor_area_width = size.width as f32 - sidebar_original;
-            let pane_width = editor_area_width / 2.0;
-            if state.active_pane_idx == 0 {
-                w_width = sidebar_original + pane_width;
-            } else {
-                sidebar_width = sidebar_original + pane_width;
-            }
-        }
+    
+    let main_y = ui.titlebar_height;
+    let mut dock_start_y = size.height as f32 - ui.status_height;
+    if ui.show_dock {
+        dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
     }
-
-    ui.sidebar_width = sidebar_width;
-    let _sidebar_guard = SidebarGuard {
-        ptr: &mut ui.sidebar_width as *mut f32,
-        original_value: sidebar_original,
+    let editor_bottom_limit = if ui.show_dock {
+        dock_start_y
+    } else {
+        size.height as f32 - ui.status_height
     };
 
     // Handle Tab Bar Scroll
-    let tabbar_start_x = ui.sidebar_width;
-    if state.mouse_y >= ui.titlebar_height 
-        && state.mouse_y < ui.titlebar_height + ui.tabbar_height
-        && state.mouse_x >= tabbar_start_x
-        && state.mouse_x < w_width 
+    let hovered_pane_idx = if state.inactive_panes.is_empty() {
+        0
+    } else if state.is_split_horizontal {
+        let editor_area_height = editor_bottom_limit - main_y;
+        let pane_height = (editor_area_height / 2.0).round();
+        if state.mouse_y < main_y + pane_height { 0 } else { 1 }
+    } else {
+        let editor_area_width = size.width as f32 - sidebar_original;
+        let pane_width = editor_area_width / 2.0;
+        if state.mouse_x < sidebar_original + pane_width { 0 } else { 1 }
+    };
+
+    let pane_tabbar_start_x = if !state.inactive_panes.is_empty() && !state.is_split_horizontal && hovered_pane_idx == 1 {
+        let editor_area_width = size.width as f32 - sidebar_original;
+        let pane_width = editor_area_width / 2.0;
+        sidebar_original + pane_width
+    } else {
+        sidebar_original
+    };
+
+    let pane_tabbar_end_x = if !state.inactive_panes.is_empty() && !state.is_split_horizontal && hovered_pane_idx == 0 {
+        let editor_area_width = size.width as f32 - sidebar_original;
+        let pane_width = editor_area_width / 2.0;
+        sidebar_original + pane_width
+    } else {
+        size.width as f32
+    };
+
+    let pane_tabbar_top = if !state.inactive_panes.is_empty() && state.is_split_horizontal && hovered_pane_idx == 1 {
+        let editor_area_height = editor_bottom_limit - main_y;
+        let pane_height = (editor_area_height / 2.0).round();
+        main_y + pane_height
+    } else {
+        main_y
+    };
+    let pane_tabbar_bottom = pane_tabbar_top + ui.tabbar_height;
+
+    if state.mouse_x >= pane_tabbar_start_x
+        && state.mouse_x < pane_tabbar_end_x
+        && state.mouse_y >= pane_tabbar_top
+        && state.mouse_y < pane_tabbar_bottom
     {
+        let (hovered_tabs, current_scroll_x) = if hovered_pane_idx == state.active_pane_idx {
+            (&state.tabs, state.tab_scroll_x)
+        } else {
+            (&state.inactive_panes[0].tabs, state.inactive_panes[0].tab_scroll_x)
+        };
+
         let mut total_tabs_width = 0.0f32;
         let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
         let close_reserved = 8.0f32 + tab_close_icon_sz;
-        let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
-        for idx in 0..tab_paths.len() {
-            let path_opt = &tab_paths[idx];
-            let file_name = path_opt.as_ref()
-                .and_then(|p| std::path::Path::new(p).file_name())
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "untitled.txt".to_string());
+        let dot_reserved = 18.0f32;
+        for t in hovered_tabs {
+            let file_name = ui.get_tab_name(t.path.as_deref());
             let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
-            let dot_reserved = 18.0f32;
             let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
             total_tabs_width += tab_w;
         }
 
-        let visible_width = w_width - tabbar_start_x;
+        let visible_width = pane_tabbar_end_x - pane_tabbar_start_x;
         let max_scroll_x = (total_tabs_width - visible_width).max(0.0);
 
         let scroll_amount = match delta {
@@ -2015,7 +2026,8 @@ pub fn handle_mouse_wheel(
             }
         };
 
-        ui.tab_scroll_x = (ui.tab_scroll_x + scroll_amount).clamp(0.0, max_scroll_x);
+        let new_scroll_x = (current_scroll_x + scroll_amount).clamp(0.0, max_scroll_x);
+        state.set_pane_scroll_x(hovered_pane_idx, new_scroll_x);
         window.request_redraw();
         return;
     }
