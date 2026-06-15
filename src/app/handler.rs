@@ -116,7 +116,12 @@ pub fn handle_action(
             }
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
-            ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
+            let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal {
+                size.width as f32 - ui.sidebar_width
+            } else {
+                ((size.width as f32 - ui.sidebar_width) / 2.0).round()
+            };
+            state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
 
             // Handle jumping to specific line
             if let Some(line) = line_to_jump {
@@ -282,7 +287,12 @@ pub fn handle_action(
             }
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
-            ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
+            let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal {
+                size.width as f32 - ui.sidebar_width
+            } else {
+                ((size.width as f32 - ui.sidebar_width) / 2.0).round()
+            };
+            state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
 
         }
         UiAction::CloseTab(idx) => {
@@ -318,7 +328,12 @@ pub fn handle_action(
                 }
                 let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
                 let size = window.inner_size();
-                ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
+                let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal {
+                    size.width as f32 - ui.sidebar_width
+                } else {
+                    ((size.width as f32 - ui.sidebar_width) / 2.0).round()
+                };
+                state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
 
             }
         }
@@ -353,7 +368,12 @@ pub fn handle_action(
             ui.active_modal = None;
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
-            ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
+            let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal {
+                size.width as f32 - ui.sidebar_width
+            } else {
+                ((size.width as f32 - ui.sidebar_width) / 2.0).round()
+            };
+            state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
 
         }
         UiAction::SaveAndCloseTab(idx) => {
@@ -400,7 +420,12 @@ pub fn handle_action(
             ui.rebuild_tree();
             let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
-            ui.scroll_to_tab(state.active_tab_idx, &tab_paths, size.width as f32);
+            let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal {
+                size.width as f32 - ui.sidebar_width
+            } else {
+                ((size.width as f32 - ui.sidebar_width) / 2.0).round()
+            };
+            state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
 
         }
         UiAction::MinimizeWindow => {
@@ -474,6 +499,7 @@ pub fn handle_action(
                     let new_pane = crate::app::state::Pane {
                         tabs: vec![active_tab],
                         active_tab_idx: 0,
+                        tab_scroll_x: 0.0,
                     };
                     state.inactive_panes.push(new_pane);
                 } else {
@@ -487,6 +513,7 @@ pub fn handle_action(
                     let new_pane = crate::app::state::Pane {
                         tabs: vec![initial_tab],
                         active_tab_idx: 0,
+                        tab_scroll_x: 0.0,
                     };
                     state.inactive_panes.push(new_pane);
                 }
@@ -505,6 +532,7 @@ pub fn handle_action(
                     let new_pane = crate::app::state::Pane {
                         tabs: vec![active_tab],
                         active_tab_idx: 0,
+                        tab_scroll_x: 0.0,
                     };
                     state.inactive_panes.push(new_pane);
                 } else {
@@ -518,6 +546,7 @@ pub fn handle_action(
                     let new_pane = crate::app::state::Pane {
                         tabs: vec![initial_tab],
                         active_tab_idx: 0,
+                        tab_scroll_x: 0.0,
                     };
                     state.inactive_panes.push(new_pane);
                 }
