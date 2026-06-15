@@ -463,7 +463,9 @@ impl UiState {
         active_terminal_idx: usize,
         terminal_focus: bool,
         _is_window_maximized: bool,
+        tab_scroll_x: f32,
     ) {
+        self.tab_scroll_x = tab_scroll_x;
         self.active_dock_tab = active_terminal_idx;
 
         // Drain git branch channel
@@ -583,6 +585,7 @@ impl UiState {
                 active_tab_idx,
                 status_y,
                 dragged_tab_idx,
+                self.tab_scroll_x,
             );
         } else if is_split_horizontal {
             let editor_area_height = status_y - main_y;
@@ -609,6 +612,7 @@ impl UiState {
                     self.scroll_y = tab.scroll_y;
                 }
             }
+            let p0_scroll_x = if active_pane_idx == 0 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
 
             crate::ui::components::editor_view::draw_editor_view(
                 self,
@@ -626,6 +630,7 @@ impl UiState {
                 p0_active_idx,
                 main_y + pane_height,
                 if active_pane_idx == 0 { dragged_tab_idx } else { None },
+                p0_scroll_x,
             );
             
             self.scroll_x = orig_scroll_x;
@@ -652,6 +657,7 @@ impl UiState {
                     self.scroll_y = tab.scroll_y;
                 }
             }
+            let p1_scroll_x = if active_pane_idx == 1 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
 
             // Temporarily shift titlebar_height to start bottom pane at main_y + pane_height
             let orig_titlebar_height = self.titlebar_height;
@@ -673,6 +679,7 @@ impl UiState {
                 p1_active_idx,
                 status_y,
                 if active_pane_idx == 1 { dragged_tab_idx } else { None },
+                p1_scroll_x,
             );
 
             self.scroll_x = orig_scroll_x;
@@ -719,6 +726,7 @@ impl UiState {
                     self.scroll_y = tab.scroll_y;
                 }
             }
+            let p0_scroll_x = if active_pane_idx == 0 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
 
             crate::ui::components::editor_view::draw_editor_view(
                 self,
@@ -736,6 +744,7 @@ impl UiState {
                 p0_active_idx,
                 status_y,
                 if active_pane_idx == 0 { dragged_tab_idx } else { None },
+                p0_scroll_x,
             );
             
             self.scroll_x = orig_scroll_x;
@@ -762,6 +771,7 @@ impl UiState {
                     self.scroll_y = tab.scroll_y;
                 }
             }
+            let p1_scroll_x = if active_pane_idx == 1 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
 
             // Temporarily shift sidebar_width to start right pane at sidebar_original + pane_width
             self.sidebar_width = sidebar_original + pane_width;
@@ -782,6 +792,7 @@ impl UiState {
                 p1_active_idx,
                 status_y,
                 if active_pane_idx == 1 { dragged_tab_idx } else { None },
+                p1_scroll_x,
             );
 
             self.scroll_x = orig_scroll_x;
