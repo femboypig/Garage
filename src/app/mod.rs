@@ -183,6 +183,28 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
     let mut redraw_requested = false;
 
+    let (watcher_tx, watcher_rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
+    let proxy_for_watcher = event_loop.create_proxy();
+    
+    let mut watcher = match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if watcher_tx.send(res).is_ok() {
+            let _ = proxy_for_watcher.send_event(());
+        }
+    }) {
+        Ok(w) => Some(w),
+        Err(e) => {
+            log::warn!("Failed to initialize file watcher: {:?}", e);
+            None
+        }
+    };
+
+    if let Some(ref mut w) = watcher {
+        use notify::Watcher;
+        if let Err(e) = w.watch(std::path::Path::new("."), notify::RecursiveMode::Recursive) {
+            log::warn!("Failed to watch current directory: {:?}", e);
+        }
+    }
+
     // Run the event loop reactively to save power/CPU/GPU cycles when idle
     event_loop.run(move |event, elwt| {
         elwt.set_control_flow(ControlFlow::Wait);
@@ -379,6 +401,71 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     let ui_ref = ui.as_mut().unwrap();
                     let gpu_ref = gpu.as_mut().unwrap();
                     let atlas_ref = atlas.as_mut().unwrap();
+
+                    // Drain file watcher events
+                    while let Ok(res) = watcher_rx.try_recv() {
+                        if let Ok(event) = res {
+                            for p in event.paths {
+                                let normalized = crate::editor::normalize_path(&p);
+                                let abs_str = normalized.to_string_lossy().to_string();
+                                
+                                for tab in &mut state.tabs {
+                                    if let Some(ref tab_path) = tab.path {
+                                        if tab_path.starts_with("diagnostics://") {
+                                            continue;
+                                        }
+                                        let tab_abs = crate::editor::get_absolute_path(tab_path);
+                                        if tab_abs == abs_str {
+                                            if let Ok(content) = std::fs::read_to_string(&abs_str) {
+                                                let disk_lines: Vec<&str> = content.lines().collect();
+                                                let tab_lines = tab.buffer.lines();
+                                                
+                                                let is_different = if disk_lines.len() != tab_lines.len() {
+                                                    true
+                                                } else {
+                                                    disk_lines.iter().zip(tab_lines.iter()).any(|(d, t)| d != t)
+                                                };
+                                                
+                                                if is_different {
+                                                    if !tab.buffer.is_modified {
+                                                        if let Err(e) = tab.buffer.load_file(&abs_str) {
+                                                            log::warn!("Failed to reload file '{}': {:?}", abs_str, e);
+                                                        } else {
+                                                            tab.buffer.mark_saved();
+                                                            ui_ref.external_change_warnings.remove(tab_path);
+                                                            
+                                                            let max_line = tab.buffer.len() - 1;
+                                                            tab.cursor.line = tab.cursor.line.min(max_line);
+                                                            let max_col = tab.buffer.lines()[tab.cursor.line].chars().count();
+                                                            tab.cursor.col = tab.cursor.col.min(max_col);
+                                                            tab.cursor.intended_col = tab.cursor.col;
+                                                            tab.secondary_cursors.clear();
+                                                            
+                                                            redraw_requested = true;
+                                                        }
+                                                    } else {
+                                                        if ui_ref.external_change_warnings.insert(tab_path.clone()) {
+                                                            redraw_requested = true;
+                                                        }
+                                                    }
+                                                } else {
+                                                    if ui_ref.external_change_warnings.remove(tab_path) {
+                                                        redraw_requested = true;
+                                                    }
+                                                }
+                                            } else {
+                                                if !std::path::Path::new(&abs_str).exists() {
+                                                    if ui_ref.external_change_warnings.insert(tab_path.clone()) {
+                                                        redraw_requested = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // Throttled git branch, status and diff check (every 1 second)
                     if ui_ref.last_branch_check.is_none() || ui_ref.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(1) {
