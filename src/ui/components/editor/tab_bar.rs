@@ -389,26 +389,7 @@ pub fn draw_floating_tab(
     let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
     
     let is_diagnostics = tab_path == Some("diagnostics://project");
-    let file_name = if is_diagnostics {
-        let mut err_count = 0;
-        let mut warn_count = 0;
-        for (e, w) in ui.lsp_diagnostics.values() {
-            err_count += *e;
-            warn_count += *w;
-        }
-        if err_count > 0 {
-            format!("  ⊗ {}", err_count)
-        } else if warn_count > 0 {
-            format!("  ⚠ {}", warn_count)
-        } else {
-            "  ⊗ 0".to_string()
-        }
-    } else {
-        tab_path
-            .and_then(|p| std::path::Path::new(p).file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "untitled.txt".to_string())
-    };
+    let file_name = ui.get_tab_name(tab_path);
     
     let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
     let dot_reserved = 18.0f32;
