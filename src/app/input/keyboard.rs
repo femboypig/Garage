@@ -802,6 +802,8 @@ pub fn handle_diagnostics_keyboard(
                         if let Some(ref p) = tab.path {
                             if !p.starts_with("diagnostics://") && tab.buffer.is_modified {
                                 let _ = tab.buffer.save_file(p);
+                                tab.buffer.mark_saved();
+                                ui.external_change_warnings.remove(p);
                             }
                         }
                     }
