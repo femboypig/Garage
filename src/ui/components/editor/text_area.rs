@@ -114,6 +114,8 @@ pub fn draw_text_area(
     active_file_path: Option<&str>,
     tab_paths: &[Option<String>],
     tab_modified: &[bool],
+    mouse_x: f32,
+    mouse_y: f32,
 ) {
     let white_uv = atlas.white_pixel_uv();
     
@@ -128,6 +130,8 @@ pub fn draw_text_area(
             editor_y,
             text_viewport_w,
             editor_height,
+            mouse_x,
+            mouse_y,
         );
         return;
     }
