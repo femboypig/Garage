@@ -566,7 +566,10 @@ impl UiState {
         self.tab_scroll_x = tab_scroll_x;
         self.active_dock_tab = active_terminal_idx;
 
-        if self.show_search_panel {
+        let active_file_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
+        let is_project_search = active_file_path == Some("search://project");
+
+        if self.show_search_panel || is_project_search {
             self.breadcrumb_height = (self.ui_line_height * 3.6).round().max(60.0);
         } else {
             self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
