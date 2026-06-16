@@ -225,9 +225,7 @@ impl vte::Perform for TerminalGrid {
         let fg = if self.inverse { self.current_bg } else { self.current_fg };
         let bg = if self.inverse { self.current_fg } else { self.current_bg };
         
-        if c >= '\u{e000}' {
-            log::warn!("GRID PRINT: c='{}' (U+{:X}) at ({},{}), fg={:?}, bg={:?}", c, c as u32, self.cursor_x, self.cursor_y, fg, bg);
-        }
+
 
         let cells = self.get_cells_mut();
         if idx < cells.len() {
