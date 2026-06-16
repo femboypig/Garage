@@ -56,6 +56,8 @@ pub struct TerminalGrid {
     pub title: String,
     pub scrollback: Vec<Vec<Cell>>,
     pub scroll_offset: usize,
+    pub saved_cursor_x: Option<usize>,
+    pub saved_cursor_y: Option<usize>,
 }
 
 impl TerminalGrid {
@@ -72,6 +74,8 @@ impl TerminalGrid {
             title: String::new(),
             scrollback: Vec::new(),
             scroll_offset: 0,
+            saved_cursor_x: None,
+            saved_cursor_y: None,
         }
     }
 
@@ -375,6 +379,64 @@ impl vte::Perform for TerminalGrid {
                 let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
                 self.cursor_x = self.cursor_x.saturating_sub(count);
             }
+            'G' => { // Cursor Horizontal Absolute (CHA)
+                let col = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+                self.cursor_x = (col.saturating_sub(1)).min(self.cols - 1);
+            }
+            'd' => { // Cursor Vertical Absolute (VPA)
+                let row = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+                self.cursor_y = (row.saturating_sub(1)).min(self.rows - 1);
+            }
+            'e' => { // Cursor Down Line
+                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+                self.cursor_y = (self.cursor_y + count).min(self.rows - 1);
+            }
+            'X' => { // Erase Character (ECH)
+                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+                let start_idx = self.cursor_y * self.cols;
+                for offset in 0..count {
+                    let x = self.cursor_x + offset;
+                    if x < self.cols {
+                        self.cells[start_idx + x] = Cell {
+                            c: ' ',
+                            fg: self.current_fg,
+                            bg: self.current_bg,
+                        };
+                    }
+                }
+            }
+            'P' => { // Delete Character (DCH)
+                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+                let start_idx = self.cursor_y * self.cols;
+                let move_count = self.cols - (self.cursor_x + count);
+                for i in 0..move_count {
+                    self.cells[start_idx + self.cursor_x + i] = self.cells[start_idx + self.cursor_x + count + i];
+                }
+                for i in (self.cols - count)..self.cols {
+                    self.cells[start_idx + i] = Cell::default();
+                }
+            }
+            '@' => { // Insert Character (ICH)
+                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+                let start_idx = self.cursor_y * self.cols;
+                let shift_limit = self.cols - self.cursor_x;
+                for i in (count..shift_limit).rev() {
+                    self.cells[start_idx + self.cursor_x + i] = self.cells[start_idx + self.cursor_x + i - count];
+                }
+                for i in 0..count.min(shift_limit) {
+                    self.cells[start_idx + self.cursor_x + i] = Cell::default();
+                }
+            }
+            's' => { // Save Cursor Position
+                self.saved_cursor_x = Some(self.cursor_x);
+                self.saved_cursor_y = Some(self.cursor_y);
+            }
+            'u' => { // Restore Cursor Position
+                if let (Some(x), Some(y)) = (self.saved_cursor_x, self.saved_cursor_y) {
+                    self.cursor_x = x.min(self.cols - 1);
+                    self.cursor_y = y.min(self.rows - 1);
+                }
+            }
             _ => {}
         }
     }
@@ -411,6 +473,22 @@ impl vte::Perform for TerminalGrid {
                     }
                 }
             }
+        }
+    }
+
+    fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, byte: u8) {
+        match byte {
+            b'7' => { // Save cursor position (DECSC)
+                self.saved_cursor_x = Some(self.cursor_x);
+                self.saved_cursor_y = Some(self.cursor_y);
+            }
+            b'8' => { // Restore cursor position (DECRC)
+                if let (Some(x), Some(y)) = (self.saved_cursor_x, self.saved_cursor_y) {
+                    self.cursor_x = x.min(self.cols - 1);
+                    self.cursor_y = y.min(self.rows - 1);
+                }
+            }
+            _ => {}
         }
     }
 }
