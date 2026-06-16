@@ -16,6 +16,8 @@ pub fn draw_project_search(
     editor_y: f32,
     text_viewport_w: f32,
     editor_height: f32,
+    mouse_x: f32,
+    mouse_y: f32,
 ) {
     let white_uv = atlas.white_pixel_uv();
 
@@ -32,74 +34,232 @@ pub fn draw_project_search(
     );
 
     // 2. Input Box layout (centered at the top)
-    let input_panel_h = 50.0f32;
-    let input_h = ui.ui_line_height + 8.0;
-    let input_y = editor_y + ((input_panel_h - input_h) / 2.0).round();
-    let input_w = 400.0f32;
-    let input_x = text_area_x + 20.0;
+    let input_panel_h = 90.0f32; // Increased height to support 2 rows!
+    
+    // Row 1: Search Query
+    let input_h = 26.0;
+    let row1_y = editor_y + 12.0;
+    let label_x = text_area_x + 20.0;
+    let input_x = text_area_x + 90.0;
+    let input_w = 450.0f32;
 
-    // Draw input background
-    ui.push_quad(
-        vertices,
-        indices,
-        input_x,
-        input_y,
-        input_w,
-        input_h,
-        white_uv,
-        ui.config.theme.tabbar_bg,
-    );
-    // Draw input borders
-    ui.push_quad(vertices, indices, input_x, input_y, input_w, 1.0, white_uv, ui.config.theme.modal_border);
-    ui.push_quad(vertices, indices, input_x, input_y + input_h - 1.0, input_w, 1.0, white_uv, ui.config.theme.modal_border);
-    ui.push_quad(vertices, indices, input_x, input_y, 1.0, input_h, white_uv, ui.config.theme.modal_border);
-    ui.push_quad(vertices, indices, input_x + input_w - 1.0, input_y, 1.0, input_h, white_uv, ui.config.theme.modal_border);
+    let l_baseline_1 = (row1_y + input_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
 
-    // Draw "Search: " label and query inside input box
-    let prefix = "Search: ";
-    let prefix_w = prefix.chars().count() as f32 * ui.ui_char_width;
-    let max_query_w = input_w - 20.0 - prefix_w;
-    let max_query_chars = (max_query_w / ui.ui_char_width).floor().max(1.0) as usize;
-    let display_query = if ui.global_search_query.chars().count() > max_query_chars {
-        ui.global_search_query.chars().skip(ui.global_search_query.chars().count() - max_query_chars).collect::<String>()
-    } else {
-        ui.global_search_query.clone()
-    };
-    let mut input_text = prefix.to_string();
-    input_text.push_str(&display_query);
-
-    let l_baseline = (input_y + input_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+    // Draw "Search" label
     ui.push_str(
         vertices,
         indices,
         atlas,
         queue,
-        &input_text,
-        input_x + 10.0,
-        l_baseline,
-        ui.config.theme.modal_text_normal,
+        "Search",
+        label_x,
+        l_baseline_1,
+        ui.config.theme.modal_text_muted,
         ui.ui_font_size,
         ui.ui_char_width,
     );
 
-    // Draw caret
-    let prefix_len = prefix.chars().count();
-    let query_len = display_query.chars().count();
-    let caret_x = input_x + 10.0 + (prefix_len + query_len) as f32 * ui.ui_char_width;
-    if caret_x < input_x + input_w - 10.0 {
-        ui.push_quad(
+    // Draw Search Input background
+    let is_search_focused = !ui.global_search_focus_replace;
+    ui.push_quad(
+        vertices,
+        indices,
+        input_x,
+        row1_y,
+        input_w,
+        input_h,
+        white_uv,
+        ui.config.theme.tabbar_bg,
+    );
+    let border_color_1 = if is_search_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
+    ui.push_quad(vertices, indices, input_x, row1_y, input_w, 1.0, white_uv, border_color_1);
+    ui.push_quad(vertices, indices, input_x, row1_y + input_h - 1.0, input_w, 1.0, white_uv, border_color_1);
+    ui.push_quad(vertices, indices, input_x, row1_y, 1.0, input_h, white_uv, border_color_1);
+    ui.push_quad(vertices, indices, input_x + input_w - 1.0, row1_y, 1.0, input_h, white_uv, border_color_1);
+
+    // Draw option buttons inside search input (far right)
+    let btn_w = 22.0f32;
+    let opt_y = row1_y + 2.0;
+    let opt_h = input_h - 4.0;
+    let opt_regex_x = input_x + input_w - 5.0 - btn_w;
+    let opt_word_x = opt_regex_x - 2.0 - btn_w;
+    let opt_case_x = opt_word_x - 2.0 - btn_w;
+
+    // Aa option button
+    let case_hover = mouse_x >= opt_case_x && mouse_x < opt_case_x + btn_w && mouse_y >= opt_y && mouse_y < opt_y + opt_h;
+    let case_bg = if ui.global_search_case_sensitive {
+        ui.config.theme.selection_bg
+    } else if case_hover {
+        ui.config.theme.button_hover_bg
+    } else {
+        [0.0, 0.0, 0.0, 0.0]
+    };
+    ui.push_quad(vertices, indices, opt_case_x, opt_y, btn_w, opt_h, white_uv, case_bg);
+    ui.push_str(vertices, indices, atlas, queue, "Aa", opt_case_x + 4.0, l_baseline_1, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
+
+    // W option button
+    let word_hover = mouse_x >= opt_word_x && mouse_x < opt_word_x + btn_w && mouse_y >= opt_y && mouse_y < opt_y + opt_h;
+    let word_bg = if ui.global_search_whole_word {
+        ui.config.theme.selection_bg
+    } else if word_hover {
+        ui.config.theme.button_hover_bg
+    } else {
+        [0.0, 0.0, 0.0, 0.0]
+    };
+    ui.push_quad(vertices, indices, opt_word_x, opt_y, btn_w, opt_h, white_uv, word_bg);
+    ui.push_str(vertices, indices, atlas, queue, "W", opt_word_x + 6.0, l_baseline_1, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
+
+    // .* option button
+    let regex_hover = mouse_x >= opt_regex_x && mouse_x < opt_regex_x + btn_w && mouse_y >= opt_y && mouse_y < opt_y + opt_h;
+    let regex_bg = if ui.global_search_regex {
+        ui.config.theme.selection_bg
+    } else if regex_hover {
+        ui.config.theme.button_hover_bg
+    } else {
+        [0.0, 0.0, 0.0, 0.0]
+    };
+    ui.push_quad(vertices, indices, opt_regex_x, opt_y, btn_w, opt_h, white_uv, regex_bg);
+    ui.push_str(vertices, indices, atlas, queue, ".*", opt_regex_x + 5.0, l_baseline_1, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
+
+    // Draw search text or placeholder
+    let options_area_w = 3.0 * btn_w + 10.0;
+    let max_query_w = input_w - 20.0 - options_area_w;
+    let max_query_chars = (max_query_w / ui.ui_char_width).floor().max(1.0) as usize;
+    
+    if ui.global_search_query.is_empty() {
+        ui.push_str(
             vertices,
             indices,
-            caret_x,
-            input_y + 4.0,
-            2.0,
-            input_h - 8.0,
-            white_uv,
-            ui.config.theme.cursor_color,
+            atlas,
+            queue,
+            "Search in project...",
+            input_x + 10.0,
+            l_baseline_1,
+            ui.config.theme.syntax_comment,
+            ui.ui_font_size,
+            ui.ui_char_width,
         );
+    } else {
+        let display_query = if ui.global_search_query.chars().count() > max_query_chars {
+            ui.global_search_query.chars().skip(ui.global_search_query.chars().count() - max_query_chars).collect::<String>()
+        } else {
+            ui.global_search_query.clone()
+        };
+        ui.push_str(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            &display_query,
+            input_x + 10.0,
+            l_baseline_1,
+            ui.config.theme.modal_text_normal,
+            ui.ui_font_size,
+            ui.ui_char_width,
+        );
+        // Draw caret
+        if is_search_focused {
+            let caret_x = input_x + 10.0 + display_query.chars().count() as f32 * ui.ui_char_width;
+            if caret_x < input_x + input_w - options_area_w {
+                ui.push_quad(vertices, indices, caret_x, row1_y + 4.0, 2.0, input_h - 8.0, white_uv, ui.config.theme.cursor_color);
+            }
+        }
     }
 
-    // Draw result count text on the right of the input box
+    // Row 2: Replace Query
+    let row2_y = editor_y + 48.0;
+    let l_baseline_2 = (row2_y + input_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+
+    // Draw "Replace" label
+    ui.push_str(
+        vertices,
+        indices,
+        atlas,
+        queue,
+        "Replace",
+        label_x,
+        l_baseline_2,
+        ui.config.theme.modal_text_muted,
+        ui.ui_font_size,
+        ui.ui_char_width,
+    );
+
+    // Draw Replace Input background
+    let is_replace_focused = ui.global_search_focus_replace;
+    ui.push_quad(
+        vertices,
+        indices,
+        input_x,
+        row2_y,
+        input_w,
+        input_h,
+        white_uv,
+        ui.config.theme.tabbar_bg,
+    );
+    let border_color_2 = if is_replace_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
+    ui.push_quad(vertices, indices, input_x, row2_y, input_w, 1.0, white_uv, border_color_2);
+    ui.push_quad(vertices, indices, input_x, row2_y + input_h - 1.0, input_w, 1.0, white_uv, border_color_2);
+    ui.push_quad(vertices, indices, input_x, row2_y, 1.0, input_h, white_uv, border_color_2);
+    ui.push_quad(vertices, indices, input_x + input_w - 1.0, row2_y, 1.0, input_h, white_uv, border_color_2);
+
+    // Draw replace text or placeholder
+    if ui.global_replace_query.is_empty() {
+        ui.push_str(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            "Replace with...",
+            input_x + 10.0,
+            l_baseline_2,
+            ui.config.theme.syntax_comment,
+            ui.ui_font_size,
+            ui.ui_char_width,
+        );
+    } else {
+        let display_replace = if ui.global_replace_query.chars().count() > max_query_chars {
+            ui.global_replace_query.chars().skip(ui.global_replace_query.chars().count() - max_query_chars).collect::<String>()
+        } else {
+            ui.global_replace_query.clone()
+        };
+        ui.push_str(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            &display_replace,
+            input_x + 10.0,
+            l_baseline_2,
+            ui.config.theme.modal_text_normal,
+            ui.ui_font_size,
+            ui.ui_char_width,
+        );
+        // Draw caret
+        if is_replace_focused {
+            let caret_x = input_x + 10.0 + display_replace.chars().count() as f32 * ui.ui_char_width;
+            if caret_x < input_x + input_w - 10.0 {
+                ui.push_quad(vertices, indices, caret_x, row2_y + 4.0, 2.0, input_h - 8.0, white_uv, ui.config.theme.cursor_color);
+            }
+        }
+    }
+
+    // Draw "Replace All" Button
+    let btn_all_w = 90.0f32;
+    let btn_all_x = input_x + input_w + 15.0;
+    let all_hover = mouse_x >= btn_all_x && mouse_x < btn_all_x + btn_all_w && mouse_y >= row2_y && mouse_y < row2_y + input_h;
+    
+    ui.push_quad(vertices, indices, btn_all_x, row2_y, btn_all_w, input_h, white_uv, if all_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
+    ui.push_quad(vertices, indices, btn_all_x, row2_y, btn_all_w, 1.0, white_uv, ui.config.theme.button_border);
+    ui.push_quad(vertices, indices, btn_all_x, row2_y + input_h - 1.0, btn_all_w, 1.0, white_uv, ui.config.theme.button_border);
+    ui.push_quad(vertices, indices, btn_all_x, row2_y, 1.0, input_h, white_uv, ui.config.theme.button_border);
+    ui.push_quad(vertices, indices, btn_all_x + btn_all_w - 1.0, row2_y, 1.0, input_h, white_uv, ui.config.theme.button_border);
+    
+    let btn_all_text = "Replace All";
+    let text_all_w = btn_all_text.chars().count() as f32 * ui.ui_char_width;
+    let text_all_x = btn_all_x + ((btn_all_w - text_all_w) / 2.0).round();
+    ui.push_str(vertices, indices, atlas, queue, btn_all_text, text_all_x, l_baseline_2, ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
+
+    // Draw search result count next to input on Row 1
     let count_str = if ui.global_search_results.is_empty() {
         if ui.is_searching_globally {
             "Searching...".to_string()
@@ -107,7 +267,11 @@ pub fn draw_project_search(
             "0 results".to_string()
         }
     } else {
-        format!("{} results", ui.global_search_results.len())
+        let mut file_set = std::collections::HashSet::new();
+        for (path, _, _) in &ui.global_search_results {
+            file_set.insert(path.clone());
+        }
+        format!("{} results in {} files", ui.global_search_results.len(), file_set.len())
     };
     ui.push_str(
         vertices,
@@ -116,13 +280,13 @@ pub fn draw_project_search(
         queue,
         &count_str,
         input_x + input_w + 15.0,
-        l_baseline,
+        l_baseline_1,
         ui.config.theme.modal_text_muted,
         ui.ui_font_size,
         ui.ui_char_width,
     );
 
-    // Draw a separator line below the input panel
+    // Draw separator line below input panel
     let sep_y = editor_y + input_panel_h;
     ui.push_quad(
         vertices,
@@ -197,9 +361,11 @@ pub fn draw_project_search(
         let item_y = list_y + (idx - ui.global_search_scroll) as f32 * item_height;
         let text_baseline = (item_y + ui.buffer_font_ascent).round();
 
+        let row_hover = mouse_x >= text_area_x && mouse_x < text_area_x + text_viewport_w && mouse_y >= item_y && mouse_y < item_y + item_height;
+
         match &render_items[idx] {
             SearchRenderItem::FileHeader { path } => {
-                // Draw a nice subtle header background
+                // Draw header background
                 ui.push_quad(
                     vertices,
                     indices,
@@ -208,8 +374,24 @@ pub fn draw_project_search(
                     text_viewport_w,
                     item_height,
                     white_uv,
-                    ui.config.theme.tabbar_bg,
+                    if row_hover { ui.config.theme.titlebar_hover_bg } else { ui.config.theme.tabbar_bg },
                 );
+
+                // Detect file extension for icon
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                let icon_name = match ext {
+                    "rs" => "rust",
+                    "toml" => "toml",
+                    "json" => "json",
+                    "md" => "md",
+                    _ => "file",
+                };
+                
+                // Draw icon
+                let icon_sz = 14.0f32;
+                let icon_y = (item_y + (item_height - icon_sz) / 2.0).round();
+                ui.push_icon(vertices, indices, atlas, queue, icon_name, text_area_x + 10.0, icon_y, ui.config.theme.syntax_keyword, icon_sz);
+
                 // Draw file path text
                 let path_str = path.to_string_lossy().to_string();
                 let display_path = path_str.strip_prefix("./").unwrap_or(&path_str).to_string();
@@ -219,9 +401,9 @@ pub fn draw_project_search(
                     atlas,
                     queue,
                     &display_path,
-                    text_area_x + 10.0,
+                    text_area_x + 10.0 + icon_sz + 6.0,
                     text_baseline,
-                    ui.config.theme.syntax_keyword, // Highlight filepath nicely
+                    ui.config.theme.modal_text_title,
                     ui.buffer_font_size,
                     ui.buffer_char_width,
                 );
@@ -229,8 +411,14 @@ pub fn draw_project_search(
             SearchRenderItem::Match { line_idx, content, result_idx, .. } => {
                 let is_selected = *result_idx == ui.global_search_selected;
 
-                // Draw selected row highlight background
-                if is_selected {
+                let bg_color = if is_selected {
+                    ui.config.theme.sidebar_hover_bg
+                } else if row_hover {
+                    ui.config.theme.titlebar_hover_bg
+                } else {
+                    [0.0, 0.0, 0.0, 0.0]
+                };
+                if is_selected || row_hover {
                     ui.push_quad(
                         vertices,
                         indices,
@@ -239,14 +427,13 @@ pub fn draw_project_search(
                         text_viewport_w,
                         item_height,
                         white_uv,
-                        ui.config.theme.sidebar_hover_bg,
+                        bg_color,
                     );
                 }
 
-                // Draw line number aligned
+                // Draw line number
                 let line_str = format!("{}", line_idx + 1);
                 let line_w = line_str.chars().count() as f32 * ui.buffer_char_width;
-                // Indent 24px, right align line number in a 35px column
                 let line_x = text_area_x + 24.0 + (35.0 - line_w).max(0.0);
                 ui.push_str(
                     vertices,
@@ -261,7 +448,7 @@ pub fn draw_project_search(
                     ui.buffer_char_width,
                 );
 
-                // Draw snippet content at a fixed starting point!
+                // Draw snippet
                 let snippet_x = text_area_x + 24.0 + 35.0 + 15.0; // Total indent = 74px
                 let max_snippet_w = text_area_x + text_viewport_w - snippet_x - 30.0;
                 let max_snippet_chars = (max_snippet_w / ui.buffer_char_width).floor().max(1.0) as usize;
@@ -271,7 +458,6 @@ pub fn draw_project_search(
                     snippet = snippet.chars().take(max_snippet_chars.saturating_sub(3)).collect::<String>() + "...";
                 }
 
-                // Draw snippet text
                 ui.push_str(
                     vertices,
                     indices,
@@ -285,37 +471,42 @@ pub fn draw_project_search(
                     ui.buffer_char_width,
                 );
 
-                // Highlight matched query text inside the snippet
-                let query_lower = ui.global_search_query.to_lowercase();
-                if !query_lower.is_empty() {
-                    let snippet_lower = snippet.to_lowercase();
-                    let mut search_start = 0;
-                    while let Some(match_offset) = snippet_lower[search_start..].find(&query_lower) {
-                        let actual_char_idx = snippet[..search_start + match_offset].chars().count();
-                        let match_char_len = query_lower.chars().count();
-                        
-                        let highlight_x = snippet_x + actual_char_idx as f32 * ui.buffer_char_width;
-                        let highlight_w = match_char_len as f32 * ui.buffer_char_width;
+                // Highlight matched query text
+                let query = &ui.global_search_query;
+                if !query.is_empty() {
+                    let pattern = if ui.global_search_regex {
+                        query.clone()
+                    } else {
+                        regex::escape(query)
+                    };
+                    let mut builder = regex::RegexBuilder::new(&pattern);
+                    builder.case_insensitive(!ui.global_search_case_sensitive);
+                    if let Ok(re) = builder.build() {
+                        for m in re.find_iter(&snippet) {
+                            let start_char = snippet[..m.start()].chars().count();
+                            let end_char = snippet[..m.end()].chars().count();
+                            
+                            let highlight_x = snippet_x + start_char as f32 * ui.buffer_char_width;
+                            let highlight_w = (end_char - start_char) as f32 * ui.buffer_char_width;
 
-                        ui.push_quad(
-                            vertices,
-                            indices,
-                            highlight_x,
-                            item_y,
-                            highlight_w,
-                            item_height,
-                            white_uv,
-                            [0.9, 0.7, 0.0, 0.3], // soft golden highlight
-                        );
-
-                        search_start += match_offset + query_lower.len().max(1);
+                            ui.push_quad(
+                                vertices,
+                                indices,
+                                highlight_x,
+                                item_y + 1.0,
+                                highlight_w,
+                                item_height - 2.0,
+                                white_uv,
+                                [0.9, 0.7, 0.0, 0.35],
+                            );
+                        }
                     }
                 }
             }
         }
     }
 
-    // Draw scrollbar if results exceed view height
+    // Draw scrollbar
     if render_items.len() > max_visible_items {
         let track_w = 4.0f32;
         let track_x = text_area_x + text_viewport_w - track_w - 4.0;
