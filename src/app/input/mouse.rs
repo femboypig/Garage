@@ -1819,6 +1819,7 @@ pub fn handle_mouse_input(
                                             path: None,
                                             buffer: crate::editor::buffer::Buffer::new(),
                                             cursor: crate::editor::cursor::Cursor::new(),
+                                            secondary_cursors: Vec::new(),
                                             scroll_x: 0,
                                             scroll_y: 0,
                                         });
