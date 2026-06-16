@@ -314,6 +314,11 @@ pub fn handle_action(
 
         }
         UiAction::CloseTab(idx) => {
+            let autosave_setting = &ui.config.autosave;
+            if crate::app::autosave::should_save_on_close(autosave_setting) && state.tabs[idx].path.is_some() {
+                crate::app::autosave::save_tab(ui, &mut state.tabs[idx]);
+            }
+
             if state.tabs[idx].buffer.is_modified {
                 ui.tab_to_close = Some(idx);
                 ui.active_modal = Some(crate::ui::ModalType::UnsavedChanges);
