@@ -93,6 +93,7 @@ pub fn handle_action(
                     path: Some(path_str),
                     buffer: new_buf,
                     cursor: Cursor::new(),
+                    secondary_cursors: Vec::new(),
                     scroll_x: 0,
                     scroll_y: 0,
                 });
@@ -330,6 +331,7 @@ pub fn handle_action(
                             path: None,
                             buffer: Buffer::new(),
                             cursor: Cursor::new(),
+                            secondary_cursors: Vec::new(),
                             scroll_x: 0,
                             scroll_y: 0,
                         });
@@ -368,6 +370,7 @@ pub fn handle_action(
                         path: None,
                         buffer: Buffer::new(),
                         cursor: Cursor::new(),
+                        secondary_cursors: Vec::new(),
                         scroll_x: 0,
                         scroll_y: 0,
                     });
@@ -419,6 +422,7 @@ pub fn handle_action(
                         path: None,
                         buffer: Buffer::new(),
                         cursor: Cursor::new(),
+                        secondary_cursors: Vec::new(),
                         scroll_x: 0,
                         scroll_y: 0,
                     });
@@ -524,6 +528,7 @@ pub fn handle_action(
                         path: None,
                         buffer: Buffer::new(),
                         cursor: Cursor::new(),
+                        secondary_cursors: Vec::new(),
                         scroll_x: 0,
                         scroll_y: 0,
                     };
@@ -557,6 +562,7 @@ pub fn handle_action(
                         path: None,
                         buffer: Buffer::new(),
                         cursor: Cursor::new(),
+                        secondary_cursors: Vec::new(),
                         scroll_x: 0,
                         scroll_y: 0,
                     };
