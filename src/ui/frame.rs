@@ -170,12 +170,11 @@ impl UiState {
             // Draw under-fill solid quad for powerline solid separators to prevent any horizontal gaps
             if is_powerline {
                 let cp = c as u32;
+                let sliver_w = 1.5;
                 if cp % 4 == 0 {
-                    let half_w = (w / 2.0).round();
-                    self.push_quad(vertices, indices, x, y, half_w, h, white_uv, color);
+                    self.push_quad(vertices, indices, x, y, sliver_w, h, white_uv, color);
                 } else if cp % 4 == 2 {
-                    let half_w = (w / 2.0).round();
-                    self.push_quad(vertices, indices, x + w - half_w, y, half_w, h, white_uv, color);
+                    self.push_quad(vertices, indices, x + w - sliver_w, y, sliver_w, h, white_uv, color);
                 }
             }
 
