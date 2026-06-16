@@ -44,7 +44,7 @@ pub fn handle_action(
         UiAction::OpenFile(path) | UiAction::OpenFileAt(path, _) => {
             let current_dir = std::env::current_dir().unwrap_or_default();
             let path_str = path.to_string_lossy().to_string();
-            let path_str = if path_str.starts_with("diagnostics://") {
+            let path_str = if path_str.starts_with("diagnostics://") || path_str.starts_with("search://") {
                 path_str
             } else {
                 let normalized_path = if path.is_absolute() {
@@ -61,7 +61,7 @@ pub fn handle_action(
             };
             let _is_new = if let Some(existing_idx) = state.tabs.iter().position(|t| {
                 t.path.as_ref().map_or(false, |p| {
-                    if p.starts_with("diagnostics://") {
+                    if p.starts_with("diagnostics://") || p.starts_with("search://") {
                         p == &path_str
                     } else {
                         let p_buf = std::path::PathBuf::from(p);
@@ -82,7 +82,7 @@ pub fn handle_action(
                 false
             } else {
                 let mut new_buf = Buffer::new();
-                if !path_str.starts_with("diagnostics://") {
+                if !path_str.starts_with("diagnostics://") && !path_str.starts_with("search://") {
                     if let Err(e) = new_buf.load_file(&path_str) {
                         log::warn!("Failed to load file '{}': {}", path_str, e);
                     }
@@ -103,7 +103,7 @@ pub fn handle_action(
             };
             if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
                 ui.selected_file = Some(std::path::PathBuf::from(active_path));
-                if !active_path.starts_with("diagnostics://") {
+                if !active_path.starts_with("diagnostics://") && !active_path.starts_with("search://") {
                     let abs_path = crate::editor::get_absolute_path(active_path);
                     ui.diagnostics_file_cache.insert(abs_path, state.tabs[state.active_tab_idx].buffer.lines().to_vec());
                     ui.update_git_diff(Some(active_path));
