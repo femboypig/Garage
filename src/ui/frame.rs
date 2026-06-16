@@ -111,11 +111,19 @@ impl UiState {
                 return char_width;
             }
 
-            // CRITICAL: Round coordinates to exact integer pixels to eliminate bilinear filtering blur!
+            let cp = c as u32;
             let is_box_drawing = c >= '\u{2500}' && c <= '\u{257f}';
             let is_powerline = c >= '\u{e0b0}' && c <= '\u{e0d4}';
+            
+            let is_pua = (cp >= 0xE000 && cp <= 0xF8FF)
+                || (cp >= 0xF0000 && cp <= 0xFFFFF)
+                || (cp >= 0x100000 && cp <= 0x10FFFF);
+            let is_emoji = (cp >= 0x1F300 && cp <= 0x1F9FF)
+                || (cp >= 0x1F600 && cp <= 0x1F64F)
+                || (cp >= 0x2600 && cp <= 0x27BF);
+            let is_special_icon = (is_pua || is_emoji) && !is_powerline;
 
-            let (x, y, w, h) = if is_box_drawing {
+            let (x, y, w, h) = if is_box_drawing || is_powerline {
                 let x_min = pen_x.round();
                 let x_max = (pen_x + char_width).round();
                 
@@ -129,20 +137,27 @@ impl UiState {
                 let y_max = (baseline_y - ascent + line_h).round();
                 
                 (x_min, y_min, x_max - x_min, y_max - y_min)
-            } else if is_powerline {
-                let x_val = (pen_x + info.bearing_x).round();
-                let w_val = info.width.round();
-                
+            } else if is_special_icon {
                 let (ascent, line_h) = if (font_size - self.buffer_font_size).abs() < 0.1 {
                     (self.buffer_font_ascent, self.buffer_line_height)
                 } else {
                     (self.ui_font_ascent, self.ui_line_height)
                 };
-                
-                let y_min = (baseline_y - ascent).round();
-                let y_max = (baseline_y - ascent + line_h).round();
-                
-                (x_val, y_min, w_val, y_max - y_min)
+
+                let max_w = char_width * 0.9;
+                let max_h = line_h * 0.9;
+
+                let scale_w = max_w / info.width;
+                let scale_h = max_h / info.height;
+                let scale = scale_w.min(scale_h).min(1.0);
+
+                let w_val = (info.width * scale).round();
+                let h_val = (info.height * scale).round();
+
+                let x_val = (pen_x + (char_width - w_val) / 2.0).round();
+                let y_val = (baseline_y - ascent + (line_h - h_val) / 2.0).round();
+
+                (x_val, y_val, w_val, h_val)
             } else {
                 let x = (pen_x + info.bearing_x).round();
                 let y = (baseline_y - info.bearing_y - info.height).round();
