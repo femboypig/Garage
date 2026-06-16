@@ -222,13 +222,18 @@ pub fn draw_statusbar(
         .map(|s| s.as_str())
         .unwrap_or("UTF-8");
 
+    let line_ending = active_path
+        .and_then(|path| ui.forced_line_endings.get(path))
+        .map(|s| s.as_str())
+        .unwrap_or("LF");
+
     let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
 
     let right_components = [
         cursor_str.as_str(),
         language.as_str(),
         encoding,
-        "LF",
+        line_ending,
     ];
 
     let mut cur_right_x = term_btn_x - 10.0;
@@ -240,8 +245,8 @@ pub fn draw_statusbar(
         cur_right_x -= comp_w + 16.0;
 
         if cur_right_x > pen_x {
-            // Index 1 is language, Index 2 is encoding
-            let is_hoverable = i == 1 || i == 2;
+            // Index 1 is language, Index 2 is encoding, Index 3 is line ending
+            let is_hoverable = i == 1 || i == 2 || i == 3;
             let is_hovered = is_hoverable
                 && ui.active_modal.is_none()
                 && mouse_y >= status_y
