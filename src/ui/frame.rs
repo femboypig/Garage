@@ -508,6 +508,7 @@ impl UiState {
         queue: &wgpu::Queue,
         buffer: &Buffer,
         cursor: &Cursor,
+        secondary_cursors: &[Cursor],
         width: f32,
         height: f32,
         mouse_x: f32,
@@ -644,6 +645,7 @@ impl UiState {
                 queue,
                 buffer,
                 cursor,
+                secondary_cursors,
                 width,
                 mouse_x,
                 mouse_y,
@@ -660,15 +662,15 @@ impl UiState {
             let pane_height = (editor_area_height / 2.0).round();
             
             // Draw Top Pane (Pane 0)
-            let (p0_buffer, p0_cursor, p0_paths, p0_modified, p0_active_idx) = if active_pane_idx == 0 {
-                (buffer, cursor, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
+            let (p0_buffer, p0_cursor, p0_secondary, p0_paths, p0_modified, p0_active_idx) = if active_pane_idx == 0 {
+                (buffer, cursor, secondary_cursors, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
             } else {
                 let inactive_pane = &inactive_panes[0];
                 let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
                 let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
                 let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
                 let active_tab = &inactive_pane.tabs[in_active_idx];
-                (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
+                (&active_tab.buffer, &active_tab.cursor, &active_tab.secondary_cursors[..], in_paths, in_modified, in_active_idx)
             };
             
             let orig_scroll_x = self.scroll_x;
@@ -681,7 +683,7 @@ impl UiState {
                 }
             }
             let p0_scroll_x = if active_pane_idx == 0 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
-
+ 
             crate::ui::components::editor_view::draw_editor_view(
                 self,
                 vertices,
@@ -690,6 +692,7 @@ impl UiState {
                 queue,
                 p0_buffer,
                 p0_cursor,
+                p0_secondary,
                 width,
                 mouse_x,
                 mouse_y,
@@ -706,15 +709,15 @@ impl UiState {
             self.scroll_y = orig_scroll_y;
             
             // Draw Bottom Pane (Pane 1)
-            let (p1_buffer, p1_cursor, p1_paths, p1_modified, p1_active_idx) = if active_pane_idx == 1 {
-                (buffer, cursor, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
+            let (p1_buffer, p1_cursor, p1_secondary, p1_paths, p1_modified, p1_active_idx) = if active_pane_idx == 1 {
+                (buffer, cursor, secondary_cursors, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
             } else {
                 let inactive_pane = &inactive_panes[0];
                 let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
                 let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
                 let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
                 let active_tab = &inactive_pane.tabs[in_active_idx];
-                (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
+                (&active_tab.buffer, &active_tab.cursor, &active_tab.secondary_cursors[..], in_paths, in_modified, in_active_idx)
             };
             
             let orig_scroll_x = self.scroll_x;
@@ -727,7 +730,7 @@ impl UiState {
                 }
             }
             let p1_scroll_x = if active_pane_idx == 1 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
-
+ 
             // Temporarily shift titlebar_height to start bottom pane at main_y + pane_height
             let orig_titlebar_height = self.titlebar_height;
             self.titlebar_height = main_y + pane_height;
@@ -740,6 +743,7 @@ impl UiState {
                 queue,
                 p1_buffer,
                 p1_cursor,
+                p1_secondary,
                 width,
                 mouse_x,
                 mouse_y,
@@ -773,15 +777,15 @@ impl UiState {
             let pane_width = editor_area_width / 2.0;
             
             // Draw Left Pane (Pane 0)
-            let (p0_buffer, p0_cursor, p0_paths, p0_modified, p0_active_idx) = if active_pane_idx == 0 {
-                (buffer, cursor, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
+            let (p0_buffer, p0_cursor, p0_secondary, p0_paths, p0_modified, p0_active_idx) = if active_pane_idx == 0 {
+                (buffer, cursor, secondary_cursors, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
             } else {
                 let inactive_pane = &inactive_panes[0];
                 let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
                 let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
                 let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
                 let active_tab = &inactive_pane.tabs[in_active_idx];
-                (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
+                (&active_tab.buffer, &active_tab.cursor, &active_tab.secondary_cursors[..], in_paths, in_modified, in_active_idx)
             };
             
             // Left pane ends at sidebar_original + pane_width
@@ -797,7 +801,7 @@ impl UiState {
                 }
             }
             let p0_scroll_x = if active_pane_idx == 0 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
-
+ 
             crate::ui::components::editor_view::draw_editor_view(
                 self,
                 vertices,
@@ -806,6 +810,7 @@ impl UiState {
                 queue,
                 p0_buffer,
                 p0_cursor,
+                p0_secondary,
                 left_pane_width,
                 mouse_x,
                 mouse_y,
@@ -822,15 +827,15 @@ impl UiState {
             self.scroll_y = orig_scroll_y;
             
             // Draw Right Pane (Pane 1)
-            let (p1_buffer, p1_cursor, p1_paths, p1_modified, p1_active_idx) = if active_pane_idx == 1 {
-                (buffer, cursor, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
+            let (p1_buffer, p1_cursor, p1_secondary, p1_paths, p1_modified, p1_active_idx) = if active_pane_idx == 1 {
+                (buffer, cursor, secondary_cursors, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
             } else {
                 let inactive_pane = &inactive_panes[0];
                 let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
                 let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
                 let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
                 let active_tab = &inactive_pane.tabs[in_active_idx];
-                (&active_tab.buffer, &active_tab.cursor, in_paths, in_modified, in_active_idx)
+                (&active_tab.buffer, &active_tab.cursor, &active_tab.secondary_cursors[..], in_paths, in_modified, in_active_idx)
             };
             
             let orig_scroll_x = self.scroll_x;
@@ -843,7 +848,7 @@ impl UiState {
                 }
             }
             let p1_scroll_x = if active_pane_idx == 1 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
-
+ 
             // Temporarily shift sidebar_width to start right pane at sidebar_original + pane_width
             self.sidebar_width = sidebar_original + pane_width;
             
@@ -855,6 +860,7 @@ impl UiState {
                 queue,
                 p1_buffer,
                 p1_cursor,
+                p1_secondary,
                 width,
                 mouse_x,
                 mouse_y,
