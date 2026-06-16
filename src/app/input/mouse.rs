@@ -10,29 +10,7 @@ use crate::renderer::atlas::FontAtlas;
 use crate::app::state::AppState;
 use crate::app::handler::handle_action;
 
-fn get_tab_display_name(path_opt: Option<&str>, ui: &UiState) -> String {
-    let is_diagnostics = path_opt == Some("diagnostics://project");
-    if is_diagnostics {
-        let mut err_count = 0;
-        let mut warn_count = 0;
-        for (e, w) in ui.lsp_diagnostics.values() {
-            err_count += *e;
-            warn_count += *w;
-        }
-        if err_count > 0 {
-            format!("  ⊗ {}", err_count)
-        } else if warn_count > 0 {
-            format!("  ⚠ {}", warn_count)
-        } else {
-            "  ⊗ 0".to_string()
-        }
-    } else {
-        path_opt
-            .and_then(|p| std::path::Path::new(p).file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "untitled.txt".to_string())
-    }
-}
+
 
 pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
     if state.is_actually_dragging_tab() {
@@ -275,7 +253,7 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
                     let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
                     let close_reserved = 8.0f32 + tab_close_icon_sz;
                     for t in &state.tabs {
-                        let file_name = get_tab_display_name(t.path.as_deref(), ui);
+                        let file_name = ui.get_tab_name(t.path.as_deref());
                         let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
                         let dot_reserved = 18.0f32;
                         let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
@@ -305,7 +283,7 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
                         let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
                         let close_reserved = 8.0f32 + tab_close_icon_sz;
                         for t in tabs_0 {
-                            let file_name = get_tab_display_name(t.path.as_deref(), ui);
+                            let file_name = ui.get_tab_name(t.path.as_deref());
                             let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
                             let dot_reserved = 18.0f32;
                             let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
@@ -319,7 +297,7 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
                         let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
                         let close_reserved = 8.0f32 + tab_close_icon_sz;
                         for t in tabs_1 {
-                            let file_name = get_tab_display_name(t.path.as_deref(), ui);
+                            let file_name = ui.get_tab_name(t.path.as_deref());
                             let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
                             let dot_reserved = 18.0f32;
                             let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
@@ -599,10 +577,7 @@ pub fn handle_cursor_moved(
                 let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
                 for idx in 0..tab_paths.len() {
                     let path_opt = &tab_paths[idx];
-                    let file_name = path_opt.as_ref()
-                        .and_then(|p| std::path::Path::new(p).file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "untitled.txt".to_string());
+                    let file_name = ui.get_tab_name(path_opt.as_deref());
                     let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
                     let dot_reserved = 18.0f32;
                     let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
@@ -649,10 +624,7 @@ pub fn handle_cursor_moved(
         let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
         for idx in 0..tab_paths.len() {
             let path_opt = &tab_paths[idx];
-            let file_name = path_opt.as_ref()
-                .and_then(|p| std::path::Path::new(p).file_name())
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "untitled.txt".to_string());
+            let file_name = ui.get_tab_name(path_opt.as_deref());
             let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
             let dot_reserved = 18.0f32;
             let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
@@ -1795,10 +1767,22 @@ pub fn handle_mouse_input(
                                     state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                                     state.active_pane_idx = 0;
                                     state.is_split_horizontal = false;
+                                    
+                                    let visible_width = size.width as f32 - sidebar_original;
+                                    let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+                                    state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
                                 } else {
                                     state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
                                     let target_pane = 1 - state.active_pane_idx;
                                     state.switch_pane(target_pane);
+                                    
+                                    let visible_width = if state.is_split_horizontal {
+                                        size.width as f32 - sidebar_original
+                                    } else {
+                                        ((size.width as f32 - sidebar_original) / 2.0).round()
+                                    };
+                                    let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+                                    state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
                                 }
                                 if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
                                     ui.scroll_x = active_tab.scroll_x;
@@ -1845,11 +1829,14 @@ pub fn handle_mouse_input(
                                 } else if state.mouse_x < sidebar_original + editor_area_width * 0.5 {
                                     // Left Split
                                     state.is_split_horizontal = false;
-                                    let existing_pane = crate::app::state::Pane {
+                                    let mut existing_pane = crate::app::state::Pane {
                                         tabs: std::mem::take(&mut state.tabs),
                                         active_tab_idx: state.active_tab_idx,
                                         tab_scroll_x: state.tab_scroll_x,
                                     };
+                                    let visible_width = ((size.width as f32 - sidebar_original) / 2.0).round();
+                                    let existing_paths: Vec<Option<String>> = existing_pane.tabs.iter().map(|t| t.path.clone()).collect();
+                                    existing_pane.tab_scroll_x = ui.scroll_to_tab(existing_pane.active_tab_idx, &existing_paths, visible_width, existing_pane.tab_scroll_x);
                                     state.inactive_panes.push(existing_pane);
                                     state.tabs = vec![tab_to_move];
                                     state.active_tab_idx = 0;
@@ -1864,6 +1851,9 @@ pub fn handle_mouse_input(
                                         tab_scroll_x: 0.0,
                                     });
                                     state.switch_pane(1);
+                                    let visible_width = ((size.width as f32 - sidebar_original) / 2.0).round();
+                                    let existing_paths: Vec<Option<String>> = state.inactive_panes[0].tabs.iter().map(|t| t.path.clone()).collect();
+                                    state.inactive_panes[0].tab_scroll_x = ui.scroll_to_tab(state.inactive_panes[0].active_tab_idx, &existing_paths, visible_width, state.inactive_panes[0].tab_scroll_x);
                                 }
                                 
                                 if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
@@ -1884,10 +1874,22 @@ pub fn handle_mouse_input(
                                         state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
                                         state.active_pane_idx = 0;
                                         state.is_split_horizontal = false;
+                                        
+                                        let visible_width = size.width as f32 - sidebar_original;
+                                        let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+                                        state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
                                     } else {
                                         state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
                                         let target_pane = 1 - state.active_pane_idx;
                                         state.switch_pane(target_pane);
+                                        
+                                        let visible_width = if state.is_split_horizontal {
+                                            size.width as f32 - sidebar_original
+                                        } else {
+                                            ((size.width as f32 - sidebar_original) / 2.0).round()
+                                        };
+                                        let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+                                        state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
                                     }
                                     if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
                                         ui.scroll_x = active_tab.scroll_x;
