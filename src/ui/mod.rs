@@ -137,6 +137,14 @@ pub struct UiState {
     pub search_focus_replace: bool,
     pub search_matches: Vec<(usize, usize)>,
     pub active_search_match_idx: usize,
+    pub search_case_sensitive: bool,
+    pub search_whole_word: bool,
+    pub search_regex: bool,
+    pub global_search_case_sensitive: bool,
+    pub global_search_whole_word: bool,
+    pub global_search_regex: bool,
+    pub global_search_focus_replace: bool,
+    pub global_replace_query: String,
 }
 
 
@@ -299,6 +307,14 @@ impl UiState {
             search_focus_replace: false,
             search_matches: Vec::new(),
             active_search_match_idx: 0,
+            search_case_sensitive: false,
+            search_whole_word: false,
+            search_regex: false,
+            global_search_case_sensitive: false,
+            global_search_whole_word: false,
+            global_search_regex: false,
+            global_search_focus_replace: false,
+            global_replace_query: String::new(),
         };
 
         state.rebuild_tree();
@@ -334,15 +350,27 @@ impl UiState {
         let buffer = &state.tabs[state.active_tab_idx].buffer;
         let query = &self.search_query;
         
-        for (line_idx, line) in buffer.lines().iter().enumerate() {
-            let mut start_idx = 0;
-            let line_lower = line.to_lowercase();
-            let query_lower = query.to_lowercase();
-            while let Some(byte_offset) = line_lower[start_idx..].find(&query_lower) {
-                let actual_byte_idx = start_idx + byte_offset;
-                let char_idx = line[..actual_byte_idx].chars().count();
-                self.search_matches.push((line_idx, char_idx));
-                start_idx = actual_byte_idx + query.len().max(1);
+        let pattern = if self.search_regex {
+            query.clone()
+        } else {
+            regex::escape(query)
+        };
+        
+        let pattern = if self.search_whole_word {
+            format!(r"\b{}\b", pattern)
+        } else {
+            pattern
+        };
+        
+        let mut builder = regex::RegexBuilder::new(&pattern);
+        builder.case_insensitive(!self.search_case_sensitive);
+        
+        if let Ok(re) = builder.build() {
+            for (line_idx, line) in buffer.lines().iter().enumerate() {
+                for m in re.find_iter(line) {
+                    let char_idx = line[..m.start()].chars().count();
+                    self.search_matches.push((line_idx, char_idx));
+                }
             }
         }
         
