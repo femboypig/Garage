@@ -450,7 +450,7 @@ impl UiState {
     pub fn execute_command(
         &mut self,
         cmd: (&'static str, &'static str),
-        _buffer: &mut Buffer,
+        buffer: &mut Buffer,
         _cursor: &mut Cursor,
         active_path: Option<&str>,
     ) -> UiAction {
@@ -500,8 +500,16 @@ impl UiState {
             "ASCII" => { self.forced_encodings.insert(path_key, "ASCII".to_string()); UiAction::None }
             "ISO-8859-1" => { self.forced_encodings.insert(path_key, "ISO-8859-1".to_string()); UiAction::None }
             // Line Endings
-            "LF" => { self.forced_line_endings.insert(path_key, "LF".to_string()); UiAction::None }
-            "CRLF" => { self.forced_line_endings.insert(path_key, "CRLF".to_string()); UiAction::None }
+            "LF" => {
+                self.forced_line_endings.insert(path_key, "LF".to_string());
+                buffer.line_ending = "LF".to_string();
+                UiAction::None
+            }
+            "CRLF" => {
+                self.forced_line_endings.insert(path_key, "CRLF".to_string());
+                buffer.line_ending = "CRLF".to_string();
+                UiAction::None
+            }
             _ => UiAction::None,
         }
     }
