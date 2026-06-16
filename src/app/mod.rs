@@ -344,6 +344,10 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 let ui_ref = ui.as_mut().unwrap();
                 let atlas_ref = atlas.as_mut().unwrap();
 
+                let old_tab_idx = state.active_tab_idx;
+                let old_pane_idx = state.active_pane_idx;
+                let old_term_focus = state.terminal_focus;
+
                 match event {
                     WindowEvent::CloseRequested => unreachable!(),
 
@@ -382,6 +386,13 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     }
 
                     WindowEvent::MouseInput { state: input_state, button, .. } => {
+                        let was_modified_state = if state.active_tab_idx < state.tabs.len() {
+                            let tab = &state.tabs[state.active_tab_idx];
+                            Some((tab.buffer.undo_stack.len(), tab.buffer.redo_stack.len(), tab.buffer.is_modified))
+                        } else {
+                            None
+                        };
+
                         input::handle_mouse_input(
                             ui_ref,
                             &mut state,
@@ -393,6 +404,18 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             input_state,
                             button,
                         );
+
+                        let is_modified_state = if state.active_tab_idx < state.tabs.len() {
+                            let tab = &state.tabs[state.active_tab_idx];
+                            Some((tab.buffer.undo_stack.len(), tab.buffer.redo_stack.len(), tab.buffer.is_modified))
+                        } else {
+                            None
+                        };
+
+                        if was_modified_state != is_modified_state {
+                            state.last_edit_time = Some(std::time::Instant::now());
+                        }
+
                         redraw_requested = true;
                     }
 
@@ -403,6 +426,13 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                     WindowEvent::KeyboardInput { event: key_event, .. } => {
                         if key_event.state == winit::event::ElementState::Pressed {
+                            let was_modified_state = if state.active_tab_idx < state.tabs.len() {
+                                let tab = &state.tabs[state.active_tab_idx];
+                                Some((tab.buffer.undo_stack.len(), tab.buffer.redo_stack.len(), tab.buffer.is_modified))
+                            } else {
+                                None
+                            };
+
                             input::handle_keyboard_input(
                                 ui_ref,
                                 &mut state,
@@ -415,6 +445,17 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                                 key_event.physical_key,
                             );
 
+                            let is_modified_state = if state.active_tab_idx < state.tabs.len() {
+                                let tab = &state.tabs[state.active_tab_idx];
+                                Some((tab.buffer.undo_stack.len(), tab.buffer.redo_stack.len(), tab.buffer.is_modified))
+                            } else {
+                                None
+                            };
+
+                            if was_modified_state != is_modified_state {
+                                state.last_edit_time = Some(std::time::Instant::now());
+                            }
+
                             if !state.terminal_focus {
                                 let active_tab = &state.tabs[state.active_tab_idx];
                                 if let Some(ref path) = active_tab.path {
@@ -425,7 +466,17 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             redraw_requested = true;
                         }
                     }
+
+                    WindowEvent::Focused(focused) => {
+                        if !focused {
+                            autosave::run_autosave_if_needed(ui_ref, &mut state, autosave::AutosaveTrigger::WindowChange);
+                        }
+                    }
                     _ => {}
+                }
+
+                if state.active_tab_idx != old_tab_idx || state.active_pane_idx != old_pane_idx || state.terminal_focus != old_term_focus {
+                    autosave::run_autosave_if_needed(ui_ref, &mut state, autosave::AutosaveTrigger::FocusChange);
                 }
             }
             Event::AboutToWait => {
@@ -437,6 +488,20 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     let ui_ref = ui.as_mut().unwrap();
                     let gpu_ref = gpu.as_mut().unwrap();
                     let atlas_ref = atlas.as_mut().unwrap();
+
+                    // Delay-based autosave check
+                    if let crate::editor::config::AutosaveSetting::AfterDelay { milliseconds } = ui_ref.config.autosave {
+                        if let Some(last_edit) = state.last_edit_time {
+                            let delay = std::time::Duration::from_millis(milliseconds);
+                            if last_edit.elapsed() >= delay {
+                                autosave::run_autosave_if_needed(ui_ref, &mut state, autosave::AutosaveTrigger::Delay);
+                                state.last_edit_time = None;
+                            } else {
+                                let wake_time = last_edit + delay;
+                                elwt.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(wake_time));
+                            }
+                        }
+                    }
 
                     // Periodic auto-save (every 2 seconds)
                     if last_autosave.elapsed() >= std::time::Duration::from_secs(2) {
