@@ -328,33 +328,54 @@ impl UiState {
         let tx = self.global_search_tx.clone();
         let proxy = self.event_loop_proxy.clone();
         
+        let case_sensitive = self.global_search_case_sensitive;
+        let whole_word = self.global_search_whole_word;
+        let is_regex = self.global_search_regex;
+
         std::thread::spawn(move || {
             let mut results = Vec::new();
-            let walker = ignore::WalkBuilder::new(".")
-                .hidden(true)
-                .git_ignore(true)
-                .parents(true)
-                .build();
-                
-            let query_lower = query.to_lowercase();
-            for result in walker {
-                if let Ok(entry) = result {
-                    if entry.file_type().map_or(false, |t| t.is_file()) {
-                        let path = entry.path().to_path_buf();
-                        if let Ok(content) = std::fs::read_to_string(&path) {
-                            for (line_idx, line) in content.lines().enumerate() {
-                                if line.to_lowercase().contains(&query_lower) {
-                                    results.push((path.clone(), line_idx, line.trim().to_string()));
-                                    if results.len() >= 100 {
-                                        break;
+            
+            let pattern = if is_regex {
+                query.clone()
+            } else {
+                regex::escape(&query)
+            };
+            
+            let pattern = if whole_word {
+                format!(r"\b{}\b", pattern)
+            } else {
+                pattern
+            };
+            
+            let mut builder = regex::RegexBuilder::new(&pattern);
+            builder.case_insensitive(!case_sensitive);
+            
+            if let Ok(re) = builder.build() {
+                let walker = ignore::WalkBuilder::new(".")
+                    .hidden(true)
+                    .git_ignore(true)
+                    .parents(true)
+                    .build();
+                    
+                for result in walker {
+                    if let Ok(entry) = result {
+                        if entry.file_type().map_or(false, |t| t.is_file()) {
+                            let path = entry.path().to_path_buf();
+                            if let Ok(content) = std::fs::read_to_string(&path) {
+                                for (line_idx, line) in content.lines().enumerate() {
+                                    if re.is_match(line) {
+                                        results.push((path.clone(), line_idx, line.trim().to_string()));
+                                        if results.len() >= 100 {
+                                            break;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                if results.len() >= 100 {
-                    break;
+                    if results.len() >= 100 {
+                        break;
+                    }
                 }
             }
             let _ = tx.send(results);
