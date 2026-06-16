@@ -383,9 +383,18 @@ pub fn handle_terminal_input(
 ) -> bool {
     if state.terminal_focus && !state.dock_terminals.is_empty() {
         let active_term = &mut state.dock_terminals[state.active_terminal_idx];
+        
+        let ctrl = state.modifiers.control_key();
+        let shift = state.modifiers.shift_key();
+        let alt = state.modifiers.alt_key();
+
+        let modifier_code = 1 
+            + if shift { 1 } else { 0 } 
+            + if alt { 2 } else { 0 } 
+            + if ctrl { 4 } else { 0 };
+
         let bytes_to_write: Option<Vec<u8>> = match logical_key {
             Key::Character(text) => {
-                let ctrl = state.modifiers.control_key();
                 if ctrl && text.len() == 1 {
                     let c = text.chars().next().unwrap();
                     if c.is_ascii_alphabetic() {
@@ -394,24 +403,117 @@ pub fn handle_terminal_input(
                     } else {
                         Some(text.as_bytes().to_vec())
                     }
+                } else if alt && text.len() == 1 {
+                    // Alt + key sends ESC followed by the key character (meta key)
+                    let mut bytes = vec![27];
+                    bytes.extend_from_slice(text.as_bytes());
+                    Some(bytes)
                 } else {
                     Some(text.as_bytes().to_vec())
                 }
             }
             Key::Named(NamedKey::Enter) => Some(vec![b'\r']),
-            Key::Named(NamedKey::Space) => Some(vec![b' ']),
-            Key::Named(NamedKey::Backspace) => Some(vec![127]),
+            Key::Named(NamedKey::Space) => {
+                if ctrl {
+                    Some(vec![0])
+                } else {
+                    Some(vec![b' '])
+                }
+            }
+            Key::Named(NamedKey::Backspace) => {
+                if alt {
+                    Some(vec![27, 127])
+                } else if ctrl {
+                    Some(vec![8])
+                } else {
+                    Some(vec![127])
+                }
+            }
             Key::Named(NamedKey::Tab) => Some(vec![b'\t']),
             Key::Named(NamedKey::Escape) => Some(vec![27]),
-            Key::Named(NamedKey::ArrowUp) => Some(b"\x1b[A".to_vec()),
-            Key::Named(NamedKey::ArrowDown) => Some(b"\x1b[B".to_vec()),
-            Key::Named(NamedKey::ArrowRight) => Some(b"\x1b[C".to_vec()),
-            Key::Named(NamedKey::ArrowLeft) => Some(b"\x1b[D".to_vec()),
-            Key::Named(NamedKey::Home) => Some(b"\x1b[H".to_vec()),
-            Key::Named(NamedKey::End) => Some(b"\x1b[F".to_vec()),
+            
+            Key::Named(NamedKey::ArrowUp) => {
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}A", modifier_code).into_bytes())
+                } else if active_term.grid.decckm {
+                    Some(b"\x1bOA".to_vec())
+                } else {
+                    Some(b"\x1b[A".to_vec())
+                }
+            }
+            Key::Named(NamedKey::ArrowDown) => {
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}B", modifier_code).into_bytes())
+                } else if active_term.grid.decckm {
+                    Some(b"\x1bOB".to_vec())
+                } else {
+                    Some(b"\x1b[B".to_vec())
+                }
+            }
+            Key::Named(NamedKey::ArrowRight) => {
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}C", modifier_code).into_bytes())
+                } else if active_term.grid.decckm {
+                    Some(b"\x1bOC".to_vec())
+                } else {
+                    Some(b"\x1b[C".to_vec())
+                }
+            }
+            Key::Named(NamedKey::ArrowLeft) => {
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}D", modifier_code).into_bytes())
+                } else if active_term.grid.decckm {
+                    Some(b"\x1bOD".to_vec())
+                } else {
+                    Some(b"\x1b[D".to_vec())
+                }
+            }
+            
+            Key::Named(NamedKey::Home) => {
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}H", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[H".to_vec())
+                }
+            }
+            Key::Named(NamedKey::End) => {
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}F", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[F".to_vec())
+                }
+            }
+            Key::Named(NamedKey::Delete) => {
+                if modifier_code > 1 {
+                    Some(format!("\x1b[3;{}~", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[3~".to_vec())
+                }
+            }
+            Key::Named(NamedKey::Insert) => {
+                if modifier_code > 1 {
+                    Some(format!("\x1b[2;{}~", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[2~".to_vec())
+                }
+            }
+            Key::Named(NamedKey::PageUp) => {
+                if modifier_code > 1 {
+                    Some(format!("\x1b[5;{}~", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[5~".to_vec())
+                }
+            }
+            Key::Named(NamedKey::PageDown) => {
+                if modifier_code > 1 {
+                    Some(format!("\x1b[6;{}~", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[6~".to_vec())
+                }
+            }
             _ => None,
         };
- 
+
         if let Some(bytes) = bytes_to_write {
             let _ = active_term.pty_writer.write_all(&bytes);
             let _ = active_term.pty_writer.flush();
