@@ -9,6 +9,7 @@ pub struct Tab {
     pub path: Option<String>,
     pub buffer: Buffer,
     pub cursor: Cursor,
+    pub secondary_cursors: Vec<Cursor>,
     pub scroll_x: usize,
     pub scroll_y: usize,
 }
