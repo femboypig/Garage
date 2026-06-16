@@ -14,6 +14,7 @@ dependencies = [
  "notify",
  "pollster",
  "portable-pty",
+ "regex",
  "resvg",
  "serde",
  "serde_json",
