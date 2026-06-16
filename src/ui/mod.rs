@@ -368,6 +368,9 @@ impl UiState {
     }
 
     pub fn is_tiling_wm(&self) -> bool {
+        if let Some(overridden) = self.config.override_tiling_wm {
+            return overridden;
+        }
         std::env::var("I3SOCK").is_ok()
             || std::env::var("SWAYSOCK").is_ok()
             || std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
