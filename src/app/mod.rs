@@ -512,6 +512,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     // Drain file watcher events
                     while let Ok(res) = watcher_rx.try_recv() {
                         if let Ok(event) = res {
+                            if matches!(event.kind, notify::EventKind::Access(_)) {
+                                continue;
+                            }
                             for p in event.paths {
                                 let normalized = crate::editor::normalize_path(&p);
                                 let abs_str = normalized.to_string_lossy().to_string();
