@@ -68,11 +68,7 @@ pub fn handle_keyboard_input(
                     return;
                 }
                 crate::editor::actions::Action::GlobalSearch => {
-                    ui.active_modal = Some(crate::ui::ModalType::GlobalSearch);
-                    ui.global_search_query.clear();
-                    ui.global_search_results.clear();
-                    ui.global_search_selected = 0;
-                    ui.global_search_scroll = 0;
+                    handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from("search://project")), window, elwt, gpu, atlas, font_bytes);
                     window.request_redraw();
                     return;
                 }
@@ -182,11 +178,7 @@ pub fn handle_keyboard_input(
                     return;
                 }
                 crate::editor::actions::Action::GlobalSearch => {
-                    ui.active_modal = Some(crate::ui::ModalType::GlobalSearch);
-                    ui.global_search_query.clear();
-                    ui.global_search_results.clear();
-                    ui.global_search_selected = 0;
-                    ui.global_search_scroll = 0;
+                    handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from("search://project")), window, elwt, gpu, atlas, font_bytes);
                     window.request_redraw();
                     return;
                 }
@@ -341,6 +333,24 @@ pub fn handle_keyboard_input(
 
     // 4. Delegate to virtual diagnostics view handler if active
     if handle_diagnostics_keyboard(
+        ui,
+        state,
+        window,
+        elwt,
+        gpu,
+        atlas,
+        font_bytes,
+        &logical_key,
+        physical_key,
+        ctrl,
+        shift,
+        alt,
+    ) {
+        return;
+    }
+
+    // 4b. Delegate to project search keyboard handler if active
+    if handle_project_search_keyboard(
         ui,
         state,
         window,
@@ -1428,4 +1438,90 @@ pub fn handle_editor_keyboard(
     ui.scroll_to_cursor(&active_tab.cursor, active_tab.buffer.len(), window.inner_size().width as f32, window.inner_size().height as f32);
     update_cursor_icon(window, ui, state);
     window.request_redraw();
+}
+
+pub fn handle_project_search_keyboard(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &mut Arc<Window>,
+    elwt: &EventLoopWindowTarget<()>,
+    gpu: &mut Option<GpuContext>,
+    atlas: &mut FontAtlas,
+    font_bytes: &[u8],
+    logical_key: &Key,
+    physical_key: PhysicalKey,
+    ctrl: bool,
+    shift: bool,
+    alt: bool,
+) -> bool {
+    if state.tabs.is_empty() || state.active_tab_idx >= state.tabs.len() {
+        return false;
+    }
+    if state.tabs[state.active_tab_idx].path.as_deref() != Some("search://project") {
+        return false;
+    }
+
+    if let Some(action) = crate::editor::keymap::map_key(&ui.keymap, logical_key, physical_key, ctrl, shift, alt, &["Editor", "Workspace"]) {
+        let is_global_action = match &action {
+            crate::editor::actions::Action::ZoomIn |
+            crate::editor::actions::Action::ZoomOut |
+            crate::editor::actions::Action::CommandPalette |
+            crate::editor::actions::Action::GlobalSearch |
+            crate::editor::actions::Action::Escape => true,
+            _ => false,
+        };
+        if is_global_action {
+            return false;
+        }
+    }
+
+    match logical_key {
+        Key::Named(NamedKey::ArrowDown) => {
+            let items_count = ui.global_search_results.len();
+            if items_count > 0 {
+                ui.global_search_selected = (ui.global_search_selected + 1) % items_count;
+            }
+            window.request_redraw();
+        }
+        Key::Named(NamedKey::ArrowUp) => {
+            let items_count = ui.global_search_results.len();
+            if items_count > 0 {
+                ui.global_search_selected = (ui.global_search_selected + items_count - 1) % items_count;
+            }
+            window.request_redraw();
+        }
+        Key::Named(NamedKey::Enter) => {
+            let results_len = ui.global_search_results.len();
+            if ui.global_search_selected < results_len {
+                let (path, line_idx, _) = &ui.global_search_results[ui.global_search_selected];
+                handle_action(ui, state, UiAction::OpenFileAt(path.clone(), *line_idx), window, elwt, gpu, atlas, font_bytes);
+            }
+            window.request_redraw();
+        }
+        Key::Named(NamedKey::Backspace) => {
+            if !ctrl && !alt {
+                ui.global_search_query.pop();
+                ui.global_search_selected = 0;
+                let q = ui.global_search_query.clone();
+                ui.run_global_search(q);
+                window.request_redraw();
+            }
+        }
+        Key::Character(text) => {
+            if !ctrl && !alt {
+                if text.chars().count() == 1 {
+                    let c = text.chars().next().unwrap();
+                    if c.is_ascii_graphic() || c == ' ' {
+                        ui.global_search_query.push(c);
+                        ui.global_search_selected = 0;
+                        let q = ui.global_search_query.clone();
+                        ui.run_global_search(q);
+                        window.request_redraw();
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    true
 }
