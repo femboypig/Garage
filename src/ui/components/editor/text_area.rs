@@ -116,6 +116,21 @@ pub fn draw_text_area(
 ) {
     let white_uv = atlas.white_pixel_uv();
     
+    if active_file_path == Some("search://project") {
+        super::project_search::draw_project_search(
+            ui,
+            vertices,
+            indices,
+            atlas,
+            queue,
+            text_area_x,
+            editor_y,
+            text_viewport_w,
+            editor_height,
+        );
+        return;
+    }
+    
     if active_file_path == Some("diagnostics://project") {
         // Clear click targets
         if start_idx == ui.scroll_y {
