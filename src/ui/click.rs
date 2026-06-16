@@ -37,22 +37,12 @@ impl UiState {
         &mut self,
         mx: f32,
         my: f32,
-        width: f32,
+        _width: f32,
         buffer: &mut Buffer,
         cursor: &mut Cursor,
     ) -> Option<UiAction> {
         // 1. Check Titlebar Menu Clicks (Contiguous adjacent layout)
         if my < self.titlebar_height {
-            if !self.is_tiling_wm() {
-                let btn_w = 45.0f32;
-                if mx >= width - btn_w {
-                    return Some(UiAction::Exit);
-                } else if mx >= width - btn_w * 2.0 && mx < width - btn_w {
-                    return Some(UiAction::MaximizeWindow);
-                } else if mx >= width - btn_w * 3.0 && mx < width - btn_w * 2.0 {
-                    return Some(UiAction::MinimizeWindow);
-                }
-            }
 
             let menu_items_raw = [
                 ("Garage", MenuType::Garage),
