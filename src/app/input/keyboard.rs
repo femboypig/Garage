@@ -654,7 +654,7 @@ pub fn handle_global_search_input(
             Key::Character(text) => {
                 if text.chars().count() == 1 {
                     let c = text.chars().next().unwrap();
-                    if c.is_ascii_graphic() || c == ' ' {
+                    if !c.is_control() {
                         ui.global_search_query.push(c);
                         ui.global_search_selected = 0;
                         let q = ui.global_search_query.clone();
@@ -1511,7 +1511,7 @@ pub fn handle_project_search_keyboard(
             if !ctrl && !alt {
                 if text.chars().count() == 1 {
                     let c = text.chars().next().unwrap();
-                    if c.is_ascii_graphic() || c == ' ' {
+                    if !c.is_control() {
                         ui.global_search_query.push(c);
                         ui.global_search_selected = 0;
                         let q = ui.global_search_query.clone();
