@@ -102,6 +102,7 @@ pub fn draw_text_area(
     queue: &wgpu::Queue,
     buffer: &Buffer,
     cursor: &Cursor,
+    secondary_cursors: &[Cursor],
     editor_y: f32,
     editor_height: f32,
     text_area_x: f32,
@@ -727,5 +728,24 @@ pub fn draw_text_area(
         }
     }
 
-
+    // Draw secondary cursors
+    for cur in secondary_cursors {
+        if cur.line >= ui.scroll_y && cur.line < ui.scroll_y + visible_lines {
+            let cur_row_y = editor_y + (cur.line - ui.scroll_y) as f32 * ui.buffer_line_height;
+            let cur_x = text_area_x + (cur.col as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
+            
+            if cur.col >= ui.scroll_x && cur_x + 2.0 <= minimap_x {
+                ui.push_quad(
+                    vertices,
+                    indices,
+                    cur_x,
+                    cur_row_y + 1.0,
+                    2.0,
+                    ui.buffer_line_height - 2.0,
+                    white_uv,
+                    ui.config.theme.cursor_color,
+                );
+            }
+        }
+    }
 }
