@@ -57,6 +57,7 @@ pub struct TerminalGrid {
     pub current_fg: [f32; 4],
     pub current_bg: [f32; 4],
     pub bold: bool,
+    pub inverse: bool,
     pub title: String,
     pub scrollback: Vec<Vec<Cell>>,
     pub scroll_offset: usize,
@@ -79,6 +80,7 @@ impl TerminalGrid {
             current_fg: DEFAULT_FG,
             current_bg: DEFAULT_BG,
             bold: false,
+            inverse: false,
             title: String::new(),
             scrollback: Vec::new(),
             scroll_offset: 0,
@@ -220,8 +222,8 @@ impl vte::Perform for TerminalGrid {
             self.newline();
         }
         let idx = self.cursor_y * self.cols + self.cursor_x;
-        let fg = self.current_fg;
-        let bg = self.current_bg;
+        let fg = if self.inverse { self.current_bg } else { self.current_fg };
+        let bg = if self.inverse { self.current_fg } else { self.current_bg };
         let cells = self.get_cells_mut();
         if idx < cells.len() {
             cells[idx] = Cell {
@@ -271,12 +273,19 @@ impl vte::Perform for TerminalGrid {
                             self.current_fg = DEFAULT_FG;
                             self.current_bg = DEFAULT_BG;
                             self.bold = false;
+                            self.inverse = false;
                         }
                         1 => { // Bold
                             self.bold = true;
                         }
+                        7 => { // Reverse video
+                            self.inverse = true;
+                        }
                         22 => { // Normal color or intensity
                             self.bold = false;
+                        }
+                        27 => { // Positive image (normal video)
+                            self.inverse = false;
                         }
                         30..=37 => { // Foreground color
                             let idx = (p - 30) as usize;
