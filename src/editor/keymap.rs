@@ -108,7 +108,9 @@ const DEFAULT_KEYMAPS_JSON: &str = r#"[
       "alt-down": "editor::MoveLineDown",
       "shift-alt-up": "editor::DuplicateLine",
       "shift-alt-down": "editor::DuplicateLine",
-      "ctrl-shift-k": "editor::DeleteLine"
+      "ctrl-shift-k": "editor::DeleteLine",
+      "ctrl-alt-up": "editor::AddCursorUp",
+      "ctrl-alt-down": "editor::AddCursorDown"
     }
   }
 ]"#;
@@ -296,6 +298,8 @@ pub fn parse_action(action_str: &str) -> Option<Action> {
         "workspace::Find" | "editor::Find" => Some(Action::Find),
         "workspace::GlobalSearch" | "editor::GlobalSearch" => Some(Action::GlobalSearch),
         "workspace::Split" | "editor::Split" => Some(Action::Split),
+        "editor::AddCursorUp" => Some(Action::AddCursorUp),
+        "editor::AddCursorDown" => Some(Action::AddCursorDown),
         
         _ => None,
     }
@@ -406,8 +410,12 @@ pub fn map_key(
     
     if contexts.contains(&"Editor") {
         if let Key::Character(text) = logical_key {
-            if !ctrl && !alt && text.chars().count() == 1 {
-                return Some(Action::InsertChar(text.chars().next().unwrap()));
+            if !ctrl && !alt {
+                let text_str = text.to_string();
+                let has_non_control = text_str.chars().any(|c| !c.is_control());
+                if has_non_control {
+                    return Some(Action::InsertChar(text_str));
+                }
             }
         }
     }
