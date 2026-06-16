@@ -1757,18 +1757,42 @@ pub fn handle_mouse_input(
                                      let line_chars = active_tab.buffer.lines()[line_idx].chars().count();
                                      let col_idx = col_idx.min(line_chars);
  
-                                     let extend_selection = state.modifiers.shift_key();
-                                     if extend_selection {
-                                         if active_tab.cursor.selection_anchor.is_none() {
-                                             active_tab.cursor.selection_anchor = Some((active_tab.cursor.line, active_tab.cursor.col));
+                                     let alt = state.modifiers.alt_key();
+                                     if alt {
+                                         let clicked_pos = (line_idx, col_idx);
+                                         let mut found_idx = None;
+                                         for (idx, cur) in active_tab.secondary_cursors.iter().enumerate() {
+                                             if cur.line == clicked_pos.0 && cur.col == clicked_pos.1 {
+                                                 found_idx = Some(idx);
+                                                 break;
+                                             }
+                                         }
+                                         if let Some(idx) = found_idx {
+                                             active_tab.secondary_cursors.remove(idx);
+                                         } else {
+                                             let mut new_cur = crate::editor::cursor::Cursor::new();
+                                             new_cur.line = line_idx;
+                                             new_cur.col = col_idx;
+                                             new_cur.intended_col = col_idx;
+                                             new_cur.selection_anchor = Some((line_idx, col_idx));
+                                             active_tab.secondary_cursors.push(new_cur);
                                          }
                                      } else {
-                                         active_tab.cursor.selection_anchor = Some((line_idx, col_idx));
-                                     }
+                                         active_tab.secondary_cursors.clear();
  
-                                     active_tab.cursor.line = line_idx;
-                                     active_tab.cursor.col = col_idx;
-                                     active_tab.cursor.intended_col = col_idx;
+                                         let extend_selection = state.modifiers.shift_key();
+                                         if extend_selection {
+                                             if active_tab.cursor.selection_anchor.is_none() {
+                                                 active_tab.cursor.selection_anchor = Some((active_tab.cursor.line, active_tab.cursor.col));
+                                             }
+                                         } else {
+                                             active_tab.cursor.selection_anchor = Some((line_idx, col_idx));
+                                         }
+ 
+                                         active_tab.cursor.line = line_idx;
+                                         active_tab.cursor.col = col_idx;
+                                         active_tab.cursor.intended_col = col_idx;
+                                     }
  
                                      ui.scroll_to_cursor(&active_tab.cursor, active_tab.buffer.len(), size.width as f32, size.height as f32);
                                  }
