@@ -529,6 +529,12 @@ impl UiState {
         self.tab_scroll_x = tab_scroll_x;
         self.active_dock_tab = active_terminal_idx;
 
+        if self.show_search_panel {
+            self.breadcrumb_height = (self.ui_line_height * 1.8).round().max(30.0);
+        } else {
+            self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
+        }
+
         // Drain git branch channel
         if let Some(ref rx) = self.git_branch_rx {
             while let Ok(branch) = rx.try_recv() {
@@ -647,6 +653,7 @@ impl UiState {
                 status_y,
                 dragged_tab_idx,
                 self.tab_scroll_x,
+                true,
             );
         } else if is_split_horizontal {
             let editor_area_height = status_y - main_y;
@@ -692,6 +699,7 @@ impl UiState {
                 main_y + pane_height,
                 if active_pane_idx == 0 { dragged_tab_idx } else { None },
                 p0_scroll_x,
+                active_pane_idx == 0,
             );
             
             self.scroll_x = orig_scroll_x;
@@ -741,6 +749,7 @@ impl UiState {
                 status_y,
                 if active_pane_idx == 1 { dragged_tab_idx } else { None },
                 p1_scroll_x,
+                active_pane_idx == 1,
             );
 
             self.scroll_x = orig_scroll_x;
@@ -806,6 +815,7 @@ impl UiState {
                 status_y,
                 if active_pane_idx == 0 { dragged_tab_idx } else { None },
                 p0_scroll_x,
+                active_pane_idx == 0,
             );
             
             self.scroll_x = orig_scroll_x;
@@ -854,6 +864,7 @@ impl UiState {
                 status_y,
                 if active_pane_idx == 1 { dragged_tab_idx } else { None },
                 p1_scroll_x,
+                active_pane_idx == 1,
             );
 
             self.scroll_x = orig_scroll_x;
