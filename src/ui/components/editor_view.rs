@@ -166,6 +166,8 @@ pub fn draw_editor_view(
         active_file_path,
         tab_paths,
         tab_modified,
+        mouse_x,
+        mouse_y,
     );
 
     // 5. Draw Scrollbars
