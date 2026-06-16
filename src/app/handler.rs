@@ -353,7 +353,7 @@ pub fn handle_action(
                     ((size.width as f32 - ui.sidebar_width) / 2.0).round()
                 };
                 state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
-
+                crate::app::autosave::save_session_and_dirty_buffers(state);
             }
         }
         UiAction::ForceCloseTab(idx) => {
@@ -394,7 +394,7 @@ pub fn handle_action(
                 ((size.width as f32 - ui.sidebar_width) / 2.0).round()
             };
             state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
-
+            crate::app::autosave::save_session_and_dirty_buffers(state);
         }
         UiAction::SaveAndCloseTab(idx) => {
             let tab_to_save = &mut state.tabs[idx];
@@ -448,7 +448,7 @@ pub fn handle_action(
                 ((size.width as f32 - ui.sidebar_width) / 2.0).round()
             };
             state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
-
+            crate::app::autosave::save_session_and_dirty_buffers(state);
         }
         UiAction::MinimizeWindow => {
             window.set_minimized(true);
