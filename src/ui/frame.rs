@@ -65,8 +65,8 @@ impl UiState {
         // Round panel coordinates to integer pixels for crisp borders
         let rx = x.round();
         let ry = y.round();
-        let rw = w.round();
-        let rh = h.round();
+        let rw = (x + w).round() - rx;
+        let rh = (y + h).round() - ry;
 
         let start = vertices.len() as u16;
         vertices.push(Vertex {
