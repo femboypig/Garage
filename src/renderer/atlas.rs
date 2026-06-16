@@ -11,6 +11,38 @@ pub struct GlyphInfo {
     pub bearing_y: f32,
 }
 
+fn find_nerd_fonts_recursive(dir: &std::path::Path, fonts: &mut Vec<fontdue::Font>) {
+    if fonts.len() >= 8 {
+        return;
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                find_nerd_fonts_recursive(&path, fonts);
+            } else if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    if ext == "ttf" || ext == "otf" {
+                        let filename = path.file_name().unwrap_or_default().to_string_lossy();
+                        if filename.contains("Nerd") || filename.contains("NF") || filename.contains("Symbols") || filename.contains("Powerline") {
+                            // Avoid adding duplicates (e.g. if we already loaded it or one with the same name)
+                            if let Ok(bytes) = std::fs::read(&path) {
+                                if let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
+                                    log::info!("Loaded Nerd Font from recursive search: {}", path.display());
+                                    fonts.push(font);
+                                    if fonts.len() >= 8 {
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn load_fallback_nerd_fonts() -> Vec<fontdue::Font> {
     let mut fonts = Vec::new();
     let preferred = [
@@ -29,31 +61,24 @@ fn load_fallback_nerd_fonts() -> Vec<fontdue::Font> {
         }
     }
 
-    // Fallback search
-    if let Ok(entries) = std::fs::read_dir("/usr/share/fonts/TTF") {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(ext) = path.extension() {
-                if ext == "ttf" || ext == "otf" {
-                    let name = path.to_string_lossy().to_string();
-                    if name.contains("Nerd") || name.contains("NF") || name.contains("Symbols") {
-                        if preferred.iter().any(|p| name.contains(p.split('/').last().unwrap())) {
-                            continue;
-                        }
-                        if let Ok(bytes) = std::fs::read(&path) {
-                            if let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
-                                log::info!("Loaded fallback Nerd Font from search: {}", name);
-                                fonts.push(font);
-                                if fonts.len() >= 5 {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+    // Standard system and user font paths to scan recursively
+    let mut dirs_to_scan = vec![
+        std::path::PathBuf::from("/usr/share/fonts"),
+        std::path::PathBuf::from("/usr/local/share/fonts"),
+    ];
+    if let Ok(home) = std::env::var("HOME") {
+        let home_path = std::path::PathBuf::from(home);
+        dirs_to_scan.push(home_path.join(".local/share/fonts"));
+        dirs_to_scan.push(home_path.join(".fonts"));
+    }
+
+    for dir in dirs_to_scan {
+        find_nerd_fonts_recursive(&dir, &mut fonts);
+        if fonts.len() >= 8 {
+            break;
         }
     }
+
     fonts
 }
 
