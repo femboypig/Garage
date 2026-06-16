@@ -88,6 +88,7 @@ pub struct UiState {
     pub forced_languages: std::collections::HashMap<String, String>,
     pub forced_encodings: std::collections::HashMap<String, String>,
     pub forced_line_endings: std::collections::HashMap<String, String>,
+    pub external_change_warnings: std::collections::HashSet<String>,
 
     pub command_palette_query: String,
     pub global_search_query: String,
@@ -260,6 +261,7 @@ impl UiState {
             forced_languages: std::collections::HashMap::new(),
             forced_encodings: std::collections::HashMap::new(),
             forced_line_endings: std::collections::HashMap::new(),
+            external_change_warnings: std::collections::HashSet::new(),
             command_palette_query: String::new(),
             global_search_query: String::new(),
             global_search_results: Vec::new(),
