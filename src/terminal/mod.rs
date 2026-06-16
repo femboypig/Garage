@@ -224,6 +224,11 @@ impl vte::Perform for TerminalGrid {
         let idx = self.cursor_y * self.cols + self.cursor_x;
         let fg = if self.inverse { self.current_bg } else { self.current_fg };
         let bg = if self.inverse { self.current_fg } else { self.current_bg };
+        
+        if c >= '\u{e000}' {
+            log::warn!("GRID PRINT: c='{}' (U+{:X}) at ({},{}), fg={:?}, bg={:?}", c, c as u32, self.cursor_x, self.cursor_y, fg, bg);
+        }
+
         let cells = self.get_cells_mut();
         if idx < cells.len() {
             cells[idx] = Cell {
@@ -377,7 +382,52 @@ impl vte::Perform for TerminalGrid {
             }
             'J' => { // Erase in Display (ED)
                 let mode = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(0);
-                if mode == 2 || mode == 3 {
+                if mode == 0 {
+                    let cursor_x = self.cursor_x;
+                    let cursor_y = self.cursor_y;
+                    let cols = self.cols;
+                    let rows = self.rows;
+                    let cells = self.get_cells_mut();
+                    
+                    // Clear current line from cursor to end
+                    let start_idx = cursor_y * cols;
+                    for x in cursor_x..cols {
+                        if start_idx + x < cells.len() {
+                            cells[start_idx + x] = Cell::default();
+                        }
+                    }
+                    // Clear all lines below cursor
+                    for y in (cursor_y + 1)..rows {
+                        let line_start = y * cols;
+                        for x in 0..cols {
+                            if line_start + x < cells.len() {
+                                cells[line_start + x] = Cell::default();
+                            }
+                        }
+                    }
+                } else if mode == 1 {
+                    let cursor_x = self.cursor_x;
+                    let cursor_y = self.cursor_y;
+                    let cols = self.cols;
+                    let cells = self.get_cells_mut();
+                    
+                    // Clear all lines above cursor
+                    for y in 0..cursor_y {
+                        let line_start = y * cols;
+                        for x in 0..cols {
+                            if line_start + x < cells.len() {
+                                cells[line_start + x] = Cell::default();
+                            }
+                        }
+                    }
+                    // Clear current line from start to cursor
+                    let start_idx = cursor_y * cols;
+                    for x in 0..=cursor_x.min(cols - 1) {
+                        if start_idx + x < cells.len() {
+                            cells[start_idx + x] = Cell::default();
+                        }
+                    }
+                } else if mode == 2 || mode == 3 {
                     // Clear entire screen
                     let cells = self.get_cells_mut();
                     for cell in cells {
