@@ -78,7 +78,12 @@ impl UiState {
             let items = match menu {
                 MenuType::Garage => vec!["Settings", "About", "Exit"],
                 MenuType::File => vec!["Save (Ctrl+S)", "Toggle Sidebar", "Exit"],
-                MenuType::Edit => vec!["Undo (Ctrl+Z)", "Redo (Ctrl+Y)"],
+                MenuType::Edit => vec![
+                    "Undo (Ctrl+Z)",
+                    "Redo (Ctrl+Y)",
+                    "Find (Ctrl+F)",
+                    "Find in Project (Ctrl+Shift+F)",
+                ],
                 MenuType::Selection => vec!["Select All", "Clear Selection"],
                 MenuType::View => vec!["Toggle Sidebar", "Command Palette (Ctrl+Shift+P)"],
             };
@@ -132,6 +137,8 @@ impl UiState {
                     MenuType::Edit => match idx {
                         0 => Some(UiAction::Undo),
                         1 => Some(UiAction::Redo),
+                        2 => Some(UiAction::Find),
+                        3 => Some(UiAction::FindInProject),
                         _ => None,
                     },
                     MenuType::Selection => match idx {
