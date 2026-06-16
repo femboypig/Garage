@@ -166,3 +166,85 @@ pub fn load_session_and_restore_buffers() -> Option<(Vec<Tab>, usize)> {
         Some((restored_tabs, active_tab_idx))
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutosaveTrigger {
+    FocusChange,
+    WindowChange,
+    Delay,
+}
+
+pub fn should_save_on_close(autosave: &crate::editor::config::AutosaveSetting) -> bool {
+    matches!(
+        autosave,
+        crate::editor::config::AutosaveSetting::OnFocusChange
+            | crate::editor::config::AutosaveSetting::OnWindowChange
+            | crate::editor::config::AutosaveSetting::AfterDelay { .. }
+    )
+}
+
+pub fn save_tab(ui: &mut crate::ui::UiState, tab: &mut Tab) {
+    if let Some(ref path_to_save) = tab.path {
+        if path_to_save.starts_with("diagnostics://") || path_to_save.starts_with("search://") {
+            return;
+        }
+        if tab.buffer.is_modified {
+            if let Err(e) = tab.buffer.save_file(path_to_save) {
+                log::error!("Failed to auto-save file '{}': {:?}", path_to_save, e);
+            } else {
+                tab.buffer.mark_saved();
+                ui.rebuild_tree();
+                ui.update_git_diff(Some(path_to_save));
+                ui.update_git_file_blame(Some(path_to_save));
+                ui.update_git_statuses();
+                ui.external_change_warnings.remove(path_to_save);
+            }
+        }
+    }
+}
+
+pub fn run_autosave_if_needed(
+    ui: &mut crate::ui::UiState,
+    state: &mut AppState,
+    trigger: AutosaveTrigger,
+) {
+    let autosave_setting = &ui.config.autosave;
+    match autosave_setting {
+        crate::editor::config::AutosaveSetting::Off => {}
+        crate::editor::config::AutosaveSetting::AfterDelay { .. } => {
+            // Save active tab or any modified tabs when trigger is Delay, FocusChange or WindowChange
+            for tab in &mut state.tabs {
+                save_tab(ui, tab);
+            }
+            for pane in &mut state.inactive_panes {
+                for tab in &mut pane.tabs {
+                    save_tab(ui, tab);
+                }
+            }
+        }
+        crate::editor::config::AutosaveSetting::OnFocusChange => {
+            if trigger == AutosaveTrigger::FocusChange || trigger == AutosaveTrigger::WindowChange {
+                for tab in &mut state.tabs {
+                    save_tab(ui, tab);
+                }
+                for pane in &mut state.inactive_panes {
+                    for tab in &mut pane.tabs {
+                        save_tab(ui, tab);
+                    }
+                }
+            }
+        }
+        crate::editor::config::AutosaveSetting::OnWindowChange => {
+            if trigger == AutosaveTrigger::WindowChange {
+                for tab in &mut state.tabs {
+                    save_tab(ui, tab);
+                }
+                for pane in &mut state.inactive_panes {
+                    for tab in &mut pane.tabs {
+                        save_tab(ui, tab);
+                    }
+                }
+            }
+        }
+    }
+}
