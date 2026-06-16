@@ -427,6 +427,10 @@ impl UiState {
                 ("ASCII", ""),
                 ("ISO-8859-1", ""),
             ],
+            CommandPaletteMode::LineEndings => vec![
+                ("LF", "Unix line endings"),
+                ("CRLF", "Windows line endings"),
+            ],
         }
     }
 
@@ -495,6 +499,9 @@ impl UiState {
             "UTF-16" => { self.forced_encodings.insert(path_key, "UTF-16".to_string()); UiAction::None }
             "ASCII" => { self.forced_encodings.insert(path_key, "ASCII".to_string()); UiAction::None }
             "ISO-8859-1" => { self.forced_encodings.insert(path_key, "ISO-8859-1".to_string()); UiAction::None }
+            // Line Endings
+            "LF" => { self.forced_line_endings.insert(path_key, "LF".to_string()); UiAction::None }
+            "CRLF" => { self.forced_line_endings.insert(path_key, "CRLF".to_string()); UiAction::None }
             _ => UiAction::None,
         }
     }
