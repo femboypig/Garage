@@ -95,6 +95,7 @@ pub struct FontAtlas {
     current_y: u32,
     max_row_height: u32,
     padding: u32,
+    pub loaded_fallback_count: usize,
 }
 
 impl FontAtlas {
@@ -178,6 +179,7 @@ impl FontAtlas {
             current_y: 0,
             max_row_height: 4,
             padding: 2,
+            loaded_fallback_count: 0,
         })
     }
 
@@ -219,6 +221,16 @@ impl FontAtlas {
 
     /// Retrieve glyph details, rasterizing and uploading it to the GPU texture if not cached.
     pub fn get_or_rasterize(&mut self, queue: &wgpu::Queue, c: char, size: f32) -> Option<&GlyphInfo> {
+        let current_fb_count = if let Ok(lock) = self.fallback_fonts.lock() {
+            lock.len()
+        } else {
+            0
+        };
+        if current_fb_count != self.loaded_fallback_count {
+            self.clear(queue);
+            self.loaded_fallback_count = current_fb_count;
+        }
+
         let size_key = size.round() as u32;
         let key = (c, size_key);
         if self.glyphs.contains_key(&key) {
