@@ -38,4 +38,8 @@ pub enum Action {
     Find,
     GlobalSearch,
     Split,
+
+    // Multi-cursor
+    AddCursorUp,
+    AddCursorDown,
 }
