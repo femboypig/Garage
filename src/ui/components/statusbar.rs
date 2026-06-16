@@ -179,6 +179,37 @@ pub fn draw_statusbar(
         ui.ui_char_width,
     );
 
+    if !ui.external_change_warnings.is_empty() {
+        pen_x += 15.0; // spacer
+        let warn_icon_sz = 14.0f32;
+        let warn_icon_y = (status_y + (ui.status_height - warn_icon_sz) / 2.0).round();
+        let warning_color = [0.95, 0.70, 0.15, 1.0];
+        ui.push_icon(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            "warning",
+            pen_x,
+            warn_icon_y,
+            warning_color,
+            warn_icon_sz,
+        );
+        pen_x += warn_icon_sz + 4.0;
+        pen_x += ui.push_str(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            "File changed on disk",
+            pen_x,
+            baseline_y,
+            warning_color,
+            ui.ui_font_size,
+            ui.ui_char_width,
+        );
+    }
+
     // 3. Right Side Components (drawn from right to left)
     let sb_btn_w = 28.0f32;
     let sb_btn_h = ui.status_height - 1.0;
