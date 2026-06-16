@@ -530,7 +530,7 @@ impl UiState {
         self.active_dock_tab = active_terminal_idx;
 
         if self.show_search_panel {
-            self.breadcrumb_height = (self.ui_line_height * 1.8).round().max(30.0);
+            self.breadcrumb_height = (self.ui_line_height * 3.6).round().max(60.0);
         } else {
             self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
         }
