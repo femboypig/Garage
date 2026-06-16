@@ -1182,81 +1182,43 @@ pub fn handle_mouse_input(
                     }
 
                     if state.mouse_x >= bar_x && state.mouse_x < bar_x + bar_w && state.mouse_y >= bar_y && state.mouse_y < bar_y + bar_h {
-                        let label_find_w = 40.0f32;
-                        let input_find_w = 120.0f32;
-                        let count_w = 60.0f32;
+                        let label_w = 60.0f32;
+                        let count_w = 65.0f32;
                         let btn_prev_w = 20.0f32;
                         let btn_next_w = 20.0f32;
-                        let label_replace_w = 60.0f32;
-                        let input_replace_w = 120.0f32;
-                        let btn_replace_w = 60.0f32;
+                        let btn_replace_w = 70.0f32;
                         let close_btn_w = 20.0f32;
 
-                        let mut cur_x = bar_x + 10.0;
-                        let input_h = bar_h - 6.0;
-                        let input_y = bar_y + 3.0;
+                        let row_h = bar_h / 2.0;
+                        let input_h = row_h - 6.0;
+                        let input_y_1 = bar_y + 3.0;
+                        let input_y_2 = bar_y + row_h + 3.0;
 
-                        // Find label
-                        cur_x += label_find_w;
+                        let close_x = bar_x + bar_w - 25.0;
+                        let next_x = close_x - 10.0 - btn_next_w;
+                        let prev_x = next_x - 4.0 - btn_prev_w;
+                        let count_x = prev_x - 10.0 - count_w;
+                        let input_start_x = bar_x + 10.0 + label_w;
+                        let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
 
-                        // Find input
-                        let find_in_start = cur_x;
-                        let find_in_end = cur_x + input_find_w;
-                        cur_x += input_find_w + 10.0;
-
-                        // Count label
-                        cur_x += count_w;
-
-                        // Prev button
-                        let prev_btn_start = cur_x;
-                        let prev_btn_end = cur_x + btn_prev_w;
-                        cur_x += btn_prev_w + 4.0;
-
-                        // Next button
-                        let next_btn_start = cur_x;
-                        let next_btn_end = cur_x + btn_next_w;
-                        cur_x += btn_next_w + 15.0;
-
-                        // Replace label
-                        cur_x += label_replace_w;
-
-                        // Replace input
-                        let rep_in_start = cur_x;
-                        let rep_in_end = cur_x + input_replace_w;
-                        cur_x += input_replace_w + 10.0;
-
-                        // Replace button
-                        let rep_btn_start = cur_x;
-                        let rep_btn_end = cur_x + btn_replace_w;
-
-                        // Close button
-                        let close_btn_start = bar_x + bar_w - 25.0;
-                        let close_btn_end = close_btn_start + close_btn_w;
-
-                        if state.mouse_y >= input_y && state.mouse_y < input_y + input_h {
+                        // Check Row 1 click (Find, Prev, Next, Close)
+                        if state.mouse_y >= input_y_1 && state.mouse_y < input_y_1 + input_h {
                             // Click on Find input
-                            if state.mouse_x >= find_in_start && state.mouse_x < find_in_end {
+                            if state.mouse_x >= input_start_x && state.mouse_x < input_start_x + input_find_w {
                                 ui.search_focus_replace = false;
                                 window.request_redraw();
                                 return;
                             }
                             
                             // Click on Close button
-                            if state.mouse_x >= close_btn_start && state.mouse_x < close_btn_end {
+                            if state.mouse_x >= close_x && state.mouse_x < close_x + close_btn_w {
                                 ui.show_search_panel = false;
                                 window.request_redraw();
                                 return;
                             }
                             
-                            // Click on Replace input
-                            if state.mouse_x >= rep_in_start && state.mouse_x < rep_in_end {
-                                ui.search_focus_replace = true;
-                                window.request_redraw();
-                                return;
-                            }
-                            
                             // Click on Prev button (◀)
-                            if state.mouse_x >= prev_btn_start && state.mouse_x < prev_btn_end {
+                            if state.mouse_x >= prev_x && state.mouse_x < prev_x + btn_prev_w {
                                 if !ui.search_matches.is_empty() {
                                     if ui.active_search_match_idx == 0 {
                                         ui.active_search_match_idx = ui.search_matches.len() - 1;
@@ -1276,7 +1238,7 @@ pub fn handle_mouse_input(
                             }
                             
                             // Click on Next button (▶)
-                            if state.mouse_x >= next_btn_start && state.mouse_x < next_btn_end {
+                            if state.mouse_x >= next_x && state.mouse_x < next_x + btn_next_w {
                                 if !ui.search_matches.is_empty() {
                                     if ui.active_search_match_idx >= ui.search_matches.len() - 1 {
                                         ui.active_search_match_idx = 0;
@@ -1294,9 +1256,19 @@ pub fn handle_mouse_input(
                                 window.request_redraw();
                                 return;
                             }
-                            
+                        }
+
+                        // Check Row 2 click (Replace input, Replace button)
+                        if state.mouse_y >= input_y_2 && state.mouse_y < input_y_2 + input_h {
+                            // Click on Replace input
+                            if state.mouse_x >= input_start_x && state.mouse_x < input_start_x + input_find_w {
+                                ui.search_focus_replace = true;
+                                window.request_redraw();
+                                return;
+                            }
+
                             // Click on Replace button
-                            if state.mouse_x >= rep_btn_start && state.mouse_x < rep_btn_end {
+                            if state.mouse_x >= count_x && state.mouse_x < count_x + btn_replace_w {
                                 if !ui.search_matches.is_empty() && state.active_tab_idx < state.tabs.len() {
                                     let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
                                     let active_tab = &mut state.tabs[state.active_tab_idx];
