@@ -173,6 +173,23 @@ pub fn handle_action(
             }
             active_tab.cursor.clear_selection();
         }
+        UiAction::Find => {
+            ui.show_search_panel = true;
+            ui.search_focus_replace = false;
+            if state.active_tab_idx < state.tabs.len() {
+                let active_tab = &state.tabs[state.active_tab_idx];
+                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                    let selected_text = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
+                    if !selected_text.contains('\n') && !selected_text.is_empty() {
+                        ui.search_query = selected_text;
+                    }
+                }
+            }
+            ui.perform_search(state);
+        }
+        UiAction::FindInProject => {
+            handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from("search://project")), window, elwt, gpu, atlas, font_bytes);
+        }
         UiAction::ToggleSidebar => {
             let preferred = if ui.config.sidebar_width > 0.0 { ui.config.sidebar_width } else { 200.0 };
             ui.target_sidebar_width = if ui.target_sidebar_width > 0.0 { 0.0 } else { preferred };
