@@ -62,6 +62,7 @@ pub struct Buffer {
     max_line_len: usize,
     saved_undo_len: Option<usize>,
     pub revision: usize,
+    pub line_ending: String,
 }
 
 impl Buffer {
@@ -76,6 +77,7 @@ impl Buffer {
             max_line_len: 0,
             saved_undo_len: Some(0),
             revision: 0,
+            line_ending: "LF".to_string(),
         }
     }
 
@@ -86,6 +88,8 @@ impl Buffer {
         let line_count = text.lines().count();
         let mut max_len = 0;
         let mut lines = Vec::with_capacity(line_count);
+        let has_crlf = text.contains("\r\n");
+        let line_ending = if has_crlf { "CRLF".to_string() } else { "LF".to_string() };
         for s in text.lines() {
             let line = if s.contains('\t') {
                 s.replace('\t', "    ")
@@ -111,6 +115,7 @@ impl Buffer {
             max_line_len: max_len,
             saved_undo_len: Some(0),
             revision: 0,
+            line_ending,
         }
     }
 
@@ -133,6 +138,8 @@ impl Buffer {
         }
 
         let text = String::from_utf8_lossy(&bytes);
+        let has_crlf = bytes.windows(2).any(|w| w == b"\r\n");
+        self.line_ending = if has_crlf { "CRLF".to_string() } else { "LF".to_string() };
         let line_count = bytes.iter().filter(|&&b| b == b'\n').count() + 1;
         let mut max_len = 0;
         let mut loaded_lines = Vec::with_capacity(line_count);
@@ -181,10 +188,11 @@ impl Buffer {
     /// Save the buffer contents to a file.
     pub fn save_file<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         let mut file = File::create(path)?;
+        let le_bytes: &[u8] = if self.line_ending == "CRLF" { b"\r\n" } else { b"\n" };
         for (i, line) in self.lines.iter().enumerate() {
             file.write_all(line.as_bytes())?;
             if i < self.lines.len() - 1 {
-                file.write_all(b"\n")?;
+                file.write_all(le_bytes)?;
             }
         }
         Ok(())
