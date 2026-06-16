@@ -663,6 +663,11 @@ impl UiState {
                 .map(|s| s.as_str())
                 .unwrap_or("UTF-8");
 
+            let line_ending = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
+                .and_then(|path| self.forced_line_endings.get(path))
+                .map(|s| s.as_str())
+                .unwrap_or("LF");
+
             let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
 
             let mut cur_right_x = term_btn_x - 10.0;
@@ -681,6 +686,12 @@ impl UiState {
             let enc_w = encoding.chars().count() as f32 * self.ui_char_width;
             let enc_left = cur_right_x - enc_w - 16.0;
             let enc_right = cur_right_x;
+            cur_right_x -= enc_w + 16.0;
+
+            // Fourth component: Line Ending
+            let le_w = line_ending.chars().count() as f32 * self.ui_char_width;
+            let le_left = cur_right_x - le_w - 16.0;
+            let le_right = cur_right_x;
 
             // Check if Language was clicked
             if mx >= lang_left && mx < lang_right {
@@ -695,6 +706,16 @@ impl UiState {
             // Check if Encoding was clicked
             if mx >= enc_left && mx < enc_right {
                 self.command_palette_mode = CommandPaletteMode::Encodings;
+                self.command_palette_query = String::new();
+                self.command_palette_selected = 0;
+                self.command_palette_scroll = 0;
+                self.active_modal = Some(ModalType::CommandPalette);
+                return UiAction::None;
+            }
+
+            // Check if Line Ending was clicked
+            if mx >= le_left && mx < le_right {
+                self.command_palette_mode = CommandPaletteMode::LineEndings;
                 self.command_palette_query = String::new();
                 self.command_palette_selected = 0;
                 self.command_palette_scroll = 0;
