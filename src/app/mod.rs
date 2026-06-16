@@ -106,7 +106,8 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let window = Arc::new(
         WindowBuilder::new()
             .with_title("Garage")
-            .with_decorations(false)
+            .with_decorations(true)
+            .with_transparent(true)
             .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
             .with_visible(true)
             .build(&event_loop)?,
