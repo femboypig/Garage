@@ -135,6 +135,7 @@ pub fn handle_keyboard_input(
                                 path: None,
                                 buffer: Buffer::new(),
                                 cursor: Cursor::new(),
+                                secondary_cursors: Vec::new(),
                                 scroll_x: 0,
                                 scroll_y: 0,
                             };
@@ -848,6 +849,7 @@ pub fn handle_diagnostics_keyboard(
                                 path: Some(path.clone()),
                                 buffer: new_buf,
                                 cursor: Cursor::new(),
+                                secondary_cursors: Vec::new(),
                                 scroll_x: 0,
                                 scroll_y: 0,
                             });
@@ -969,6 +971,7 @@ pub fn handle_editor_keyboard(
                             path: None,
                             buffer: Buffer::new(),
                             cursor: Cursor::new(),
+                            secondary_cursors: Vec::new(),
                             scroll_x: 0,
                             scroll_y: 0,
                         };
