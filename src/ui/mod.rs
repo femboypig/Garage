@@ -370,7 +370,17 @@ impl UiState {
     pub fn is_tiling_wm(&self) -> bool {
         std::env::var("I3SOCK").is_ok()
             || std::env::var("SWAYSOCK").is_ok()
-            || std::env::var("XDG_CURRENT_DESKTOP").map(|s| s.to_lowercase().contains("i3") || s.to_lowercase().contains("sway")).unwrap_or(false)
+            || std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
+            || std::env::var("XDG_CURRENT_DESKTOP")
+                .map(|s| {
+                    let s_lower = s.to_lowercase();
+                    s_lower.contains("i3")
+                        || s_lower.contains("sway")
+                        || s_lower.contains("hyprland")
+                        || s_lower.contains("river")
+                        || s_lower.contains("qtile")
+                })
+                .unwrap_or(false)
     }
     pub fn get_tab_name(&self, path_opt: Option<&str>) -> String {
         let is_diagnostics = path_opt == Some("diagnostics://project");
