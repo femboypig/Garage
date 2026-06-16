@@ -150,6 +150,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
             path: save_path,
             buffer,
             cursor: Cursor::new(),
+            secondary_cursors: Vec::new(),
             scroll_x: 0,
             scroll_y: 0,
         }
