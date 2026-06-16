@@ -1154,9 +1154,10 @@ pub fn handle_mouse_input(
             }
 
             // Check Search Panel click
-            if ui.show_search_panel {
-                let active_file_path = state.tabs.get(state.active_tab_idx).and_then(|t| t.path.as_deref());
-                if active_file_path != Some("search://project") {
+            let active_file_path = state.tabs.get(state.active_tab_idx).and_then(|t| t.path.as_deref());
+            let is_project_search = active_file_path == Some("search://project");
+            if ui.show_search_panel || is_project_search {
+                if true { // Keep block nesting for brace matching
                     let mut bar_x = sidebar_original;
                     let mut bar_w = size.width as f32 - sidebar_original;
                     let mut bar_y = main_y + ui.tabbar_height;
@@ -1182,13 +1183,10 @@ pub fn handle_mouse_input(
                     }
 
                     if state.mouse_x >= bar_x && state.mouse_x < bar_x + bar_w && state.mouse_y >= bar_y && state.mouse_y < bar_y + bar_h {
-                        let label_w = 60.0f32;
-                        let count_w = 65.0f32;
-                        let btn_prev_w = 20.0f32;
-                        let btn_next_w = 20.0f32;
-                        let btn_replace_w = 70.0f32;
-                        let btn_replace_all_w = 45.0f32;
-                        let close_btn_w = 20.0f32;
+                        let count_w = 70.0f32;
+                        let btn_prev_w = 22.0f32;
+                        let btn_next_w = 22.0f32;
+                        let close_btn_w = 22.0f32;
 
                         let row_h = bar_h / 2.0;
                         let input_h = row_h - 6.0;
@@ -1199,8 +1197,17 @@ pub fn handle_mouse_input(
                         let next_x = close_x - 10.0 - btn_next_w;
                         let prev_x = next_x - 4.0 - btn_prev_w;
                         let count_x = prev_x - 10.0 - count_w;
-                        let input_start_x = bar_x + 10.0 + label_w;
+                        let input_start_x = bar_x + 10.0;
                         let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
+
+                        let pane_top = bar_y - ui.tabbar_height;
+                        let pane_bottom = pane_top + (if state.inactive_panes.is_empty() {
+                            editor_bottom_limit - main_y
+                        } else if state.is_split_horizontal {
+                            (editor_bottom_limit - main_y) / 2.0
+                        } else {
+                            editor_bottom_limit - main_y
+                        });
 
                         // Check Row 1 click (Find, Prev, Next, Close, and options inside find input)
                         if state.mouse_y >= input_y_1 && state.mouse_y < input_y_1 + input_h {
@@ -1214,20 +1221,38 @@ pub fn handle_mouse_input(
 
                             if state.mouse_y >= opt_y && state.mouse_y < opt_y + opt_h {
                                 if state.mouse_x >= opt_case_x && state.mouse_x < opt_case_x + opt_btn_w {
-                                    ui.search_case_sensitive = !ui.search_case_sensitive;
-                                    ui.perform_search(state);
+                                    if is_project_search {
+                                        ui.global_search_case_sensitive = !ui.global_search_case_sensitive;
+                                        let q = ui.global_search_query.clone();
+                                        ui.run_global_search(q);
+                                    } else {
+                                        ui.search_case_sensitive = !ui.search_case_sensitive;
+                                        ui.perform_search(state);
+                                    }
                                     window.request_redraw();
                                     return;
                                 }
                                 if state.mouse_x >= opt_word_x && state.mouse_x < opt_word_x + opt_btn_w {
-                                    ui.search_whole_word = !ui.search_whole_word;
-                                    ui.perform_search(state);
+                                    if is_project_search {
+                                        ui.global_search_whole_word = !ui.global_search_whole_word;
+                                        let q = ui.global_search_query.clone();
+                                        ui.run_global_search(q);
+                                    } else {
+                                        ui.search_whole_word = !ui.search_whole_word;
+                                        ui.perform_search(state);
+                                    }
                                     window.request_redraw();
                                     return;
                                 }
                                 if state.mouse_x >= opt_regex_x && state.mouse_x < opt_regex_x + opt_btn_w {
-                                    ui.search_regex = !ui.search_regex;
-                                    ui.perform_search(state);
+                                    if is_project_search {
+                                        ui.global_search_regex = !ui.global_search_regex;
+                                        let q = ui.global_search_query.clone();
+                                        ui.run_global_search(q);
+                                    } else {
+                                        ui.search_regex = !ui.search_regex;
+                                        ui.perform_search(state);
+                                    }
                                     window.request_redraw();
                                     return;
                                 }
@@ -1236,52 +1261,125 @@ pub fn handle_mouse_input(
                             // Click on Find input (excluding options)
                             let options_w = 3.0 * opt_btn_w + 10.0;
                             if state.mouse_x >= input_start_x && state.mouse_x < input_start_x + input_find_w - options_w {
-                                ui.search_focus_replace = false;
+                                if is_project_search {
+                                    ui.global_search_focus_replace = false;
+                                } else {
+                                    ui.search_focus_replace = false;
+                                }
                                 window.request_redraw();
                                 return;
                             }
                             
                             // Click on Close button
                             if state.mouse_x >= close_x && state.mouse_x < close_x + close_btn_w {
-                                ui.show_search_panel = false;
+                                if is_project_search {
+                                    let idx = state.active_tab_idx;
+                                    state.tabs.remove(idx);
+                                    if state.tabs.is_empty() {
+                                        if !state.inactive_panes.is_empty() {
+                                            let target_pane = state.inactive_panes.remove(0);
+                                            state.tabs = target_pane.tabs;
+                                            state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
+                                            state.active_pane_idx = 0;
+                                            state.is_split_horizontal = false;
+                                        } else {
+                                            state.tabs.push(crate::app::state::Tab {
+                                                path: None,
+                                                buffer: crate::editor::buffer::Buffer::new(),
+                                                cursor: crate::editor::cursor::Cursor::new(),
+                                                secondary_cursors: Vec::new(),
+                                                scroll_x: 0,
+                                                scroll_y: 0,
+                                            });
+                                        }
+                                    }
+                                    state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+                                    ui.scroll_x = state.tabs[state.active_tab_idx].scroll_x;
+                                    ui.scroll_y = state.tabs[state.active_tab_idx].scroll_y;
+                                    if let Some(ref path) = state.tabs[state.active_tab_idx].path {
+                                        ui.selected_file = Some(std::path::PathBuf::from(path));
+                                    } else {
+                                        ui.selected_file = None;
+                                    }
+                                } else {
+                                    ui.show_search_panel = false;
+                                }
                                 window.request_redraw();
                                 return;
                             }
                             
-                            // Click on Prev button (◀)
+                            // Click on Prev button
                             if state.mouse_x >= prev_x && state.mouse_x < prev_x + btn_prev_w {
-                                if !ui.search_matches.is_empty() {
-                                    if ui.active_search_match_idx == 0 {
-                                        ui.active_search_match_idx = ui.search_matches.len() - 1;
-                                    } else {
-                                        ui.active_search_match_idx -= 1;
+                                if is_project_search {
+                                    if !ui.global_search_results.is_empty() {
+                                        if ui.global_search_selected == 0 {
+                                            ui.global_search_selected = ui.global_search_results.len() - 1;
+                                        } else {
+                                            ui.global_search_selected -= 1;
+                                        }
+                                        if ui.global_search_selected < ui.global_search_scroll {
+                                            ui.global_search_scroll = ui.global_search_selected;
+                                        } else {
+                                            let results_height = (pane_bottom - pane_top - ui.tabbar_height - ui.breadcrumb_height).max(0.0);
+                                            let row_height = ui.ui_line_height;
+                                            let visible_rows = (results_height / row_height).floor() as usize;
+                                            if ui.global_search_selected >= ui.global_search_scroll + visible_rows {
+                                                ui.global_search_scroll = ui.global_search_selected + 1 - visible_rows;
+                                            }
+                                        }
                                     }
-                                    // Scroll to active match
-                                    if state.active_tab_idx < state.tabs.len() {
-                                        let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
-                                        state.tabs[state.active_tab_idx].cursor.line = m_line;
-                                        state.tabs[state.active_tab_idx].cursor.col = m_col;
-                                        state.tabs[state.active_tab_idx].cursor.clear_selection();
+                                } else {
+                                    if !ui.search_matches.is_empty() {
+                                        if ui.active_search_match_idx == 0 {
+                                            ui.active_search_match_idx = ui.search_matches.len() - 1;
+                                        } else {
+                                            ui.active_search_match_idx -= 1;
+                                        }
+                                        if state.active_tab_idx < state.tabs.len() {
+                                            let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
+                                            state.tabs[state.active_tab_idx].cursor.line = m_line;
+                                            state.tabs[state.active_tab_idx].cursor.col = m_col;
+                                            state.tabs[state.active_tab_idx].cursor.clear_selection();
+                                        }
                                     }
                                 }
                                 window.request_redraw();
                                 return;
                             }
                             
-                            // Click on Next button (▶)
+                            // Click on Next button
                             if state.mouse_x >= next_x && state.mouse_x < next_x + btn_next_w {
-                                if !ui.search_matches.is_empty() {
-                                    if ui.active_search_match_idx >= ui.search_matches.len() - 1 {
-                                        ui.active_search_match_idx = 0;
-                                    } else {
-                                        ui.active_search_match_idx += 1;
+                                if is_project_search {
+                                    if !ui.global_search_results.is_empty() {
+                                        if ui.global_search_selected >= ui.global_search_results.len() - 1 {
+                                            ui.global_search_selected = 0;
+                                        } else {
+                                            ui.global_search_selected += 1;
+                                        }
+                                        if ui.global_search_selected < ui.global_search_scroll {
+                                            ui.global_search_scroll = ui.global_search_selected;
+                                        } else {
+                                            let results_height = (pane_bottom - pane_top - ui.tabbar_height - ui.breadcrumb_height).max(0.0);
+                                            let row_height = ui.ui_line_height;
+                                            let visible_rows = (results_height / row_height).floor() as usize;
+                                            if ui.global_search_selected >= ui.global_search_scroll + visible_rows {
+                                                ui.global_search_scroll = ui.global_search_selected + 1 - visible_rows;
+                                            }
+                                        }
                                     }
-                                    // Scroll to active match
-                                    if state.active_tab_idx < state.tabs.len() {
-                                        let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
-                                        state.tabs[state.active_tab_idx].cursor.line = m_line;
-                                        state.tabs[state.active_tab_idx].cursor.col = m_col;
-                                        state.tabs[state.active_tab_idx].cursor.clear_selection();
+                                } else {
+                                    if !ui.search_matches.is_empty() {
+                                        if ui.active_search_match_idx >= ui.search_matches.len() - 1 {
+                                            ui.active_search_match_idx = 0;
+                                        } else {
+                                            ui.active_search_match_idx += 1;
+                                        }
+                                        if state.active_tab_idx < state.tabs.len() {
+                                            let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
+                                            state.tabs[state.active_tab_idx].cursor.line = m_line;
+                                            state.tabs[state.active_tab_idx].cursor.col = m_col;
+                                            state.tabs[state.active_tab_idx].cursor.clear_selection();
+                                        }
                                     }
                                 }
                                 window.request_redraw();
@@ -1293,62 +1391,216 @@ pub fn handle_mouse_input(
                         if state.mouse_y >= input_y_2 && state.mouse_y < input_y_2 + input_h {
                             // Click on Replace input
                             if state.mouse_x >= input_start_x && state.mouse_x < input_start_x + input_find_w {
-                                ui.search_focus_replace = true;
+                                if is_project_search {
+                                    ui.global_search_focus_replace = true;
+                                } else {
+                                    ui.search_focus_replace = true;
+                                }
                                 window.request_redraw();
                                 return;
                             }
 
                             // Click on Replace button
-                            if state.mouse_x >= count_x && state.mouse_x < count_x + btn_replace_w {
-                                if !ui.search_matches.is_empty() && state.active_tab_idx < state.tabs.len() {
-                                    let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
-                                    let active_tab = &mut state.tabs[state.active_tab_idx];
-                                    active_tab.buffer.commit_transaction();
-                                    active_tab.buffer.start_transaction();
-                                    
-                                    let q_len = ui.search_query.chars().count();
-                                    active_tab.buffer.delete(m_line, m_col, m_line, m_col + q_len);
-                                    active_tab.buffer.insert(m_line, m_col, &ui.replace_query);
-                                    active_tab.buffer.commit_transaction();
-                                    
-                                    active_tab.cursor.line = m_line;
-                                    active_tab.cursor.col = m_col + ui.replace_query.chars().count();
-                                    active_tab.cursor.clear_selection();
-                                    
-                                    ui.perform_search(state);
+                            if state.mouse_x >= prev_x && state.mouse_x < prev_x + btn_prev_w {
+                                if is_project_search {
+                                    if !ui.global_search_results.is_empty() && ui.global_search_selected < ui.global_search_results.len() {
+                                        let (path, line_idx, _) = ui.global_search_results[ui.global_search_selected].clone();
+                                        
+                                        let pattern = if ui.global_search_regex {
+                                            ui.global_search_query.clone()
+                                        } else {
+                                            regex::escape(&ui.global_search_query)
+                                        };
+                                        let mut builder = regex::RegexBuilder::new(&pattern);
+                                        builder.case_insensitive(!ui.global_search_case_sensitive);
+                                        
+                                        if let Ok(re) = builder.build() {
+                                            let mut found_in_tab = false;
+                                            for tab in &mut state.tabs {
+                                                if let Some(ref tab_path) = tab.path {
+                                                    if crate::editor::get_absolute_path(tab_path) == crate::editor::get_absolute_path(&path.to_string_lossy()) {
+                                                        if line_idx < tab.buffer.len() {
+                                                            tab.buffer.commit_transaction();
+                                                            tab.buffer.start_transaction();
+                                                            let line_content = &tab.buffer.lines()[line_idx];
+                                                            let new_line = re.replace_all(line_content, &ui.global_replace_query).to_string();
+                                                            if new_line != *line_content {
+                                                                tab.buffer.delete(line_idx, 0, line_idx, line_content.chars().count());
+                                                                tab.buffer.insert(line_idx, 0, &new_line);
+                                                            }
+                                                            tab.buffer.commit_transaction();
+                                                        }
+                                                        found_in_tab = true;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            if !found_in_tab {
+                                                for pane in &mut state.inactive_panes {
+                                                    for tab in &mut pane.tabs {
+                                                        if let Some(ref tab_path) = tab.path {
+                                                            if crate::editor::get_absolute_path(tab_path) == crate::editor::get_absolute_path(&path.to_string_lossy()) {
+                                                                if line_idx < tab.buffer.len() {
+                                                                    tab.buffer.commit_transaction();
+                                                                    tab.buffer.start_transaction();
+                                                                    let line_content = &tab.buffer.lines()[line_idx];
+                                                                    let new_line = re.replace_all(line_content, &ui.global_replace_query).to_string();
+                                                                    if new_line != *line_content {
+                                                                        tab.buffer.delete(line_idx, 0, line_idx, line_content.chars().count());
+                                                                        tab.buffer.insert(line_idx, 0, &new_line);
+                                                                    }
+                                                                    tab.buffer.commit_transaction();
+                                                                }
+                                                                found_in_tab = true;
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                    if found_in_tab { break; }
+                                                }
+                                            }
+                                            if !found_in_tab {
+                                                if let Ok(content) = std::fs::read_to_string(&path) {
+                                                    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                                                    if line_idx < lines.len() {
+                                                        let new_line = re.replace_all(&lines[line_idx], &ui.global_replace_query).to_string();
+                                                        lines[line_idx] = new_line;
+                                                        let new_content = lines.join("\n");
+                                                        let _ = std::fs::write(&path, new_content);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        let q = ui.global_search_query.clone();
+                                        ui.run_global_search(q);
+                                    }
+                                } else {
+                                    if !ui.search_matches.is_empty() && state.active_tab_idx < state.tabs.len() {
+                                        let (m_line, m_col) = ui.search_matches[ui.active_search_match_idx];
+                                        let active_tab = &mut state.tabs[state.active_tab_idx];
+                                        active_tab.buffer.commit_transaction();
+                                        active_tab.buffer.start_transaction();
+                                        
+                                        let q_len = ui.search_query.chars().count();
+                                        active_tab.buffer.delete(m_line, m_col, m_line, m_col + q_len);
+                                        active_tab.buffer.insert(m_line, m_col, &ui.replace_query);
+                                        active_tab.buffer.commit_transaction();
+                                        
+                                        active_tab.cursor.line = m_line;
+                                        active_tab.cursor.col = m_col + ui.replace_query.chars().count();
+                                        active_tab.cursor.clear_selection();
+                                        
+                                        ui.perform_search(state);
+                                    }
                                 }
                                 window.request_redraw();
                                 return;
                             }
 
                             // Click on Replace All button
-                            let rep_all_x = count_x + btn_replace_w + 5.0;
-                            if state.mouse_x >= rep_all_x && state.mouse_x < rep_all_x + btn_replace_all_w {
-                                if !ui.search_matches.is_empty() && state.active_tab_idx < state.tabs.len() {
-                                    let active_tab = &mut state.tabs[state.active_tab_idx];
-                                    active_tab.buffer.commit_transaction();
-                                    active_tab.buffer.start_transaction();
-                                    
-                                    let q_len = ui.search_query.chars().count();
-                                    let mut matches_to_replace = ui.search_matches.clone();
-                                    matches_to_replace.sort_by(|a, b| b.cmp(a)); // Descending order
-                                    
-                                    for (m_line, m_col) in matches_to_replace {
-                                        active_tab.buffer.delete(m_line, m_col, m_line, m_col + q_len);
-                                        active_tab.buffer.insert(m_line, m_col, &ui.replace_query);
+                            if state.mouse_x >= next_x && state.mouse_x < next_x + btn_next_w {
+                                if is_project_search {
+                                    if !ui.global_search_query.is_empty() {
+                                        let mut files_to_process = std::collections::HashSet::new();
+                                        for (path, _, _) in &ui.global_search_results {
+                                            files_to_process.insert(path.clone());
+                                        }
+                                        
+                                        let pattern = if ui.global_search_regex {
+                                            ui.global_search_query.clone()
+                                        } else {
+                                            regex::escape(&ui.global_search_query)
+                                        };
+                                        
+                                        let mut builder = regex::RegexBuilder::new(&pattern);
+                                        builder.case_insensitive(!ui.global_search_case_sensitive);
+                                        
+                                        if let Ok(re) = builder.build() {
+                                            for path in files_to_process {
+                                                let mut found_in_tab = false;
+                                                for tab in &mut state.tabs {
+                                                    if let Some(ref tab_path) = tab.path {
+                                                        if crate::editor::get_absolute_path(tab_path) == crate::editor::get_absolute_path(&path.to_string_lossy()) {
+                                                            tab.buffer.commit_transaction();
+                                                            tab.buffer.start_transaction();
+                                                            for line_idx in 0..tab.buffer.len() {
+                                                                let line_content = &tab.buffer.lines()[line_idx];
+                                                                let new_line = re.replace_all(line_content, &ui.global_replace_query).to_string();
+                                                                if new_line != *line_content {
+                                                                    tab.buffer.delete(line_idx, 0, line_idx, line_content.chars().count());
+                                                                    tab.buffer.insert(line_idx, 0, &new_line);
+                                                                }
+                                                            }
+                                                            tab.buffer.commit_transaction();
+                                                            found_in_tab = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                if !found_in_tab {
+                                                    for pane in &mut state.inactive_panes {
+                                                        for tab in &mut pane.tabs {
+                                                            if let Some(ref tab_path) = tab.path {
+                                                                if crate::editor::get_absolute_path(tab_path) == crate::editor::get_absolute_path(&path.to_string_lossy()) {
+                                                                    tab.buffer.commit_transaction();
+                                                                    tab.buffer.start_transaction();
+                                                                    for line_idx in 0..tab.buffer.len() {
+                                                                        let line_content = &tab.buffer.lines()[line_idx];
+                                                                        let new_line = re.replace_all(line_content, &ui.global_replace_query).to_string();
+                                                                        if new_line != *line_content {
+                                                                            tab.buffer.delete(line_idx, 0, line_idx, line_content.chars().count());
+                                                                            tab.buffer.insert(line_idx, 0, &new_line);
+                                                                        }
+                                                                    }
+                                                                    tab.buffer.commit_transaction();
+                                                                    found_in_tab = true;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                        if found_in_tab { break; }
+                                                    }
+                                                }
+                                                if !found_in_tab {
+                                                    if let Ok(content) = std::fs::read_to_string(&path) {
+                                                        let new_content = re.replace_all(&content, &ui.global_replace_query).to_string();
+                                                        if new_content != content {
+                                                            let _ = std::fs::write(&path, new_content);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        let q = ui.global_search_query.clone();
+                                        ui.run_global_search(q);
                                     }
-                                    
-                                    active_tab.buffer.commit_transaction();
-                                    active_tab.cursor.clear_selection();
-                                    ui.perform_search(state);
+                                } else {
+                                    if !ui.search_matches.is_empty() && state.active_tab_idx < state.tabs.len() {
+                                        let active_tab = &mut state.tabs[state.active_tab_idx];
+                                        active_tab.buffer.commit_transaction();
+                                        active_tab.buffer.start_transaction();
+                                        
+                                        let q_len = ui.search_query.chars().count();
+                                        let mut matches_to_replace = ui.search_matches.clone();
+                                        matches_to_replace.sort_by(|a, b| b.cmp(a)); // Descending order
+                                        
+                                        for (m_line, m_col) in matches_to_replace {
+                                            active_tab.buffer.delete(m_line, m_col, m_line, m_col + q_len);
+                                            active_tab.buffer.insert(m_line, m_col, &ui.replace_query);
+                                        }
+                                        
+                                        active_tab.buffer.commit_transaction();
+                                        active_tab.cursor.clear_selection();
+                                        ui.perform_search(state);
+                                    }
                                 }
                                 window.request_redraw();
                                 return;
                             }
                         }
-
-                        return;
                     }
+
+                    return;
                 }
                  // Check if click is on tab scrollbar
             let tabbar_start_x = ui.sidebar_width;
@@ -1683,181 +1935,41 @@ pub fn handle_mouse_input(
                                  // Click inside editor area
                                  if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit - 14.0 {
                                         if state.tabs[active_tab_idx].path.as_deref() == Some("search://project") {
-                                             let input_h = 26.0f32;
-                                             let row1_y = editor_top + 12.0;
-                                             let input_x = text_area_x + 90.0;
-                                             let input_w = 450.0f32;
-
-                                             let btn_w = 22.0f32;
-                                             let opt_y = row1_y + 2.0;
-                                             let opt_h = input_h - 4.0;
-                                             let opt_regex_x = input_x + input_w - 5.0 - btn_w;
-                                             let opt_word_x = opt_regex_x - 2.0 - btn_w;
-                                             let opt_case_x = opt_word_x - 2.0 - btn_w;
-
-                                             // 1. Check Row 1 Click (Search Query and option toggles)
-                                             if state.mouse_y >= row1_y && state.mouse_y < row1_y + input_h {
-                                                 if state.mouse_y >= opt_y && state.mouse_y < opt_y + opt_h {
-                                                     if state.mouse_x >= opt_case_x && state.mouse_x < opt_case_x + btn_w {
-                                                         ui.global_search_case_sensitive = !ui.global_search_case_sensitive;
-                                                         let q = ui.global_search_query.clone();
-                                                         ui.run_global_search(q);
-                                                         window.request_redraw();
-                                                         return;
-                                                     }
-                                                     if state.mouse_x >= opt_word_x && state.mouse_x < opt_word_x + btn_w {
-                                                         ui.global_search_whole_word = !ui.global_search_whole_word;
-                                                         let q = ui.global_search_query.clone();
-                                                         ui.run_global_search(q);
-                                                         window.request_redraw();
-                                                         return;
-                                                     }
-                                                     if state.mouse_x >= opt_regex_x && state.mouse_x < opt_regex_x + btn_w {
-                                                         ui.global_search_regex = !ui.global_search_regex;
-                                                         let q = ui.global_search_query.clone();
-                                                         ui.run_global_search(q);
-                                                         window.request_redraw();
-                                                         return;
-                                                     }
-                                                 }
-
-                                                 let options_area_w = 3.0 * btn_w + 10.0;
-                                                 if state.mouse_x >= input_x && state.mouse_x < input_x + input_w - options_area_w {
-                                                     ui.global_search_focus_replace = false;
-                                                     window.request_redraw();
-                                                     return;
-                                                 }
-                                             }
-
-                                             // 2. Check Row 2 Click (Replace Query input and Replace All button)
-                                             let row2_y = editor_top + 48.0;
-                                             if state.mouse_y >= row2_y && state.mouse_y < row2_y + input_h {
-                                                 if state.mouse_x >= input_x && state.mouse_x < input_x + input_w {
-                                                     ui.global_search_focus_replace = true;
-                                                     window.request_redraw();
-                                                     return;
-                                                 }
-
-                                                 let btn_all_w = 90.0f32;
-                                                 let btn_all_x = input_x + input_w + 15.0;
-                                                 if state.mouse_x >= btn_all_x && state.mouse_x < btn_all_x + btn_all_w {
-                                                     if !ui.global_search_query.is_empty() {
-                                                         let mut files_to_process = std::collections::HashSet::new();
-                                                         for (path, _, _) in &ui.global_search_results {
-                                                             files_to_process.insert(path.clone());
-                                                         }
-                                                         
-                                                         let pattern = if ui.global_search_regex {
-                                                             ui.global_search_query.clone()
-                                                         } else {
-                                                             regex::escape(&ui.global_search_query)
-                                                         };
-                                                         
-                                                         let mut builder = regex::RegexBuilder::new(&pattern);
-                                                         builder.case_insensitive(!ui.global_search_case_sensitive);
-                                                         
-                                                         if let Ok(re) = builder.build() {
-                                                             for path in files_to_process {
-                                                                 let mut found_in_tab = false;
-                                                                 for tab in &mut state.tabs {
-                                                                     if let Some(ref tab_path) = tab.path {
-                                                                         if crate::editor::get_absolute_path(tab_path) == crate::editor::get_absolute_path(&path.to_string_lossy()) {
-                                                                             tab.buffer.commit_transaction();
-                                                                             tab.buffer.start_transaction();
-                                                                             for line_idx in 0..tab.buffer.len() {
-                                                                                 let line_content = &tab.buffer.lines()[line_idx];
-                                                                                 let new_line = re.replace_all(line_content, &ui.global_replace_query).to_string();
-                                                                                 if new_line != *line_content {
-                                                                                     tab.buffer.delete(line_idx, 0, line_idx, line_content.chars().count());
-                                                                                     tab.buffer.insert(line_idx, 0, &new_line);
-                                                                                 }
-                                                                             }
-                                                                             tab.buffer.commit_transaction();
-                                                                             found_in_tab = true;
-                                                                             break;
-                                                                         }
-                                                                     }
-                                                                 }
-                                                                 if !found_in_tab {
-                                                                     for pane in &mut state.inactive_panes {
-                                                                         for tab in &mut pane.tabs {
-                                                                             if let Some(ref tab_path) = tab.path {
-                                                                                 if crate::editor::get_absolute_path(tab_path) == crate::editor::get_absolute_path(&path.to_string_lossy()) {
-                                                                                     tab.buffer.commit_transaction();
-                                                                                     tab.buffer.start_transaction();
-                                                                                     for line_idx in 0..tab.buffer.len() {
-                                                                                         let line_content = &tab.buffer.lines()[line_idx];
-                                                                                         let new_line = re.replace_all(line_content, &ui.global_replace_query).to_string();
-                                                                                         if new_line != *line_content {
-                                                                                             tab.buffer.delete(line_idx, 0, line_idx, line_content.chars().count());
-                                                                                             tab.buffer.insert(line_idx, 0, &new_line);
-                                                                                         }
-                                                                                     }
-                                                                                     tab.buffer.commit_transaction();
-                                                                                     found_in_tab = true;
-                                                                                     break;
-                                                                                 }
-                                                                             }
-                                                                         }
-                                                                         if found_in_tab { break; }
-                                                                     }
-                                                                 }
-                                                                 
-                                                                 if !found_in_tab {
-                                                                     if let Ok(content) = std::fs::read_to_string(&path) {
-                                                                         let new_content = re.replace_all(&content, &ui.global_replace_query).to_string();
-                                                                         if new_content != content {
-                                                                             let _ = std::fs::write(&path, new_content);
-                                                                         }
-                                                                     }
-                                                                 }
-                                                             }
-                                                         }
-                                                         
-                                                         let q = ui.global_search_query.clone();
-                                                         ui.run_global_search(q);
-                                                     }
-                                                     window.request_redraw();
-                                                     return;
-                                                 }
-                                             }
-
-                                             // 3. Check Row clicks in results list
-                                             let list_y = editor_top + 91.0;
-                                             let item_height = ui.buffer_line_height;
-                                             if state.mouse_y >= list_y {
-                                                 let clicked_idx = ((state.mouse_y - list_y) / item_height).floor() as usize + ui.global_search_scroll;
-                                                 
-                                                 let mut render_items = Vec::new();
-                                                 let mut last_path = None;
-                                                 for (idx, (path, line_idx, _content)) in ui.global_search_results.iter().enumerate() {
-                                                     if last_path.as_ref() != Some(path) {
-                                                         render_items.push((None, path.clone(), 0));
-                                                         last_path = Some(path.clone());
-                                                     }
-                                                     render_items.push((Some(idx), path.clone(), *line_idx));
-                                                 }
-                                                 
-                                                 if clicked_idx < render_items.len() {
-                                                     if let (Some(result_idx), path, line_idx) = &render_items[clicked_idx] {
-                                                         ui.global_search_selected = *result_idx;
-                                                         crate::app::handler::handle_action(
-                                                             ui,
-                                                             state,
-                                                             UiAction::OpenFileAt(path.clone(), *line_idx),
-                                                             window,
-                                                             elwt,
-                                                             gpu,
-                                                             atlas,
-                                                             font_bytes,
-                                                         );
-                                                         window.request_redraw();
-                                                         return;
-                                                     }
-                                                 }
-                                             }
-                                             return;
-                                        }
+                                              let list_y = editor_top;
+                                              let item_height = ui.buffer_line_height;
+                                              if state.mouse_y >= list_y {
+                                                  let clicked_idx = ((state.mouse_y - list_y) / item_height).floor() as usize + ui.global_search_scroll;
+                                                  
+                                                  let mut render_items = Vec::new();
+                                                  let mut last_path = None;
+                                                  for (idx, (path, line_idx, _content)) in ui.global_search_results.iter().enumerate() {
+                                                      if last_path.as_ref() != Some(path) {
+                                                          render_items.push((None, path.clone(), 0));
+                                                          last_path = Some(path.clone());
+                                                      }
+                                                      render_items.push((Some(idx), path.clone(), *line_idx));
+                                                  }
+                                                  
+                                                  if clicked_idx < render_items.len() {
+                                                      if let (Some(result_idx), path, line_idx) = &render_items[clicked_idx] {
+                                                          ui.global_search_selected = *result_idx;
+                                                          crate::app::handler::handle_action(
+                                                              ui,
+                                                              state,
+                                                              UiAction::OpenFileAt(path.clone(), *line_idx),
+                                                              window,
+                                                              elwt,
+                                                              gpu,
+                                                              atlas,
+                                                              font_bytes,
+                                                          );
+                                                          window.request_redraw();
+                                                          return;
+                                                      }
+                                                  }
+                                              }
+                                              return;
+                                         }
 
                                        // 2. Check if virtual diagnostics tab item was clicked
                                        let mut clicked_info = None;
