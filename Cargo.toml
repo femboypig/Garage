@@ -19,6 +19,7 @@ portable-pty = "0.8"
 vte = "0.11"
 ignore = "0.4.26"
 notify = "8.2.0"
+regex = "1.10"
 
 [profile.dev.package."*"]
 opt-level = 3
