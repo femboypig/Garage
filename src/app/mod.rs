@@ -2,6 +2,7 @@ pub mod handler;
 pub mod input;
 pub mod state;
 pub mod ipc;
+pub mod autosave;
 
 use std::sync::Arc;
 use winit::{
@@ -117,46 +118,79 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     // Pass the window to the background thread
     let _ = window_tx.send(window.clone());
 
-    // Load initial file or start with empty tab
-    let initial_tab = {
-        let mut buffer = Buffer::new();
-        let save_path = if let Some(ref path) = file_path {
-            if !path.starts_with("diagnostics://") {
-                if let Err(e) = buffer.load_file(path) {
-                    log::warn!("Failed to load file '{}': {}. Starting with empty buffer.", path, e);
-                }
-            }
-            if path.starts_with("diagnostics://") {
-                Some(path.clone())
+    let mut state = if let Some((mut restored_tabs, active_tab_idx)) = autosave::load_session_and_restore_buffers() {
+        if let Some(ref path) = file_path {
+            let abs_path = crate::editor::get_absolute_path(path);
+            let position = restored_tabs.iter().position(|t| {
+                t.path.as_ref().map(|tp| crate::editor::get_absolute_path(tp)) == Some(abs_path.clone())
+            });
+            let final_active_idx = if let Some(idx) = position {
+                idx
             } else {
-                let path_buf = std::path::PathBuf::from(path);
-                let normalized = if path_buf.is_absolute() {
-                    let current_dir = std::env::current_dir().unwrap_or_default();
-                    if let Ok(rel) = path_buf.strip_prefix(&current_dir) {
-                        rel.to_path_buf()
+                let mut buffer = Buffer::new();
+                if !path.starts_with("diagnostics://") {
+                    let _ = buffer.load_file(&abs_path);
+                }
+                restored_tabs.push(Tab {
+                    path: Some(path.clone()),
+                    buffer,
+                    cursor: Cursor::new(),
+                    secondary_cursors: Vec::new(),
+                    scroll_x: 0,
+                    scroll_y: 0,
+                });
+                restored_tabs.len() - 1
+            };
+            let mut s = AppState::new(restored_tabs[0].clone());
+            s.tabs = restored_tabs;
+            s.active_tab_idx = final_active_idx;
+            s
+        } else {
+            let mut s = AppState::new(restored_tabs[0].clone());
+            s.tabs = restored_tabs;
+            s.active_tab_idx = active_tab_idx;
+            s
+        }
+    } else {
+        let initial_tab = {
+            let mut buffer = Buffer::new();
+            let save_path = if let Some(ref path) = file_path {
+                if !path.starts_with("diagnostics://") {
+                    if let Err(e) = buffer.load_file(path) {
+                        log::warn!("Failed to load file '{}': {}. Starting with empty buffer.", path, e);
+                    }
+                }
+                if path.starts_with("diagnostics://") {
+                    Some(path.clone())
+                } else {
+                    let path_buf = std::path::PathBuf::from(path);
+                    let normalized = if path_buf.is_absolute() {
+                        let current_dir = std::env::current_dir().unwrap_or_default();
+                        if let Ok(rel) = path_buf.strip_prefix(&current_dir) {
+                            rel.to_path_buf()
+                        } else {
+                            path_buf
+                        }
                     } else {
                         path_buf
-                    }
-                } else {
-                    path_buf
-                };
-                let normalized = crate::editor::normalize_path(&normalized);
-                Some(normalized.to_string_lossy().to_string())
+                    };
+                    let normalized = crate::editor::normalize_path(&normalized);
+                    Some(normalized.to_string_lossy().to_string())
+                }
+            } else {
+                None
+            };
+            Tab {
+                path: save_path,
+                buffer,
+                cursor: Cursor::new(),
+                secondary_cursors: Vec::new(),
+                scroll_x: 0,
+                scroll_y: 0,
             }
-        } else {
-            None
         };
-        Tab {
-            path: save_path,
-            buffer,
-            cursor: Cursor::new(),
-            secondary_cursors: Vec::new(),
-            scroll_x: 0,
-            scroll_y: 0,
-        }
+        AppState::new(initial_tab)
     };
-
-    let mut state = AppState::new(initial_tab);
     crate::experiments::startup::record_step("Initial File Load & State Setup");
 
     let socket_path = ipc::start_ipc_server(state.pending_open_files.clone(), event_loop.create_proxy());
@@ -182,6 +216,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     crate::experiments::startup::record_step("Window Visibility Set");
 
     let mut redraw_requested = false;
+    let mut last_autosave = std::time::Instant::now();
 
     let (watcher_tx, watcher_rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
     let proxy_for_watcher = event_loop.create_proxy();
@@ -296,6 +331,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
             Event::WindowEvent { event, window_id } if window_id == window.id() => {
                 if let WindowEvent::CloseRequested = event {
+                    autosave::save_session_and_dirty_buffers(&state);
                     elwt.exit();
                     return;
                 }
@@ -401,6 +437,12 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     let ui_ref = ui.as_mut().unwrap();
                     let gpu_ref = gpu.as_mut().unwrap();
                     let atlas_ref = atlas.as_mut().unwrap();
+
+                    // Periodic auto-save (every 2 seconds)
+                    if last_autosave.elapsed() >= std::time::Duration::from_secs(2) {
+                        autosave::save_session_and_dirty_buffers(&state);
+                        last_autosave = std::time::Instant::now();
+                    }
 
                     // Drain file watcher events
                     while let Ok(res) = watcher_rx.try_recv() {
