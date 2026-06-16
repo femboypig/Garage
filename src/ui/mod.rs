@@ -386,8 +386,7 @@ impl UiState {
                 .unwrap_or(false)
     }
     pub fn get_tab_name(&self, path_opt: Option<&str>) -> String {
-        let is_diagnostics = path_opt == Some("diagnostics://project");
-        if is_diagnostics {
+        if path_opt == Some("diagnostics://project") {
             let mut err_count = 0;
             let mut warn_count = 0;
             for (e, w) in self.lsp_diagnostics.values() {
@@ -401,6 +400,8 @@ impl UiState {
             } else {
                 "  ⊗ 0".to_string()
             }
+        } else if path_opt == Some("search://project") {
+            "Project Search".to_string()
         } else {
             path_opt
                 .and_then(|p| std::path::Path::new(p).file_name())
