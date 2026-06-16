@@ -118,8 +118,15 @@ impl UiState {
             let (x, y, w, h) = if is_powerline {
                 let x_min = pen_x.round();
                 let x_max = (pen_x + char_width).round();
-                let y_min = (baseline_y - font_size * 0.8).round();
-                let y_max = (baseline_y - font_size * 0.8 + font_size * 1.2).round();
+                
+                let (ascent, line_h) = if (font_size - self.buffer_font_size).abs() < 0.1 {
+                    (self.buffer_font_ascent, self.buffer_line_height)
+                } else {
+                    (self.ui_font_ascent, self.ui_line_height)
+                };
+                
+                let y_min = (baseline_y - ascent).round();
+                let y_max = (baseline_y - ascent + line_h).round();
                 
                 (x_min, y_min, x_max - x_min, y_max - y_min)
             } else {
