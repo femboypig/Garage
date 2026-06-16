@@ -4,7 +4,37 @@ use std::path::Path;
 
 fn is_binary_file(bytes: &[u8]) -> bool {
     let check_len = bytes.len().min(8192);
-    bytes[..check_len].contains(&0)
+    let slice = &bytes[..check_len];
+    
+    // Check for UTF-16 or UTF-32 BOMs
+    if slice.starts_with(&[0xfe, 0xff]) || slice.starts_with(&[0xff, 0xfe]) {
+        return false; // UTF-16 text
+    }
+    if slice.starts_with(&[0x00, 0x00, 0xfe, 0xff]) || slice.starts_with(&[0xff, 0xfe, 0x00, 0x00]) {
+        return false; // UTF-32 text
+    }
+    
+    // If it's valid UTF-8, it's text
+    if std::str::from_utf8(slice).is_ok() {
+        return false;
+    }
+    
+    // Check percentage of control/non-printable characters (excluding whitespace/tabs/newlines)
+    let mut control_count = 0;
+    for &b in slice {
+        if b == 0 {
+            control_count += 1;
+        } else if b < 9 || (b > 13 && b < 32) || b == 127 {
+            control_count += 1;
+        }
+    }
+    
+    // If more than 5% of characters are non-printable control chars, it's binary
+    if !slice.is_empty() && (control_count * 100 / slice.len()) > 5 {
+        return true;
+    }
+    
+    false
 }
 
 
