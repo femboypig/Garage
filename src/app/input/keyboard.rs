@@ -1002,11 +1002,7 @@ pub fn handle_editor_keyboard(
                 ui.command_palette_selected = 0;
             }
             crate::editor::actions::Action::GlobalSearch => {
-                ui.active_modal = Some(crate::ui::ModalType::GlobalSearch);
-                ui.global_search_query.clear();
-                ui.global_search_results.clear();
-                ui.global_search_selected = 0;
-                ui.global_search_scroll = 0;
+                handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from("search://project")), window, elwt, gpu, atlas, font_bytes);
             }
             crate::editor::actions::Action::SaveFile => {
                 handle_action(ui, state, UiAction::SaveFile, window, elwt, gpu, atlas, font_bytes);
