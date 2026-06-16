@@ -388,7 +388,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     WindowEvent::MouseInput { state: input_state, button, .. } => {
                         let was_modified_state = if state.active_tab_idx < state.tabs.len() {
                             let tab = &state.tabs[state.active_tab_idx];
-                            Some((tab.buffer.undo_stack.len(), tab.buffer.redo_stack.len(), tab.buffer.is_modified))
+                            Some((tab.buffer.revision, tab.buffer.is_modified))
                         } else {
                             None
                         };
@@ -407,7 +407,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                         let is_modified_state = if state.active_tab_idx < state.tabs.len() {
                             let tab = &state.tabs[state.active_tab_idx];
-                            Some((tab.buffer.undo_stack.len(), tab.buffer.redo_stack.len(), tab.buffer.is_modified))
+                            Some((tab.buffer.revision, tab.buffer.is_modified))
                         } else {
                             None
                         };
@@ -428,7 +428,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         if key_event.state == winit::event::ElementState::Pressed {
                             let was_modified_state = if state.active_tab_idx < state.tabs.len() {
                                 let tab = &state.tabs[state.active_tab_idx];
-                                Some((tab.buffer.undo_stack.len(), tab.buffer.redo_stack.len(), tab.buffer.is_modified))
+                                Some((tab.buffer.revision, tab.buffer.is_modified))
                             } else {
                                 None
                             };
@@ -447,7 +447,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
                             let is_modified_state = if state.active_tab_idx < state.tabs.len() {
                                 let tab = &state.tabs[state.active_tab_idx];
-                                Some((tab.buffer.undo_stack.len(), tab.buffer.redo_stack.len(), tab.buffer.is_modified))
+                                Some((tab.buffer.revision, tab.buffer.is_modified))
                             } else {
                                 None
                             };
