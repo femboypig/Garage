@@ -106,6 +106,7 @@ impl UiState {
         font_size: f32,
         char_width: f32,
     ) -> f32 {
+        let white_uv = atlas.white_pixel_uv();
         if let Some(info) = atlas.get_or_rasterize(queue, c, font_size) {
             if info.width == 0.0 || info.height == 0.0 {
                 return char_width;
@@ -165,6 +166,18 @@ impl UiState {
                 let h = info.height.round();
                 (x, y, w, h)
             };
+
+            // Draw under-fill solid quad for powerline solid separators to prevent any horizontal gaps
+            if is_powerline {
+                let cp = c as u32;
+                if cp % 4 == 0 {
+                    let half_w = (w / 2.0).round();
+                    self.push_quad(vertices, indices, x, y, half_w, h, white_uv, color);
+                } else if cp % 4 == 2 {
+                    let half_w = (w / 2.0).round();
+                    self.push_quad(vertices, indices, x + w - half_w, y, half_w, h, white_uv, color);
+                }
+            }
 
             let start = vertices.len() as u16;
             vertices.push(Vertex {
