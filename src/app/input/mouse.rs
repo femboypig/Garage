@@ -1187,6 +1187,7 @@ pub fn handle_mouse_input(
                         let btn_prev_w = 20.0f32;
                         let btn_next_w = 20.0f32;
                         let btn_replace_w = 70.0f32;
+                        let btn_replace_all_w = 45.0f32;
                         let close_btn_w = 20.0f32;
 
                         let row_h = bar_h / 2.0;
@@ -1201,10 +1202,40 @@ pub fn handle_mouse_input(
                         let input_start_x = bar_x + 10.0 + label_w;
                         let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
 
-                        // Check Row 1 click (Find, Prev, Next, Close)
+                        // Check Row 1 click (Find, Prev, Next, Close, and options inside find input)
                         if state.mouse_y >= input_y_1 && state.mouse_y < input_y_1 + input_h {
-                            // Click on Find input
-                            if state.mouse_x >= input_start_x && state.mouse_x < input_start_x + input_find_w {
+                            // Check options inside Find input
+                            let opt_btn_w = 20.0f32;
+                            let opt_y = input_y_1 + 2.0;
+                            let opt_h = input_h - 4.0;
+                            let opt_regex_x = input_start_x + input_find_w - 5.0 - opt_btn_w;
+                            let opt_word_x = opt_regex_x - 2.0 - opt_btn_w;
+                            let opt_case_x = opt_word_x - 2.0 - opt_btn_w;
+
+                            if state.mouse_y >= opt_y && state.mouse_y < opt_y + opt_h {
+                                if state.mouse_x >= opt_case_x && state.mouse_x < opt_case_x + opt_btn_w {
+                                    ui.search_case_sensitive = !ui.search_case_sensitive;
+                                    ui.perform_search(state);
+                                    window.request_redraw();
+                                    return;
+                                }
+                                if state.mouse_x >= opt_word_x && state.mouse_x < opt_word_x + opt_btn_w {
+                                    ui.search_whole_word = !ui.search_whole_word;
+                                    ui.perform_search(state);
+                                    window.request_redraw();
+                                    return;
+                                }
+                                if state.mouse_x >= opt_regex_x && state.mouse_x < opt_regex_x + opt_btn_w {
+                                    ui.search_regex = !ui.search_regex;
+                                    ui.perform_search(state);
+                                    window.request_redraw();
+                                    return;
+                                }
+                            }
+
+                            // Click on Find input (excluding options)
+                            let options_w = 3.0 * opt_btn_w + 10.0;
+                            if state.mouse_x >= input_start_x && state.mouse_x < input_start_x + input_find_w - options_w {
                                 ui.search_focus_replace = false;
                                 window.request_redraw();
                                 return;
@@ -1258,7 +1289,7 @@ pub fn handle_mouse_input(
                             }
                         }
 
-                        // Check Row 2 click (Replace input, Replace button)
+                        // Check Row 2 click (Replace input, Replace button, Replace All button)
                         if state.mouse_y >= input_y_2 && state.mouse_y < input_y_2 + input_h {
                             // Click on Replace input
                             if state.mouse_x >= input_start_x && state.mouse_x < input_start_x + input_find_w {
@@ -1284,6 +1315,31 @@ pub fn handle_mouse_input(
                                     active_tab.cursor.col = m_col + ui.replace_query.chars().count();
                                     active_tab.cursor.clear_selection();
                                     
+                                    ui.perform_search(state);
+                                }
+                                window.request_redraw();
+                                return;
+                            }
+
+                            // Click on Replace All button
+                            let rep_all_x = count_x + btn_replace_w + 5.0;
+                            if state.mouse_x >= rep_all_x && state.mouse_x < rep_all_x + btn_replace_all_w {
+                                if !ui.search_matches.is_empty() && state.active_tab_idx < state.tabs.len() {
+                                    let active_tab = &mut state.tabs[state.active_tab_idx];
+                                    active_tab.buffer.commit_transaction();
+                                    active_tab.buffer.start_transaction();
+                                    
+                                    let q_len = ui.search_query.chars().count();
+                                    let mut matches_to_replace = ui.search_matches.clone();
+                                    matches_to_replace.sort_by(|a, b| b.cmp(a)); // Descending order
+                                    
+                                    for (m_line, m_col) in matches_to_replace {
+                                        active_tab.buffer.delete(m_line, m_col, m_line, m_col + q_len);
+                                        active_tab.buffer.insert(m_line, m_col, &ui.replace_query);
+                                    }
+                                    
+                                    active_tab.buffer.commit_transaction();
+                                    active_tab.cursor.clear_selection();
                                     ui.perform_search(state);
                                 }
                                 window.request_redraw();
