@@ -1716,12 +1716,20 @@ pub fn handle_project_search_keyboard(
             }
             window.request_redraw();
         }
+        Key::Named(NamedKey::Tab) => {
+            ui.global_search_focus_replace = !ui.global_search_focus_replace;
+            window.request_redraw();
+        }
         Key::Named(NamedKey::Backspace) => {
             if !ctrl && !alt {
-                ui.global_search_query.pop();
-                ui.global_search_selected = 0;
-                let q = ui.global_search_query.clone();
-                ui.run_global_search(q);
+                if ui.global_search_focus_replace {
+                    ui.global_replace_query.pop();
+                } else {
+                    ui.global_search_query.pop();
+                    ui.global_search_selected = 0;
+                    let q = ui.global_search_query.clone();
+                    ui.run_global_search(q);
+                }
                 window.request_redraw();
             }
         }
@@ -1729,12 +1737,18 @@ pub fn handle_project_search_keyboard(
             if !ctrl && !alt {
                 for c in text.chars() {
                     if !c.is_control() {
-                        ui.global_search_query.push(c);
+                        if ui.global_search_focus_replace {
+                            ui.global_replace_query.push(c);
+                        } else {
+                            ui.global_search_query.push(c);
+                        }
                     }
                 }
-                ui.global_search_selected = 0;
-                let q = ui.global_search_query.clone();
-                ui.run_global_search(q);
+                if !ui.global_search_focus_replace {
+                    ui.global_search_selected = 0;
+                    let q = ui.global_search_query.clone();
+                    ui.run_global_search(q);
+                }
                 window.request_redraw();
             }
         }
