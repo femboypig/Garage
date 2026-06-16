@@ -49,44 +49,61 @@ pub fn draw_breadcrumbs(
     
     // If search panel is active on this pane and it's not the project search tab, draw search panel instead of breadcrumbs
     if is_active_pane && ui.show_search_panel && active_file_path != Some("search://project") {
-        let label_find_w = 40.0f32;
-        let input_find_w = 120.0f32;
-        let count_w = 60.0f32;
+        let label_w = 60.0f32;
+        let count_w = 65.0f32;
         let btn_prev_w = 20.0f32;
         let btn_next_w = 20.0f32;
-        let label_replace_w = 60.0f32;
-        let input_replace_w = 120.0f32;
-        let btn_replace_w = 60.0f32;
+        let btn_replace_w = 70.0f32;
         let close_btn_w = 20.0f32;
 
-        let mut cur_x = bar_x + 10.0;
-        let input_h = bar_h - 6.0;
-        let input_y = bar_y + 3.0;
-        let l_baseline = (bar_y + bar_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+        let row_h = bar_h / 2.0;
+        let input_h = row_h - 6.0;
+        let input_y_1 = bar_y + 3.0;
+        let input_y_2 = bar_y + row_h + 3.0;
 
-        // 1. "Find:" label
-        ui.push_str(vertices, indices, atlas, queue, "Find:", cur_x, l_baseline, ui.config.theme.modal_text_muted, ui.ui_font_size, ui.ui_char_width);
-        cur_x += label_find_w;
+        let l_baseline_1 = (bar_y + row_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+        let l_baseline_2 = (bar_y + row_h + row_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+
+        let close_x = bar_x + bar_w - 25.0;
+        let next_x = close_x - 10.0 - btn_next_w;
+        let prev_x = next_x - 4.0 - btn_prev_w;
+        let count_x = prev_x - 10.0 - count_w;
+        let input_start_x = bar_x + 10.0 + label_w;
+        let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
+
+        // --- ROW 1: FIND ---
+        // 1. "Find:" label (centered vertically on Row 1)
+        ui.push_str(vertices, indices, atlas, queue, "Find:", bar_x + 10.0, l_baseline_1, ui.config.theme.modal_text_muted, ui.ui_font_size, ui.ui_char_width);
 
         // 2. Find Input text box
-        let find_in_x = cur_x;
         let is_find_focused = !ui.search_focus_replace;
-        ui.push_quad(vertices, indices, find_in_x, input_y, input_find_w, input_h, white_uv, ui.config.theme.editor_bg);
-        let border_color = if is_find_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
-        ui.push_quad(vertices, indices, find_in_x, input_y, input_find_w, 1.0, white_uv, border_color);
-        ui.push_quad(vertices, indices, find_in_x, input_y + input_h - 1.0, input_find_w, 1.0, white_uv, border_color);
-        ui.push_quad(vertices, indices, find_in_x, input_y, 1.0, input_h, white_uv, border_color);
-        ui.push_quad(vertices, indices, find_in_x + input_find_w - 1.0, input_y, 1.0, input_h, white_uv, border_color);
+        ui.push_quad(vertices, indices, input_start_x, input_y_1, input_find_w, input_h, white_uv, ui.config.theme.editor_bg);
+        let border_color_1 = if is_find_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
+        ui.push_quad(vertices, indices, input_start_x, input_y_1, input_find_w, 1.0, white_uv, border_color_1);
+        ui.push_quad(vertices, indices, input_start_x, input_y_1 + input_h - 1.0, input_find_w, 1.0, white_uv, border_color_1);
+        ui.push_quad(vertices, indices, input_start_x, input_y_1, 1.0, input_h, white_uv, border_color_1);
+        ui.push_quad(vertices, indices, input_start_x + input_find_w - 1.0, input_y_1, 1.0, input_h, white_uv, border_color_1);
+
+        // Clip text inside input box
+        let max_chars = ((input_find_w - 10.0) / ui.ui_char_width).floor().max(1.0) as usize;
+        let display_query = if ui.search_query.chars().count() > max_chars {
+            if is_find_focused {
+                ui.search_query.chars().skip(ui.search_query.chars().count() - max_chars).collect::<String>()
+            } else {
+                ui.search_query.chars().take(max_chars).collect::<String>()
+            }
+        } else {
+            ui.search_query.clone()
+        };
 
         // Draw input content
-        ui.push_str(vertices, indices, atlas, queue, &ui.search_query, find_in_x + 5.0, l_baseline, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
+        ui.push_str(vertices, indices, atlas, queue, &display_query, input_start_x + 5.0, l_baseline_1, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
         if is_find_focused {
-            let cursor_x = find_in_x + 5.0 + ui.search_query.chars().count() as f32 * ui.ui_char_width;
-            if cursor_x < find_in_x + input_find_w - 5.0 {
-                ui.push_quad(vertices, indices, cursor_x, input_y + 3.0, 1.5, input_h - 6.0, white_uv, ui.config.theme.cursor_color);
+            let cursor_x = input_start_x + 5.0 + display_query.chars().count() as f32 * ui.ui_char_width;
+            if cursor_x < input_start_x + input_find_w - 5.0 {
+                ui.push_quad(vertices, indices, cursor_x, input_y_1 + 3.0, 1.5, input_h - 6.0, white_uv, ui.config.theme.cursor_color);
             }
         }
-        cur_x += input_find_w + 10.0;
 
         // 3. Match counts ("1 of 2")
         let count_str = if ui.search_matches.is_empty() {
@@ -94,68 +111,85 @@ pub fn draw_breadcrumbs(
         } else {
             format!("{} of {}", ui.active_search_match_idx + 1, ui.search_matches.len())
         };
-        ui.push_str(vertices, indices, atlas, queue, &count_str, cur_x, l_baseline, ui.config.theme.modal_text_muted, ui.ui_font_size, ui.ui_char_width);
-        cur_x += count_w;
+        // Center the count text inside its allocated count_w
+        let count_text_len = count_str.chars().count() as f32;
+        let count_text_x = count_x + ((count_w - count_text_len * ui.ui_char_width) / 2.0).round();
+        ui.push_str(vertices, indices, atlas, queue, &count_str, count_text_x, l_baseline_1, ui.config.theme.modal_text_muted, ui.ui_font_size, ui.ui_char_width);
 
         // 4. Prev Button (◀)
-        let prev_x = cur_x;
-        let prev_hover = mouse_x >= prev_x && mouse_x < prev_x + btn_prev_w && mouse_y >= input_y && mouse_y < input_y + input_h;
-        ui.push_quad(vertices, indices, prev_x, input_y, btn_prev_w, input_h, white_uv, if prev_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-        ui.push_quad(vertices, indices, prev_x, input_y, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, prev_x, input_y + input_h - 1.0, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, prev_x, input_y, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, prev_x + btn_prev_w - 1.0, input_y, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_str(vertices, indices, atlas, queue, "◀", prev_x + 4.0, l_baseline, ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
-        cur_x += btn_prev_w + 4.0;
+        let prev_hover = mouse_x >= prev_x && mouse_x < prev_x + btn_prev_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
+        ui.push_quad(vertices, indices, prev_x, input_y_1, btn_prev_w, input_h, white_uv, if prev_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
+        ui.push_quad(vertices, indices, prev_x, input_y_1, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
+        ui.push_quad(vertices, indices, prev_x, input_y_1 + input_h - 1.0, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
+        ui.push_quad(vertices, indices, prev_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
+        ui.push_quad(vertices, indices, prev_x + btn_prev_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
+        
+        let prev_text_x = prev_x + ((btn_prev_w - ui.ui_char_width) / 2.0).round();
+        ui.push_str(vertices, indices, atlas, queue, "◀", prev_text_x, l_baseline_1, ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
 
         // 5. Next Button (▶)
-        let next_x = cur_x;
-        let next_hover = mouse_x >= next_x && mouse_x < next_x + btn_next_w && mouse_y >= input_y && mouse_y < input_y + input_h;
-        ui.push_quad(vertices, indices, next_x, input_y, btn_next_w, input_h, white_uv, if next_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-        ui.push_quad(vertices, indices, next_x, input_y, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, next_x, input_y + input_h - 1.0, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, next_x, input_y, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, next_x + btn_next_w - 1.0, input_y, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_str(vertices, indices, atlas, queue, "▶", next_x + 4.0, l_baseline, ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
-        cur_x += btn_next_w + 15.0;
+        let next_hover = mouse_x >= next_x && mouse_x < next_x + btn_next_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
+        ui.push_quad(vertices, indices, next_x, input_y_1, btn_next_w, input_h, white_uv, if next_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
+        ui.push_quad(vertices, indices, next_x, input_y_1, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
+        ui.push_quad(vertices, indices, next_x, input_y_1 + input_h - 1.0, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
+        ui.push_quad(vertices, indices, next_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
+        ui.push_quad(vertices, indices, next_x + btn_next_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
+        
+        let next_text_x = next_x + ((btn_next_w - ui.ui_char_width) / 2.0).round();
+        ui.push_str(vertices, indices, atlas, queue, "▶", next_text_x, l_baseline_1, ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
 
-        // 6. "Replace:" label
-        ui.push_str(vertices, indices, atlas, queue, "Replace:", cur_x, l_baseline, ui.config.theme.modal_text_muted, ui.ui_font_size, ui.ui_char_width);
-        cur_x += label_replace_w;
+        // 6. Close Button (✕)
+        let close_hover = mouse_x >= close_x && mouse_x < close_x + close_btn_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
+        if close_hover {
+            ui.push_quad(vertices, indices, close_x, input_y_1, close_btn_w, input_h, white_uv, ui.config.theme.button_hover_bg);
+        }
+        let close_text_x = close_x + ((close_btn_w - ui.ui_char_width) / 2.0).round();
+        ui.push_str(vertices, indices, atlas, queue, "✕", close_text_x, l_baseline_1, if close_hover { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_muted }, ui.ui_font_size, ui.ui_char_width);
 
-        // 7. Replace Input text box
-        let rep_in_x = cur_x;
+        // --- ROW 2: REPLACE ---
+        // 7. "Replace:" label
+        ui.push_str(vertices, indices, atlas, queue, "Replace:", bar_x + 10.0, l_baseline_2, ui.config.theme.modal_text_muted, ui.ui_font_size, ui.ui_char_width);
+
+        // 8. Replace Input text box
         let is_replace_focused = ui.search_focus_replace;
-        ui.push_quad(vertices, indices, rep_in_x, input_y, input_replace_w, input_h, white_uv, ui.config.theme.editor_bg);
-        let border_color2 = if is_replace_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
-        ui.push_quad(vertices, indices, rep_in_x, input_y, input_replace_w, 1.0, white_uv, border_color2);
-        ui.push_quad(vertices, indices, rep_in_x, input_y + input_h - 1.0, input_replace_w, 1.0, white_uv, border_color2);
-        ui.push_quad(vertices, indices, rep_in_x, input_y, 1.0, input_h, white_uv, border_color2);
-        ui.push_quad(vertices, indices, rep_in_x + input_replace_w - 1.0, input_y, 1.0, input_h, white_uv, border_color2);
+        ui.push_quad(vertices, indices, input_start_x, input_y_2, input_find_w, input_h, white_uv, ui.config.theme.editor_bg);
+        let border_color_2 = if is_replace_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
+        ui.push_quad(vertices, indices, input_start_x, input_y_2, input_find_w, 1.0, white_uv, border_color_2);
+        ui.push_quad(vertices, indices, input_start_x, input_y_2 + input_h - 1.0, input_find_w, 1.0, white_uv, border_color_2);
+        ui.push_quad(vertices, indices, input_start_x, input_y_2, 1.0, input_h, white_uv, border_color_2);
+        ui.push_quad(vertices, indices, input_start_x + input_find_w - 1.0, input_y_2, 1.0, input_h, white_uv, border_color_2);
 
-        ui.push_str(vertices, indices, atlas, queue, &ui.replace_query, rep_in_x + 5.0, l_baseline, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
+        // Clip text inside replace box
+        let display_replace = if ui.replace_query.chars().count() > max_chars {
+            if is_replace_focused {
+                ui.replace_query.chars().skip(ui.replace_query.chars().count() - max_chars).collect::<String>()
+            } else {
+                ui.replace_query.chars().take(max_chars).collect::<String>()
+            }
+        } else {
+            ui.replace_query.clone()
+        };
+
+        ui.push_str(vertices, indices, atlas, queue, &display_replace, input_start_x + 5.0, l_baseline_2, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
         if is_replace_focused {
-            let cursor_x = rep_in_x + 5.0 + ui.replace_query.chars().count() as f32 * ui.ui_char_width;
-            if cursor_x < rep_in_x + input_replace_w - 5.0 {
-                ui.push_quad(vertices, indices, cursor_x, input_y + 3.0, 1.5, input_h - 6.0, white_uv, ui.config.theme.cursor_color);
+            let cursor_x = input_start_x + 5.0 + display_replace.chars().count() as f32 * ui.ui_char_width;
+            if cursor_x < input_start_x + input_find_w - 5.0 {
+                ui.push_quad(vertices, indices, cursor_x, input_y_2 + 3.0, 1.5, input_h - 6.0, white_uv, ui.config.theme.cursor_color);
             }
         }
-        cur_x += input_replace_w + 10.0;
 
-        // 8. Replace Button
-        let rep_x = cur_x;
-        let rep_hover = mouse_x >= rep_x && mouse_x < rep_x + btn_replace_w && mouse_y >= input_y && mouse_y < input_y + input_h;
-        ui.push_quad(vertices, indices, rep_x, input_y, btn_replace_w, input_h, white_uv, if rep_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-        ui.push_quad(vertices, indices, rep_x, input_y, btn_replace_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, rep_x, input_y + input_h - 1.0, btn_replace_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, rep_x, input_y, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, rep_x + btn_replace_w - 1.0, input_y, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_str(vertices, indices, atlas, queue, "Replace", rep_x + 6.0, l_baseline, ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
-
-        // 9. Close Button (✕) on the right of the breadcrumb bar
-        let close_x = bar_x + bar_w - 25.0;
-        let close_hover = mouse_x >= close_x && mouse_x < close_x + close_btn_w && mouse_y >= input_y && mouse_y < input_y + input_h;
-        ui.push_str(vertices, indices, atlas, queue, "✕", close_x + 4.0, l_baseline - 2.0, if close_hover { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_muted }, ui.ui_font_size, ui.ui_char_width);
+        // 9. Replace Button
+        let rep_hover = mouse_x >= count_x && mouse_x < count_x + btn_replace_w && mouse_y >= input_y_2 && mouse_y < input_y_2 + input_h;
+        ui.push_quad(vertices, indices, count_x, input_y_2, btn_replace_w, input_h, white_uv, if rep_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
+        ui.push_quad(vertices, indices, count_x, input_y_2, btn_replace_w, 1.0, white_uv, ui.config.theme.button_border);
+        ui.push_quad(vertices, indices, count_x, input_y_2 + input_h - 1.0, btn_replace_w, 1.0, white_uv, ui.config.theme.button_border);
+        ui.push_quad(vertices, indices, count_x, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
+        ui.push_quad(vertices, indices, count_x + btn_replace_w - 1.0, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
+        
+        let replace_btn_text = "Replace";
+        let rep_text_len = replace_btn_text.chars().count() as f32;
+        let rep_text_x = count_x + ((btn_replace_w - rep_text_len * ui.ui_char_width) / 2.0).round();
+        ui.push_str(vertices, indices, atlas, queue, replace_btn_text, rep_text_x, l_baseline_2, ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
     } else {
         // Construct breadcrumb text: relative_path > current_function
         let relative_path = active_file_path
