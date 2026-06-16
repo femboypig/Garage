@@ -3,7 +3,7 @@ use std::thread;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::io::{Read, Write};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use winit::window::Window;
 use winit::event_loop::EventLoopProxy;
 
@@ -17,7 +17,32 @@ pub struct WindowInfo {
     pub socket_path: String,
 }
 
-const SHRED_STATE_FILE: &str = "/tmp/garage-active-windows.json";
+fn get_secure_runtime_dir() -> PathBuf {
+    if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+        let path = PathBuf::from(runtime_dir).join("garage");
+        let _ = fs::create_dir_all(&path);
+        path
+    } else {
+        let user = std::env::var("USER").unwrap_or_else(|_| "default".to_string());
+        let path = PathBuf::from("/tmp").join(format!("garage-runtime-{}", user));
+        let _ = fs::create_dir_all(&path);
+        // Set directory permissions to 700 (user-only read/write/execute)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = fs::metadata(&path) {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o700);
+                let _ = fs::set_permissions(&path, perms);
+            }
+        }
+        path
+    }
+}
+
+fn active_windows_file_path() -> PathBuf {
+    get_secure_runtime_dir().join("active-windows.json")
+}
 
 fn is_process_running(pid: u32) -> bool {
     Path::new(&format!("/proc/{}", pid)).exists()
@@ -25,11 +50,11 @@ fn is_process_running(pid: u32) -> bool {
 
 /// Helper to load and filter active windows list
 fn load_active_windows() -> Vec<WindowInfo> {
-    let path = Path::new(SHRED_STATE_FILE);
+    let path = active_windows_file_path();
     if !path.exists() {
         return Vec::new();
     }
-    let content = match fs::read_to_string(path) {
+    let content = match fs::read_to_string(&path) {
         Ok(c) => c,
         Err(_) => return Vec::new(),
     };
@@ -57,7 +82,7 @@ fn save_active_windows(list: &[WindowInfo]) {
         Ok(c) => c,
         Err(_) => return,
     };
-    let _ = fs::write(SHRED_STATE_FILE, content);
+    let _ = fs::write(active_windows_file_path(), content);
 }
 
 /// Start IPC Server thread for this window
@@ -66,7 +91,10 @@ pub fn start_ipc_server(
     proxy: EventLoopProxy<()>,
 ) -> String {
     let pid = std::process::id();
-    let socket_path = format!("/tmp/garage-ipc-{}.sock", pid);
+    let socket_path = get_secure_runtime_dir()
+        .join(format!("garage-ipc-{}.sock", pid))
+        .to_string_lossy()
+        .into_owned();
     
     // Remove if socket file already exists
     let _ = fs::remove_file(&socket_path);
@@ -79,11 +107,13 @@ pub fn start_ipc_server(
     let socket_path_clone = socket_path.clone();
     thread::spawn(move || {
         for stream in listener.incoming() {
-            if let Ok(mut stream) = stream {
+            if let Ok(stream) = stream {
                 let mut data = String::new();
-                if stream.read_to_string(&mut data).is_ok() {
+                // Avoid DoS/OOM by limiting maximum path reading size to 4KB
+                if stream.take(4096).read_to_string(&mut data).is_ok() {
                     let file_path = data.trim().to_string();
-                    if !file_path.is_empty() {
+                    // Basic sanity check to avoid empty or control character injected paths
+                    if !file_path.is_empty() && file_path.chars().all(|c| !c.is_control()) {
                         if let Ok(mut pending) = pending_open_files.lock() {
                             pending.push(file_path);
                         }
