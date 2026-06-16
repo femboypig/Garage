@@ -168,6 +168,9 @@ pub fn draw_command_palette(
         } else if ui.command_palette_mode == crate::ui::CommandPaletteMode::Encodings {
             icon_key = "binary";
             icon_color = [0.38, 0.69, 0.94, 1.0];
+        } else if ui.command_palette_mode == crate::ui::CommandPaletteMode::LineEndings {
+            icon_key = "file";
+            icon_color = [0.38, 0.69, 0.94, 1.0];
         }
 
         let has_icon = ui.command_palette_mode != crate::ui::CommandPaletteMode::Commands;
