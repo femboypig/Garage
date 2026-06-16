@@ -32,6 +32,8 @@ pub enum UiAction {
     ToggleDock,
     SplitVertical,
     SplitHorizontal,
+    Find,
+    FindInProject,
     None,
 }
 
