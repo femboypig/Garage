@@ -1626,7 +1626,53 @@ pub fn handle_mouse_input(
                             } else {
                                  // Click inside editor area
                                  if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit - 14.0 {
-  
+                                        if state.tabs[active_tab_idx].path.as_deref() == Some("search://project") {
+                                            let input_h = ui.ui_line_height + 8.0;
+                                            let input_y = editor_top + ((50.0 - input_h) / 2.0).round();
+                                            let input_w = 400.0f32;
+                                            let input_x = text_area_x + 20.0;
+
+                                            if state.mouse_x >= input_x && state.mouse_x < input_x + input_w && state.mouse_y >= input_y && state.mouse_y < input_y + input_h {
+                                                window.request_redraw();
+                                                return;
+                                            }
+
+                                            let list_y = editor_top + 50.0 + 1.0;
+                                            let item_height = ui.buffer_line_height;
+                                            if state.mouse_y >= list_y {
+                                                let clicked_idx = ((state.mouse_y - list_y) / item_height).floor() as usize + ui.global_search_scroll;
+                                                
+                                                let mut render_items = Vec::new();
+                                                let mut last_path = None;
+                                                for (idx, (path, line_idx, _content)) in ui.global_search_results.iter().enumerate() {
+                                                    if last_path.as_ref() != Some(path) {
+                                                        render_items.push((None, path.clone(), 0));
+                                                        last_path = Some(path.clone());
+                                                    }
+                                                    render_items.push((Some(idx), path.clone(), *line_idx));
+                                                }
+                                                
+                                                if clicked_idx < render_items.len() {
+                                                    if let (Some(result_idx), path, line_idx) = &render_items[clicked_idx] {
+                                                        ui.global_search_selected = *result_idx;
+                                                        crate::app::handler::handle_action(
+                                                            ui,
+                                                            state,
+                                                            UiAction::OpenFileAt(path.clone(), *line_idx),
+                                                            window,
+                                                            elwt,
+                                                            gpu,
+                                                            atlas,
+                                                            font_bytes,
+                                                        );
+                                                        window.request_redraw();
+                                                        return;
+                                                    }
+                                                }
+                                            }
+                                            return;
+                                        }
+
                                        // 2. Check if virtual diagnostics tab item was clicked
                                        let mut clicked_info = None;
                                        if state.tabs[active_tab_idx].path.as_deref() == Some("diagnostics://project") {
