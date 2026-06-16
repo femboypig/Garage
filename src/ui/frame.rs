@@ -112,10 +112,10 @@ impl UiState {
             }
 
             // CRITICAL: Round coordinates to exact integer pixels to eliminate bilinear filtering blur!
-            let is_powerline = (c >= '\u{e0b0}' && c <= '\u{e0d4}') 
-                || (c >= '\u{2500}' && c <= '\u{257f}');
+            let is_box_drawing = c >= '\u{2500}' && c <= '\u{257f}';
+            let is_powerline = c >= '\u{e0b0}' && c <= '\u{e0d4}';
 
-            let (x, y, w, h) = if is_powerline {
+            let (x, y, w, h) = if is_box_drawing {
                 let x_min = pen_x.round();
                 let x_max = (pen_x + char_width).round();
                 
@@ -129,6 +129,20 @@ impl UiState {
                 let y_max = (baseline_y - ascent + line_h).round();
                 
                 (x_min, y_min, x_max - x_min, y_max - y_min)
+            } else if is_powerline {
+                let x_val = (pen_x + info.bearing_x).round();
+                let w_val = info.width.round();
+                
+                let (ascent, line_h) = if (font_size - self.buffer_font_size).abs() < 0.1 {
+                    (self.buffer_font_ascent, self.buffer_line_height)
+                } else {
+                    (self.ui_font_ascent, self.ui_line_height)
+                };
+                
+                let y_min = (baseline_y - ascent).round();
+                let y_max = (baseline_y - ascent + line_h).round();
+                
+                (x_val, y_min, w_val, y_max - y_min)
             } else {
                 let x = (pen_x + info.bearing_x).round();
                 let y = (baseline_y - info.bearing_y - info.height).round();
