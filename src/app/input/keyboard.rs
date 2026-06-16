@@ -591,7 +591,7 @@ pub fn handle_command_palette_input(
             Key::Character(text) => {
                 if text.chars().count() == 1 {
                     let c = text.chars().next().unwrap();
-                    if c.is_ascii_graphic() || c == ' ' {
+                    if !c.is_control() {
                         ui.command_palette_query.push(c);
                         ui.command_palette_selected = 0;
                         window.request_redraw();
