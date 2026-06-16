@@ -26,7 +26,7 @@ pub enum Action {
     DeleteRight,
     InsertNewLine,
     InsertTab,
-    InsertChar(char),
+    InsertChar(String),
 
     // Line Manipulation
     MoveLineUp,
