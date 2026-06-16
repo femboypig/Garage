@@ -108,6 +108,19 @@ fn default_true() -> bool {
     true
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutosaveSetting {
+    Off,
+    AfterDelay { milliseconds: u64 },
+    OnFocusChange,
+    OnWindowChange,
+}
+
+fn default_autosave() -> AutosaveSetting {
+    AutosaveSetting::Off
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppConfig {
     pub ui_font_size: f32,
@@ -121,6 +134,8 @@ pub struct AppConfig {
     pub show_git_branch: bool,
     #[serde(default)]
     pub override_tiling_wm: Option<bool>,
+    #[serde(default = "default_autosave")]
+    pub autosave: AutosaveSetting,
 }
 
 impl Default for AppConfig {
@@ -134,6 +149,7 @@ impl Default for AppConfig {
             show_git_blame: true,
             show_git_branch: true,
             override_tiling_wm: None,
+            autosave: AutosaveSetting::Off,
         }
     }
 }
