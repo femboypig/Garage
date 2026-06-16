@@ -112,10 +112,23 @@ impl UiState {
             }
 
             // CRITICAL: Round coordinates to exact integer pixels to eliminate bilinear filtering blur!
-            let x = (pen_x + info.bearing_x).round();
-            let y = (baseline_y - info.bearing_y - info.height).round();
-            let w = info.width.round();
-            let h = info.height.round();
+            let is_powerline = (c >= '\u{e0b0}' && c <= '\u{e0d4}') 
+                || (c >= '\u{2500}' && c <= '\u{257f}');
+
+            let (x, y, w, h) = if is_powerline {
+                let x_min = pen_x.round();
+                let x_max = (pen_x + char_width).round();
+                let y_min = (baseline_y - font_size * 0.8).round();
+                let y_max = (baseline_y - font_size * 0.8 + font_size * 1.2).round();
+                
+                (x_min, y_min, x_max - x_min, y_max - y_min)
+            } else {
+                let x = (pen_x + info.bearing_x).round();
+                let y = (baseline_y - info.bearing_y - info.height).round();
+                let w = info.width.round();
+                let h = info.height.round();
+                (x, y, w, h)
+            };
 
             let start = vertices.len() as u16;
             vertices.push(Vertex {
