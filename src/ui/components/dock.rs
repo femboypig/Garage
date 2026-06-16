@@ -313,12 +313,31 @@ pub fn draw_dock(
                     break;
                 }
 
-                let virtual_y = ty + grid.scrollback.len() - grid.scroll_offset;
-                let cell = if virtual_y < grid.scrollback.len() {
-                    grid.scrollback[virtual_y][tx]
+                let cell = if grid.use_alt_screen {
+                    let cell_idx = ty * grid.cols + tx;
+                    if cell_idx < grid.alt_cells.len() {
+                        grid.alt_cells[cell_idx]
+                    } else {
+                        crate::terminal::Cell::default()
+                    }
                 } else {
-                    let cell_y_idx = virtual_y - grid.scrollback.len();
-                    grid.cells[cell_y_idx * grid.cols + tx]
+                    let virtual_y = ty + grid.scrollback.len() - grid.scroll_offset;
+                    if virtual_y < grid.scrollback.len() {
+                        let row = &grid.scrollback[virtual_y];
+                        if tx < row.len() {
+                            row[tx]
+                        } else {
+                            crate::terminal::Cell::default()
+                        }
+                    } else {
+                        let cell_y_idx = virtual_y - grid.scrollback.len();
+                        let cell_idx = cell_y_idx * grid.cols + tx;
+                        if cell_idx < grid.cells.len() {
+                            grid.cells[cell_idx]
+                        } else {
+                            crate::terminal::Cell::default()
+                        }
+                    }
                 };
 
                 // Draw non-default background
@@ -362,34 +381,40 @@ pub fn draw_dock(
         }
 
         // Draw Cursor
-        let display_cursor_y = grid.cursor_y + grid.scroll_offset;
-        if display_cursor_y < grid.rows {
-            let cursor_x = ui.sidebar_width + term_pad_x + grid.cursor_x as f32 * term_char_w;
-            let cursor_y = content_y + term_pad_y + display_cursor_y as f32 * term_line_h;
-            
-            if cursor_x + term_char_w <= width && cursor_y + term_line_h <= content_y + content_h {
-                if terminal_focus {
-                    ui.push_quad(
-                        vertices,
-                        indices,
-                        cursor_x,
-                        cursor_y,
-                        term_char_w,
-                        term_line_h,
-                        white_uv,
-                        [0.7, 0.7, 0.7, 0.6],
-                    );
-                } else {
-                    ui.push_quad(vertices, indices, cursor_x, cursor_y, term_char_w, 1.5, white_uv, [0.6, 0.6, 0.6, 0.8]);
-                    ui.push_quad(vertices, indices, cursor_x, cursor_y + term_line_h - 1.5, term_char_w, 1.5, white_uv, [0.6, 0.6, 0.6, 0.8]);
-                    ui.push_quad(vertices, indices, cursor_x, cursor_y, 1.5, term_line_h, white_uv, [0.6, 0.6, 0.6, 0.8]);
-                    ui.push_quad(vertices, indices, cursor_x + term_char_w - 1.5, cursor_y, 1.5, term_line_h, white_uv, [0.6, 0.6, 0.6, 0.8]);
+        if grid.show_cursor {
+            let display_cursor_y = if grid.use_alt_screen {
+                grid.cursor_y
+            } else {
+                grid.cursor_y + grid.scroll_offset
+            };
+            if display_cursor_y < grid.rows {
+                let cursor_x = ui.sidebar_width + term_pad_x + grid.cursor_x as f32 * term_char_w;
+                let cursor_y = content_y + term_pad_y + display_cursor_y as f32 * term_line_h;
+                
+                if cursor_x + term_char_w <= width && cursor_y + term_line_h <= content_y + content_h {
+                    if terminal_focus {
+                        ui.push_quad(
+                            vertices,
+                            indices,
+                            cursor_x,
+                            cursor_y,
+                            term_char_w,
+                            term_line_h,
+                            white_uv,
+                            [0.7, 0.7, 0.7, 0.6],
+                        );
+                    } else {
+                        ui.push_quad(vertices, indices, cursor_x, cursor_y, term_char_w, 1.5, white_uv, [0.6, 0.6, 0.6, 0.8]);
+                        ui.push_quad(vertices, indices, cursor_x, cursor_y + term_line_h - 1.5, term_char_w, 1.5, white_uv, [0.6, 0.6, 0.6, 0.8]);
+                        ui.push_quad(vertices, indices, cursor_x, cursor_y, 1.5, term_line_h, white_uv, [0.6, 0.6, 0.6, 0.8]);
+                        ui.push_quad(vertices, indices, cursor_x + term_char_w - 1.5, cursor_y, 1.5, term_line_h, white_uv, [0.6, 0.6, 0.6, 0.8]);
+                    }
                 }
             }
         }
 
         // Draw Terminal Scrollbar if scrollback is not empty
-        if !grid.scrollback.is_empty() {
+        if !grid.use_alt_screen && !grid.scrollback.is_empty() {
             let sb_w = 10.0f32;
             let sb_x = width - sb_w - 4.0;
             
