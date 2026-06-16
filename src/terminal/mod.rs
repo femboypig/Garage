@@ -48,6 +48,10 @@ pub struct TerminalGrid {
     pub cols: usize,
     pub rows: usize,
     pub cells: Vec<Cell>,
+    pub alt_cells: Vec<Cell>,
+    pub use_alt_screen: bool,
+    pub decckm: bool,
+    pub show_cursor: bool,
     pub cursor_x: usize,
     pub cursor_y: usize,
     pub current_fg: [f32; 4],
@@ -66,6 +70,10 @@ impl TerminalGrid {
             cols,
             rows,
             cells: vec![Cell::default(); cols * rows],
+            alt_cells: vec![Cell::default(); cols * rows],
+            use_alt_screen: false,
+            decckm: false,
+            show_cursor: true,
             cursor_x: 0,
             cursor_y: 0,
             current_fg: DEFAULT_FG,
@@ -76,6 +84,22 @@ impl TerminalGrid {
             scroll_offset: 0,
             saved_cursor_x: None,
             saved_cursor_y: None,
+        }
+    }
+
+    pub fn get_cells(&self) -> &Vec<Cell> {
+        if self.use_alt_screen {
+            &self.alt_cells
+        } else {
+            &self.cells
+        }
+    }
+
+    pub fn get_cells_mut(&mut self) -> &mut Vec<Cell> {
+        if self.use_alt_screen {
+            &mut self.alt_cells
+        } else {
+            &mut self.cells
         }
     }
 
@@ -91,10 +115,14 @@ impl TerminalGrid {
                 if start_idx + x < self.cells.len() {
                     self.cells[start_idx + x] = Cell::default();
                 }
+                if start_idx + x < self.alt_cells.len() {
+                    self.alt_cells[start_idx + x] = Cell::default();
+                }
             }
         }
 
         let mut new_cells = vec![Cell::default(); new_cols * new_rows];
+        let mut new_alt_cells = vec![Cell::default(); new_cols * new_rows];
         
         // Calculate vertical shift if the height is shrinking and the cursor would be off-screen
         let shift_y = if new_rows < self.rows && self.cursor_y >= new_rows {
@@ -103,7 +131,7 @@ impl TerminalGrid {
             0
         };
 
-        // If shifting, save the shifted out lines to scrollback
+        // If shifting, save the shifted out lines to scrollback (only for normal cells)
         for y in 0..shift_y {
             let mut row = vec![Cell::default(); self.cols];
             for x in 0..self.cols {
@@ -123,11 +151,13 @@ impl TerminalGrid {
                 let copy_cols = self.cols.min(new_cols);
                 for x in 0..copy_cols {
                     new_cells[y * new_cols + x] = self.cells[old_y * self.cols + x];
+                    new_alt_cells[y * new_cols + x] = self.alt_cells[old_y * self.cols + x];
                 }
             }
         }
 
         self.cells = new_cells;
+        self.alt_cells = new_alt_cells;
         self.cols = new_cols;
         self.rows = new_rows;
         self.cursor_x = self.cursor_x.min(new_cols.saturating_sub(1));
@@ -136,26 +166,40 @@ impl TerminalGrid {
     }
 
     fn scroll_up(&mut self) {
-        // Save the top row to scrollback
-        let mut top_row = vec![Cell::default(); self.cols];
-        for x in 0..self.cols {
-            top_row[x] = self.cells[x];
-        }
-        self.scrollback.push(top_row);
-        if self.scrollback.len() > 1000 {
-            self.scrollback.remove(0);
-        }
-
-        // Shift all rows up by 1
-        for y in 1..self.rows {
-            for x in 0..self.cols {
-                self.cells[(y - 1) * self.cols + x] = self.cells[y * self.cols + x];
+        if self.use_alt_screen {
+            // Shift all rows up by 1
+            for y in 1..self.rows {
+                for x in 0..self.cols {
+                    self.alt_cells[(y - 1) * self.cols + x] = self.alt_cells[y * self.cols + x];
+                }
             }
-        }
-        // Clear bottom row
-        let last_row_start = (self.rows - 1) * self.cols;
-        for x in 0..self.cols {
-            self.cells[last_row_start + x] = Cell::default();
+            // Clear bottom row
+            let last_row_start = (self.rows - 1) * self.cols;
+            for x in 0..self.cols {
+                self.alt_cells[last_row_start + x] = Cell::default();
+            }
+        } else {
+            // Save the top row to scrollback
+            let mut top_row = vec![Cell::default(); self.cols];
+            for x in 0..self.cols {
+                top_row[x] = self.cells[x];
+            }
+            self.scrollback.push(top_row);
+            if self.scrollback.len() > 1000 {
+                self.scrollback.remove(0);
+            }
+
+            // Shift all rows up by 1
+            for y in 1..self.rows {
+                for x in 0..self.cols {
+                    self.cells[(y - 1) * self.cols + x] = self.cells[y * self.cols + x];
+                }
+            }
+            // Clear bottom row
+            let last_row_start = (self.rows - 1) * self.cols;
+            for x in 0..self.cols {
+                self.cells[last_row_start + x] = Cell::default();
+            }
         }
     }
 
@@ -176,11 +220,14 @@ impl vte::Perform for TerminalGrid {
             self.newline();
         }
         let idx = self.cursor_y * self.cols + self.cursor_x;
-        if idx < self.cells.len() {
-            self.cells[idx] = Cell {
+        let fg = self.current_fg;
+        let bg = self.current_bg;
+        let cells = self.get_cells_mut();
+        if idx < cells.len() {
+            cells[idx] = Cell {
                 c,
-                fg: self.current_fg,
-                bg: self.current_bg,
+                fg,
+                bg,
             };
         }
         self.cursor_x += 1;
@@ -323,12 +370,13 @@ impl vte::Perform for TerminalGrid {
                 let mode = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(0);
                 if mode == 2 || mode == 3 {
                     // Clear entire screen
-                    for cell in &mut self.cells {
+                    let cells = self.get_cells_mut();
+                    for cell in cells {
                         *cell = Cell::default();
                     }
                     self.cursor_x = 0;
                     self.cursor_y = 0;
-                    if mode == 3 {
+                    if mode == 3 && !self.use_alt_screen {
                         self.scrollback.clear();
                         self.scroll_offset = 0;
                     }
@@ -337,20 +385,23 @@ impl vte::Perform for TerminalGrid {
             'K' => { // Erase in Line (EL)
                 let mode = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(0);
                 let start_idx = self.cursor_y * self.cols;
+                let cursor_x = self.cursor_x;
+                let cols = self.cols;
+                let cells = self.get_cells_mut();
                 match mode {
                     0 => { // Clear from cursor to end of line
-                        for x in self.cursor_x..self.cols {
-                            self.cells[start_idx + x] = Cell::default();
+                        for x in cursor_x..cols {
+                            cells[start_idx + x] = Cell::default();
                         }
                     }
                     1 => { // Clear from start of line to cursor
-                        for x in 0..=self.cursor_x.min(self.cols - 1) {
-                            self.cells[start_idx + x] = Cell::default();
+                        for x in 0..=cursor_x.min(cols - 1) {
+                            cells[start_idx + x] = Cell::default();
                         }
                     }
                     2 => { // Clear entire line
-                        for x in 0..self.cols {
-                            self.cells[start_idx + x] = Cell::default();
+                        for x in 0..cols {
+                            cells[start_idx + x] = Cell::default();
                         }
                     }
                     _ => {}
@@ -394,13 +445,18 @@ impl vte::Perform for TerminalGrid {
             'X' => { // Erase Character (ECH)
                 let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
                 let start_idx = self.cursor_y * self.cols;
+                let cursor_x = self.cursor_x;
+                let cols = self.cols;
+                let fg = self.current_fg;
+                let bg = self.current_bg;
+                let cells = self.get_cells_mut();
                 for offset in 0..count {
-                    let x = self.cursor_x + offset;
-                    if x < self.cols {
-                        self.cells[start_idx + x] = Cell {
+                    let x = cursor_x + offset;
+                    if x < cols {
+                        cells[start_idx + x] = Cell {
                             c: ' ',
-                            fg: self.current_fg,
-                            bg: self.current_bg,
+                            fg,
+                            bg,
                         };
                     }
                 }
@@ -408,23 +464,64 @@ impl vte::Perform for TerminalGrid {
             'P' => { // Delete Character (DCH)
                 let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
                 let start_idx = self.cursor_y * self.cols;
-                let move_count = self.cols - (self.cursor_x + count);
+                let cursor_x = self.cursor_x;
+                let cols = self.cols;
+                let move_count = cols - (cursor_x + count);
+                let cells = self.get_cells_mut();
                 for i in 0..move_count {
-                    self.cells[start_idx + self.cursor_x + i] = self.cells[start_idx + self.cursor_x + count + i];
+                    cells[start_idx + cursor_x + i] = cells[start_idx + cursor_x + count + i];
                 }
-                for i in (self.cols - count)..self.cols {
-                    self.cells[start_idx + i] = Cell::default();
+                for i in (cols - count)..cols {
+                    cells[start_idx + i] = Cell::default();
                 }
             }
             '@' => { // Insert Character (ICH)
                 let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
                 let start_idx = self.cursor_y * self.cols;
-                let shift_limit = self.cols - self.cursor_x;
+                let cursor_x = self.cursor_x;
+                let cols = self.cols;
+                let shift_limit = cols - cursor_x;
+                let cells = self.get_cells_mut();
                 for i in (count..shift_limit).rev() {
-                    self.cells[start_idx + self.cursor_x + i] = self.cells[start_idx + self.cursor_x + i - count];
+                    cells[start_idx + cursor_x + i] = cells[start_idx + cursor_x + i - count];
                 }
                 for i in 0..count.min(shift_limit) {
-                    self.cells[start_idx + self.cursor_x + i] = Cell::default();
+                    cells[start_idx + cursor_x + i] = Cell::default();
+                }
+            }
+            'h' => { // SM (Set Mode)
+                let is_private = _intermediates.contains(&b'?');
+                for param in params.iter() {
+                    let p = param.get(0).copied().unwrap_or(0);
+                    if is_private {
+                        match p {
+                            1 => self.decckm = true,
+                            25 => self.show_cursor = true,
+                            1049 => {
+                                self.use_alt_screen = true;
+                                for cell in &mut self.alt_cells {
+                                    *cell = Cell::default();
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            'l' => { // RM (Reset Mode)
+                let is_private = _intermediates.contains(&b'?');
+                for param in params.iter() {
+                    let p = param.get(0).copied().unwrap_or(0);
+                    if is_private {
+                        match p {
+                            1 => self.decckm = false,
+                            25 => self.show_cursor = false,
+                            1049 => {
+                                self.use_alt_screen = false;
+                            }
+                            _ => {}
+                        }
+                    }
                 }
             }
             's' => { // Save Cursor Position
@@ -521,6 +618,13 @@ impl TerminalInstance {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
         let mut cmd = CommandBuilder::new(&shell);
         cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+        if std::env::var("LANG").is_err() {
+            cmd.env("LANG", "C.UTF-8");
+        }
+        if std::env::var("LC_ALL").is_err() {
+            cmd.env("LC_ALL", "C.UTF-8");
+        }
         cmd.arg("--login");
         // Tell bash to emit OSC 7 (current directory) after each prompt
         if shell.ends_with("bash") {
