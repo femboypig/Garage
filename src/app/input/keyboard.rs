@@ -589,14 +589,13 @@ pub fn handle_command_palette_input(
                 window.request_redraw();
             }
             Key::Character(text) => {
-                if text.chars().count() == 1 {
-                    let c = text.chars().next().unwrap();
+                for c in text.chars() {
                     if !c.is_control() {
                         ui.command_palette_query.push(c);
-                        ui.command_palette_selected = 0;
-                        window.request_redraw();
                     }
                 }
+                ui.command_palette_selected = 0;
+                window.request_redraw();
             }
             _ => {}
         }
@@ -653,16 +652,15 @@ pub fn handle_global_search_input(
                 window.request_redraw();
             }
             Key::Character(text) => {
-                if text.chars().count() == 1 {
-                    let c = text.chars().next().unwrap();
+                for c in text.chars() {
                     if !c.is_control() {
                         ui.global_search_query.push(c);
-                        ui.global_search_selected = 0;
-                        let q = ui.global_search_query.clone();
-                        ui.run_global_search(q);
-                        window.request_redraw();
                     }
                 }
+                ui.global_search_selected = 0;
+                let q = ui.global_search_query.clone();
+                ui.run_global_search(q);
+                window.request_redraw();
             }
             _ => {}
         }
@@ -1011,6 +1009,7 @@ pub fn handle_editor_keyboard(
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
                 active_tab.cursor.clear_selection();
+                active_tab.secondary_cursors.clear();
             }
             crate::editor::actions::Action::MoveLineUp => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
@@ -1108,40 +1107,100 @@ pub fn handle_editor_keyboard(
             crate::editor::actions::Action::MoveLeft { select, word } => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
-                if word {
-                    active_tab.cursor.move_word_left(&active_tab.buffer, select);
-                } else {
-                    active_tab.cursor.move_left(&active_tab.buffer, select);
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                for cursor in &mut cursors {
+                    if word {
+                        cursor.move_word_left(&active_tab.buffer, select);
+                    } else {
+                        cursor.move_left(&active_tab.buffer, select);
+                    }
                 }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
             }
             crate::editor::actions::Action::MoveRight { select, word } => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
-                if word {
-                    active_tab.cursor.move_word_right(&active_tab.buffer, select);
-                } else {
-                    active_tab.cursor.move_right(&active_tab.buffer, select);
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                for cursor in &mut cursors {
+                    if word {
+                        cursor.move_word_right(&active_tab.buffer, select);
+                    } else {
+                        cursor.move_right(&active_tab.buffer, select);
+                    }
                 }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
             }
             crate::editor::actions::Action::MoveUp { select } => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
-                active_tab.cursor.move_up(&active_tab.buffer, select);
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                for cursor in &mut cursors {
+                    cursor.move_up(&active_tab.buffer, select);
+                }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
             }
             crate::editor::actions::Action::MoveDown { select } => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
-                active_tab.cursor.move_down(&active_tab.buffer, select);
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                for cursor in &mut cursors {
+                    cursor.move_down(&active_tab.buffer, select);
+                }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
             }
             crate::editor::actions::Action::MoveToLineStart { select } => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
-                active_tab.cursor.move_to_line_start(select);
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                for cursor in &mut cursors {
+                    cursor.move_to_line_start(select);
+                }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
             }
             crate::editor::actions::Action::MoveToLineEnd { select } => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
-                active_tab.cursor.move_to_line_end(&active_tab.buffer, select);
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                for cursor in &mut cursors {
+                    cursor.move_to_line_end(&active_tab.buffer, select);
+                }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
             }
             crate::editor::actions::Action::SelectAll => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
@@ -1150,36 +1209,66 @@ pub fn handle_editor_keyboard(
                 active_tab.cursor.line = active_tab.buffer.len() - 1;
                 active_tab.cursor.col = active_tab.buffer.lines()[active_tab.cursor.line].chars().count();
                 active_tab.cursor.intended_col = active_tab.cursor.col;
+                active_tab.secondary_cursors.clear();
             }
             crate::editor::actions::Action::Copy => {
-                let text = {
-                    let active_tab = &state.tabs[state.active_tab_idx];
-                    active_tab.cursor.selection_range().map(|(s_l, s_c, e_l, e_c)| {
-                        active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c)
-                    })
-                };
-                if let Some(text) = text {
+                let active_tab = &state.tabs[state.active_tab_idx];
+                let mut selections = Vec::new();
+                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                    selections.push(active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c));
+                }
+                for cur in &active_tab.secondary_cursors {
+                    if let Some((s_l, s_c, e_l, e_c)) = cur.selection_range() {
+                        selections.push(active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c));
+                    }
+                }
+                if !selections.is_empty() {
+                    let text = selections.join("\n");
                     state.copy_to_clipboard(text);
                 }
             }
             crate::editor::actions::Action::Cut => {
-                let selection = {
+                let selections = {
                     let active_tab = &state.tabs[state.active_tab_idx];
-                    active_tab.cursor.selection_range().map(|(s_l, s_c, e_l, e_c)| {
-                        let text = active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c);
-                        (s_l, s_c, e_l, e_c, text)
-                    })
+                    let mut selections = Vec::new();
+                    if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
+                        selections.push(active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c));
+                    }
+                    for cur in &active_tab.secondary_cursors {
+                        if let Some((s_l, s_c, e_l, e_c)) = cur.selection_range() {
+                            selections.push(active_tab.buffer.get_range_text(s_l, s_c, e_l, e_c));
+                        }
+                    }
+                    selections
                 };
-                if let Some((s_l, s_c, e_l, e_c, text)) = selection {
+                
+                if !selections.is_empty() {
+                    let text = selections.join("\n");
                     state.copy_to_clipboard(text);
+                    
                     let active_tab = &mut state.tabs[state.active_tab_idx];
                     active_tab.buffer.commit_transaction();
                     active_tab.buffer.start_transaction();
-                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                    active_tab.cursor.line = s_l;
-                    active_tab.cursor.col = s_c;
-                    active_tab.cursor.intended_col = s_c;
-                    active_tab.cursor.clear_selection();
+                    
+                    let mut cursors = vec![active_tab.cursor];
+                    cursors.extend(active_tab.secondary_cursors.drain(..));
+                    
+                    let mut sorted_cursors = cursors.clone();
+                    sorted_cursors.sort_by(|a, b| (b.line, b.col).cmp(&(a.line, a.col)));
+                    for cursor in &mut sorted_cursors {
+                        if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                            active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                            cursor.line = s_l;
+                            cursor.col = s_c;
+                            cursor.clear_selection();
+                        }
+                    }
+                    
+                    sorted_cursors.sort_by_key(|c| (c.line, c.col));
+                    sorted_cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                    active_tab.cursor = sorted_cursors[0];
+                    active_tab.secondary_cursors = sorted_cursors[1..].to_vec();
+                    
                     active_tab.buffer.commit_transaction();
                 }
             }
@@ -1189,22 +1278,34 @@ pub fn handle_editor_keyboard(
                     let active_tab = &mut state.tabs[state.active_tab_idx];
                     active_tab.buffer.commit_transaction();
                     active_tab.buffer.start_transaction();
-                    if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                        active_tab.cursor.line = s_l;
-                        active_tab.cursor.col = s_c;
-                        active_tab.cursor.clear_selection();
+                    
+                    let mut cursors = vec![active_tab.cursor];
+                    cursors.extend(active_tab.secondary_cursors.drain(..));
+                    cursors.sort_by(|a, b| (b.line, b.col).cmp(&(a.line, a.col)));
+                    
+                    for cursor in &mut cursors {
+                        if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                            active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                            cursor.line = s_l;
+                            cursor.col = s_c;
+                            cursor.clear_selection();
+                        }
+                        active_tab.buffer.insert(cursor.line, cursor.col, &clipboard_text);
+                        let parts = clipboard_text.split('\n').collect::<Vec<&str>>();
+                        if parts.len() == 1 {
+                            cursor.col += clipboard_text.chars().count();
+                        } else {
+                            cursor.line += parts.len() - 1;
+                            cursor.col = parts.last().unwrap().chars().count();
+                        }
+                        cursor.intended_col = cursor.col;
                     }
-                    active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &clipboard_text);
-  
-                    let parts = clipboard_text.split('\n').collect::<Vec<&str>>();
-                    if parts.len() == 1 {
-                        active_tab.cursor.col += clipboard_text.chars().count();
-                    } else {
-                        active_tab.cursor.line += parts.len() - 1;
-                        active_tab.cursor.col = parts.last().unwrap().chars().count();
-                    }
-                    active_tab.cursor.intended_col = active_tab.cursor.col;
+                    
+                    cursors.sort_by_key(|c| (c.line, c.col));
+                    cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                    active_tab.cursor = cursors[0];
+                    active_tab.secondary_cursors = cursors[1..].to_vec();
+                    
                     active_tab.buffer.commit_transaction();
                 }
             }
@@ -1219,199 +1320,315 @@ pub fn handle_editor_keyboard(
             crate::editor::actions::Action::DeleteLeft => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
-                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                    active_tab.buffer.start_transaction();
-                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                    active_tab.cursor.line = s_l;
-                    active_tab.cursor.col = s_c;
-                    active_tab.cursor.intended_col = s_c;
-                    active_tab.cursor.clear_selection();
-                    active_tab.buffer.commit_transaction();
-                } else if active_tab.cursor.col > 0 || active_tab.cursor.line > 0 {
-                    active_tab.buffer.start_transaction();
-                    let is_paired = if active_tab.cursor.col > 0 {
-                        let line_chars: Vec<char> = active_tab.buffer.lines()[active_tab.cursor.line].chars().collect();
-                        if active_tab.cursor.col < line_chars.len() {
-                            let left_char = line_chars[active_tab.cursor.col - 1];
-                            let right_char = line_chars[active_tab.cursor.col];
-                            match (left_char, right_char) {
-                                ('(', ')') | ('[', ']') | ('{', '}') | ('"', '"') | ('\'', '\'') => true,
-                                _ => false,
-                            }
-                        } else { false }
-                    } else { false };
-  
-                    if is_paired {
-                        active_tab.buffer.delete(active_tab.cursor.line, active_tab.cursor.col - 1, active_tab.cursor.line, active_tab.cursor.col + 1);
-                        active_tab.cursor.col -= 1;
-                        active_tab.cursor.intended_col = active_tab.cursor.col;
-                    } else {
-                        let mut prev_cursor = active_tab.cursor;
-                        prev_cursor.move_left(&active_tab.buffer, false);
-                        active_tab.buffer.delete(prev_cursor.line, prev_cursor.col, active_tab.cursor.line, active_tab.cursor.col);
-                        active_tab.cursor = prev_cursor;
+                active_tab.buffer.start_transaction();
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                cursors.sort_by(|a, b| (b.line, b.col).cmp(&(a.line, a.col)));
+                
+                for cursor in &mut cursors {
+                    if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                        cursor.line = s_l;
+                        cursor.col = s_c;
+                        cursor.intended_col = s_c;
+                        cursor.clear_selection();
+                    } else if cursor.col > 0 || cursor.line > 0 {
+                        let is_paired = if cursor.col > 0 {
+                            let line_chars: Vec<char> = active_tab.buffer.lines()[cursor.line].chars().collect();
+                            if cursor.col < line_chars.len() {
+                                let left_char = line_chars[cursor.col - 1];
+                                let right_char = line_chars[cursor.col];
+                                match (left_char, right_char) {
+                                    ('(', ')') | ('[', ']') | ('{', '}') | ('"', '"') | ('\'', '\'') => true,
+                                    _ => false,
+                                }
+                            } else { false }
+                        } else { false };
+                        
+                        if is_paired {
+                            active_tab.buffer.delete(cursor.line, cursor.col - 1, cursor.line, cursor.col + 1);
+                            cursor.col -= 1;
+                            cursor.intended_col = cursor.col;
+                        } else {
+                            let mut prev_cursor = *cursor;
+                            prev_cursor.move_left(&active_tab.buffer, false);
+                            active_tab.buffer.delete(prev_cursor.line, prev_cursor.col, cursor.line, cursor.col);
+                            *cursor = prev_cursor;
+                        }
                     }
-                    active_tab.buffer.commit_transaction();
                 }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
+                
+                active_tab.buffer.commit_transaction();
             }
             crate::editor::actions::Action::DeleteRight => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
-                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                    active_tab.buffer.start_transaction();
-                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                    active_tab.cursor.line = s_l;
-                    active_tab.cursor.col = s_c;
-                    active_tab.cursor.intended_col = s_c;
-                    active_tab.cursor.clear_selection();
-                    active_tab.buffer.commit_transaction();
-                } else {
-                    let line_len = active_tab.buffer.lines()[active_tab.cursor.line].chars().count();
-                    if active_tab.cursor.col < line_len || active_tab.cursor.line < active_tab.buffer.len() - 1 {
-                        active_tab.buffer.start_transaction();
-                        let mut next_cursor = active_tab.cursor;
-                        next_cursor.move_right(&active_tab.buffer, false);
-                        active_tab.buffer.delete(active_tab.cursor.line, active_tab.cursor.col, next_cursor.line, next_cursor.col);
-                        active_tab.buffer.commit_transaction();
+                active_tab.buffer.start_transaction();
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                cursors.sort_by(|a, b| (b.line, b.col).cmp(&(a.line, a.col)));
+                
+                for cursor in &mut cursors {
+                    if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                        cursor.line = s_l;
+                        cursor.col = s_c;
+                        cursor.intended_col = s_c;
+                        cursor.clear_selection();
+                    } else {
+                        let line_len = active_tab.buffer.lines()[cursor.line].chars().count();
+                        if cursor.col < line_len || cursor.line < active_tab.buffer.len() - 1 {
+                            let mut next_cursor = *cursor;
+                            next_cursor.move_right(&active_tab.buffer, false);
+                            active_tab.buffer.delete(cursor.line, cursor.col, next_cursor.line, next_cursor.col);
+                        }
                     }
                 }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
+                
+                active_tab.buffer.commit_transaction();
             }
             crate::editor::actions::Action::InsertNewLine => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
-                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                    active_tab.buffer.start_transaction();
-                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                    active_tab.cursor.line = s_l;
-                    active_tab.cursor.col = s_c;
-                    active_tab.cursor.clear_selection();
-                }
+                active_tab.buffer.commit_transaction();
                 active_tab.buffer.start_transaction();
-                active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, "\n");
-                active_tab.cursor.line += 1;
-                active_tab.cursor.col = 0;
-                active_tab.cursor.intended_col = 0;
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                cursors.sort_by(|a, b| (b.line, b.col).cmp(&(a.line, a.col)));
+                
+                for cursor in &mut cursors {
+                    if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                        cursor.line = s_l;
+                        cursor.col = s_c;
+                        cursor.clear_selection();
+                    }
+                    active_tab.buffer.insert(cursor.line, cursor.col, "\n");
+                    cursor.line += 1;
+                    cursor.col = 0;
+                    cursor.intended_col = 0;
+                }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
+                
                 active_tab.buffer.commit_transaction();
             }
             crate::editor::actions::Action::InsertTab => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
                 active_tab.buffer.commit_transaction();
-                if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                    active_tab.buffer.start_transaction();
-                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                    active_tab.cursor.line = s_l;
-                    active_tab.cursor.col = s_c;
-                    active_tab.cursor.clear_selection();
-                }
                 active_tab.buffer.start_transaction();
-                active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, "    ");
-                active_tab.cursor.col += 4;
-                active_tab.cursor.intended_col = active_tab.cursor.col;
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                cursors.sort_by(|a, b| (b.line, b.col).cmp(&(a.line, a.col)));
+                
+                for cursor in &mut cursors {
+                    if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                        active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                        cursor.line = s_l;
+                        cursor.col = s_c;
+                        cursor.clear_selection();
+                    }
+                    active_tab.buffer.insert(cursor.line, cursor.col, "    ");
+                    cursor.col += 4;
+                    cursor.intended_col = cursor.col;
+                }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
+                
                 active_tab.buffer.commit_transaction();
             }
-            crate::editor::actions::Action::InsertChar(c) => {
+            crate::editor::actions::Action::InsertChar(s) => {
                 let active_tab = &mut state.tabs[state.active_tab_idx];
-                let had_selection = active_tab.cursor.selection_range().is_some();
-                let step_over = if active_tab.cursor.selection_range().is_none() && (c == ')' || c == ']' || c == '}' || c == '"' || c == '\'') {
-                    let line_chars: Vec<char> = active_tab.buffer.lines()[active_tab.cursor.line].chars().collect();
-                    if active_tab.cursor.col < line_chars.len() && line_chars[active_tab.cursor.col] == c {
-                        true
-                    } else { false }
-                } else { false };
-  
-                if step_over {
-                    active_tab.cursor.col += 1;
-                    active_tab.cursor.intended_col = active_tab.cursor.col;
-                } else {
-                    let wrapped = if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                        let matching_close = match c {
-                            '(' => Some(')'),
-                            '[' => Some(']'),
-                            '{' => Some('}'),
-                            '"' => Some('"'),
-                            '\'' => Some('\''),
-                            _ => None,
-                        };
-  
-                        if let Some(close_char) = matching_close {
-                            active_tab.buffer.commit_transaction();
-                            active_tab.buffer.start_transaction();
-                            active_tab.buffer.insert(s_l, s_c, &c.to_string());
-                            let adjusted_e_c = if s_l == e_l { e_c + 1 } else { e_c };
-                            active_tab.buffer.insert(e_l, adjusted_e_c, &close_char.to_string());
-                            
-                            if active_tab.cursor.selection_anchor.unwrap().0 == s_l && active_tab.cursor.selection_anchor.unwrap().1 == s_c {
-                                active_tab.cursor.selection_anchor = Some((s_l, s_c + 1));
-                                active_tab.cursor.line = e_l;
-                                active_tab.cursor.col = adjusted_e_c;
-                            } else {
-                                active_tab.cursor.selection_anchor = Some((e_l, adjusted_e_c));
-                                active_tab.cursor.line = s_l;
-                                active_tab.cursor.col = s_c + 1;
-                            }
-                            active_tab.cursor.intended_col = active_tab.cursor.col;
-                            active_tab.buffer.commit_transaction();
-                            true
+                let had_selection = active_tab.cursor.selection_range().is_some() || active_tab.secondary_cursors.iter().any(|c| c.selection_range().is_some());
+                
+                active_tab.buffer.commit_transaction();
+                active_tab.buffer.start_transaction();
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(active_tab.secondary_cursors.drain(..));
+                cursors.sort_by(|a, b| (b.line, b.col).cmp(&(a.line, a.col)));
+                
+                for cursor in &mut cursors {
+                    let step_over = if s.chars().count() == 1 && cursor.selection_range().is_none() {
+                        let c = s.chars().next().unwrap();
+                        if c == ')' || c == ']' || c == '}' || c == '"' || c == '\'' {
+                            let line_chars: Vec<char> = active_tab.buffer.lines()[cursor.line].chars().collect();
+                            if cursor.col < line_chars.len() && line_chars[cursor.col] == c {
+                                true
+                            } else { false }
                         } else { false }
                     } else { false };
-  
-                    if !wrapped {
-                        let paired = if active_tab.cursor.selection_range().is_none() {
-                            let matching_close = match c {
+                    
+                    if step_over {
+                        cursor.col += 1;
+                        cursor.intended_col = cursor.col;
+                    } else {
+                        let wrapped = if s.chars().count() == 1 {
+                            let c = s.chars().next().unwrap();
+                            if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                                let matching_close = match c {
                                     '(' => Some(')'),
                                     '[' => Some(']'),
                                     '{' => Some('}'),
                                     '"' => Some('"'),
                                     '\'' => Some('\''),
-                                _ => None,
-                            };
-  
-                            if let Some(close_char) = matching_close {
-                                let should_pair = match c {
-                                    '(' | '[' | '{' => true,
-                                    '"' | '\'' => {
-                                        let line_chars: Vec<char> = active_tab.buffer.lines()[active_tab.cursor.line].chars().collect();
-                                        let preceded_by_alpha = if active_tab.cursor.col > 0 {
-                                            line_chars[active_tab.cursor.col - 1].is_alphanumeric()
-                                        } else {
-                                            false
-                                        };
-                                        let followed_by_alpha = if active_tab.cursor.col < line_chars.len() {
-                                            line_chars[active_tab.cursor.col].is_alphanumeric()
-                                        } else {
-                                            false
-                                        };
-                                        !preceded_by_alpha && !followed_by_alpha
-                                    }
-                                    _ => false,
+                                    _ => None,
                                 };
-  
-                                if should_pair {
-                                    active_tab.buffer.start_transaction();
-                                    let pair_str = format!("{}{}", c, close_char);
-                                    active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &pair_str);
-                                    active_tab.cursor.col += 1;
-                                    active_tab.cursor.intended_col = active_tab.cursor.col;
-                                    active_tab.buffer.commit_transaction();
+                                
+                                if let Some(close_char) = matching_close {
+                                    active_tab.buffer.insert(s_l, s_c, &c.to_string());
+                                    let adjusted_e_c = if s_l == e_l { e_c + 1 } else { e_c };
+                                    active_tab.buffer.insert(e_l, adjusted_e_c, &close_char.to_string());
+                                    
+                                    if cursor.selection_anchor.unwrap().0 == s_l && cursor.selection_anchor.unwrap().1 == s_c {
+                                        cursor.selection_anchor = Some((s_l, s_c + 1));
+                                        cursor.line = e_l;
+                                        cursor.col = adjusted_e_c;
+                                    } else {
+                                        cursor.selection_anchor = Some((e_l, adjusted_e_c));
+                                        cursor.line = s_l;
+                                        cursor.col = s_c + 1;
+                                    }
+                                    cursor.intended_col = cursor.col;
                                     true
                                 } else { false }
                             } else { false }
                         } else { false };
-  
-                        if !paired {
-                            if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
-                                active_tab.buffer.start_transaction();
-                                active_tab.buffer.delete(s_l, s_c, e_l, e_c);
-                                active_tab.cursor.line = s_l;
-                                active_tab.cursor.col = s_c;
-                                active_tab.cursor.clear_selection();
+                        
+                        if !wrapped {
+                            let paired = if s.chars().count() == 1 && cursor.selection_range().is_none() {
+                                let c = s.chars().next().unwrap();
+                                let matching_close = match c {
+                                    '(' => Some(')'),
+                                    '[' => Some(']'),
+                                    '{' => Some('}'),
+                                    '"' => Some('"'),
+                                    '\'' => Some('\''),
+                                    _ => None,
+                                };
+                                
+                                if let Some(close_char) = matching_close {
+                                    let should_pair = match c {
+                                        '(' | '[' | '{' => true,
+                                        '"' | '\'' => {
+                                            let line_chars: Vec<char> = active_tab.buffer.lines()[cursor.line].chars().collect();
+                                            let preceded_by_alpha = if cursor.col > 0 {
+                                                line_chars[cursor.col - 1].is_alphanumeric()
+                                            } else {
+                                                false
+                                            };
+                                            let followed_by_alpha = if cursor.col < line_chars.len() {
+                                                line_chars[cursor.col].is_alphanumeric()
+                                            } else {
+                                                false
+                                            };
+                                            !preceded_by_alpha && !followed_by_alpha
+                                        }
+                                        _ => false,
+                                    };
+                                    
+                                    if should_pair {
+                                        let pair_str = format!("{}{}", c, close_char);
+                                        active_tab.buffer.insert(cursor.line, cursor.col, &pair_str);
+                                        cursor.col += 1;
+                                        cursor.intended_col = cursor.col;
+                                        true
+                                    } else { false }
+                                } else { false }
+                            } else { false };
+                            
+                            if !paired {
+                                if let Some((s_l, s_c, e_l, e_c)) = cursor.selection_range() {
+                                    active_tab.buffer.delete(s_l, s_c, e_l, e_c);
+                                    cursor.line = s_l;
+                                    cursor.col = s_c;
+                                    cursor.clear_selection();
+                                }
+                                active_tab.buffer.insert(cursor.line, cursor.col, &s);
+                                cursor.col += s.chars().count();
+                                cursor.intended_col = cursor.col;
                             }
-                            active_tab.buffer.start_transaction();
-                            active_tab.buffer.insert(active_tab.cursor.line, active_tab.cursor.col, &c.to_string());
-                            active_tab.cursor.col += 1;
-                            active_tab.cursor.intended_col = active_tab.cursor.col;
-                            if c.is_whitespace() || c.is_ascii_punctuation() || had_selection {
-                                active_tab.buffer.commit_transaction();
-                            }
+                        }
+                    }
+                }
+                
+                cursors.sort_by_key(|c| (c.line, c.col));
+                cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
+                active_tab.cursor = cursors[0];
+                active_tab.secondary_cursors = cursors[1..].to_vec();
+                
+                let is_boundary = s.chars().any(|c| c.is_whitespace() || c.is_ascii_punctuation()) || had_selection;
+                if is_boundary {
+                    active_tab.buffer.commit_transaction();
+                }
+            }
+            crate::editor::actions::Action::AddCursorUp => {
+                let active_tab = &mut state.tabs[state.active_tab_idx];
+                active_tab.buffer.commit_transaction();
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(&active_tab.secondary_cursors);
+                
+                if let Some(min_cursor) = cursors.iter().min_by_key(|c| c.line) {
+                    if min_cursor.line > 0 {
+                        let target_line = min_cursor.line - 1;
+                        let line_len = active_tab.buffer.lines()[target_line].chars().count();
+                        let target_col = min_cursor.intended_col.min(line_len);
+                        
+                        let new_cursor = Cursor {
+                            line: target_line,
+                            col: target_col,
+                            intended_col: min_cursor.intended_col,
+                            selection_anchor: None,
+                        };
+                        
+                        if !cursors.iter().any(|c| c.line == target_line && c.col == target_col) {
+                            active_tab.secondary_cursors.push(new_cursor);
+                        }
+                    }
+                }
+            }
+            crate::editor::actions::Action::AddCursorDown => {
+                let active_tab = &mut state.tabs[state.active_tab_idx];
+                active_tab.buffer.commit_transaction();
+                
+                let mut cursors = vec![active_tab.cursor];
+                cursors.extend(&active_tab.secondary_cursors);
+                
+                if let Some(max_cursor) = cursors.iter().max_by_key(|c| c.line) {
+                    if max_cursor.line < active_tab.buffer.len() - 1 {
+                        let target_line = max_cursor.line + 1;
+                        let line_len = active_tab.buffer.lines()[target_line].chars().count();
+                        let target_col = max_cursor.intended_col.min(line_len);
+                        
+                        let new_cursor = Cursor {
+                            line: target_line,
+                            col: target_col,
+                            intended_col: max_cursor.intended_col,
+                            selection_anchor: None,
+                        };
+                        
+                        if !cursors.iter().any(|c| c.line == target_line && c.col == target_col) {
+                            active_tab.secondary_cursors.push(new_cursor);
                         }
                     }
                 }
@@ -1508,16 +1725,15 @@ pub fn handle_project_search_keyboard(
         }
         Key::Character(text) => {
             if !ctrl && !alt {
-                if text.chars().count() == 1 {
-                    let c = text.chars().next().unwrap();
+                for c in text.chars() {
                     if !c.is_control() {
                         ui.global_search_query.push(c);
-                        ui.global_search_selected = 0;
-                        let q = ui.global_search_query.clone();
-                        ui.run_global_search(q);
-                        window.request_redraw();
                     }
                 }
+                ui.global_search_selected = 0;
+                let q = ui.global_search_query.clone();
+                ui.run_global_search(q);
+                window.request_redraw();
             }
         }
         _ => {}
