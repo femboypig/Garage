@@ -151,7 +151,7 @@ pub fn handle_action(
                 ui.update_git_diff(Some(&path_to_save));
                 ui.update_git_file_blame(Some(&path_to_save));
                 ui.update_git_statuses();
-
+                ui.external_change_warnings.remove(&path_to_save);
             }
         }
         UiAction::Undo => {
@@ -407,6 +407,7 @@ pub fn handle_action(
                 log::error!("Failed to save file: {:?}", e);
             } else {
                 tab_to_save.buffer.mark_saved();
+                ui.external_change_warnings.remove(&path_to_save);
             }
             
             state.tabs.remove(idx);
