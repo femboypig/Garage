@@ -18,6 +18,7 @@ pub enum CommandPaletteMode {
     Commands,
     Languages,
     Encodings,
+    LineEndings,
 }
 
 pub struct UiState {
@@ -86,6 +87,7 @@ pub struct UiState {
     pub command_palette_mode: CommandPaletteMode,
     pub forced_languages: std::collections::HashMap<String, String>,
     pub forced_encodings: std::collections::HashMap<String, String>,
+    pub forced_line_endings: std::collections::HashMap<String, String>,
 
     pub command_palette_query: String,
     pub global_search_query: String,
@@ -257,6 +259,7 @@ impl UiState {
             command_palette_mode: CommandPaletteMode::Commands,
             forced_languages: std::collections::HashMap::new(),
             forced_encodings: std::collections::HashMap::new(),
+            forced_line_endings: std::collections::HashMap::new(),
             command_palette_query: String::new(),
             global_search_query: String::new(),
             global_search_results: Vec::new(),
