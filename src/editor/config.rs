@@ -119,6 +119,8 @@ pub struct AppConfig {
     pub show_git_blame: bool,
     #[serde(default = "default_true")]
     pub show_git_branch: bool,
+    #[serde(default)]
+    pub override_tiling_wm: Option<bool>,
 }
 
 impl Default for AppConfig {
@@ -131,6 +133,7 @@ impl Default for AppConfig {
             theme: Theme::default(),
             show_git_blame: true,
             show_git_branch: true,
+            override_tiling_wm: None,
         }
     }
 }
