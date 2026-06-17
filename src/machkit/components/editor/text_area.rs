@@ -1,4 +1,5 @@
-use crate::ui::{UiState, Vertex, FontAtlas};
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 
@@ -534,16 +535,26 @@ pub fn draw_text_area(
                     }
                 };
                 if cur_x + 2.0 <= text_area_x + text_viewport_w {
-                    ui.push_quad(
+                    let mut ctx = crate::machkit::UiContext {
                         vertices,
                         indices,
-                        cur_x,
-                        cur_row_y + 1.0,
-                        2.0,
-                        ui.buffer_line_height - 2.0,
+                        atlas,
+                        queue,
+                        mouse_x: 0.0,
+                        mouse_y: 0.0,
+                        theme: &ui.config.theme,
                         white_uv,
-                        ui.config.theme.cursor_color,
-                    );
+                        ui_font_size: ui.ui_font_size,
+                        ui_char_width: ui.ui_char_width,
+                        ui_font_ascent: ui.ui_font_ascent,
+                        ui_line_height: ui.ui_line_height,
+                        buffer_font_size: ui.buffer_font_size,
+                        buffer_font_ascent: ui.buffer_font_ascent,
+                        buffer_line_height: ui.buffer_line_height,
+                    };
+                    crate::machkit::Cursor::new()
+                        .width(2.0)
+                        .draw(&mut ctx, cur_x, cur_row_y + 1.0, ui.buffer_line_height - 2.0);
                 }
             }
         }
@@ -713,22 +724,34 @@ pub fn draw_text_area(
         }
     }
 
+    // Draw active and secondary cursors using machkit::Cursor
+    let mut cursor_ctx = crate::machkit::UiContext {
+        vertices,
+        indices,
+        atlas,
+        queue,
+        mouse_x: 0.0,
+        mouse_y: 0.0,
+        theme: &ui.config.theme,
+        white_uv,
+        ui_font_size: ui.ui_font_size,
+        ui_char_width: ui.ui_char_width,
+        ui_font_ascent: ui.ui_font_ascent,
+        ui_line_height: ui.ui_line_height,
+        buffer_font_size: ui.buffer_font_size,
+        buffer_font_ascent: ui.buffer_font_ascent,
+        buffer_line_height: ui.buffer_line_height,
+    };
+
     // Draw active cursor
     if cursor.line >= ui.scroll_y && cursor.line < ui.scroll_y + visible_lines {
         let cur_row_y = editor_y + (cursor.line - ui.scroll_y) as f32 * ui.buffer_line_height;
         let cur_x = text_area_x + (cursor.col as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
         
         if cursor.col >= ui.scroll_x && cur_x + 2.0 <= minimap_x {
-            ui.push_quad(
-                vertices,
-                indices,
-                cur_x,
-                cur_row_y + 1.0,
-                2.0,
-                ui.buffer_line_height - 2.0,
-                white_uv,
-                ui.config.theme.cursor_color,
-            );
+            crate::machkit::Cursor::new()
+                .width(2.0)
+                .draw(&mut cursor_ctx, cur_x, cur_row_y + 1.0, ui.buffer_line_height - 2.0);
         }
     }
 
@@ -739,16 +762,9 @@ pub fn draw_text_area(
             let cur_x = text_area_x + (cur.col as isize - ui.scroll_x as isize) as f32 * ui.buffer_char_width;
             
             if cur.col >= ui.scroll_x && cur_x + 2.0 <= minimap_x {
-                ui.push_quad(
-                    vertices,
-                    indices,
-                    cur_x,
-                    cur_row_y + 1.0,
-                    2.0,
-                    ui.buffer_line_height - 2.0,
-                    white_uv,
-                    ui.config.theme.cursor_color,
-                );
+                crate::machkit::Cursor::new()
+                    .width(2.0)
+                    .draw(&mut cursor_ctx, cur_x, cur_row_y + 1.0, ui.buffer_line_height - 2.0);
             }
         }
     }
