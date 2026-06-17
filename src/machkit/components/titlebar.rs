@@ -1,6 +1,6 @@
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
-use crate::ui::{UiState, MenuType};
+use crate::machkit::{UiState, MenuType};
 
 pub fn draw_titlebar(
     ui: &UiState,
