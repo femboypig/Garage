@@ -2,9 +2,8 @@ use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
-use crate::terminal::TerminalInstance;
 use super::ui_state::{UiState, CommandPaletteMode};
-use super::types::{UiAction, ModalType};
+use super::types::{UiAction, ModalType, FrameInput};
 
 impl UiState {
     pub fn get_max_line_len(&mut self, buffer: &Buffer, active_file_path: Option<&str>, cursor_line: usize) -> usize {
@@ -215,6 +214,7 @@ impl UiState {
 
     pub fn run_global_search(&mut self, query: String) {
         self.project_search_file_cache.clear();
+        self.invalidate_search_render_items();
         if query.is_empty() {
             self.global_search_results.clear();
             self.global_search_selected = 0;
@@ -232,6 +232,7 @@ impl UiState {
 
         std::thread::spawn(move || {
             let mut results = Vec::new();
+            let mut file_cache = std::collections::HashMap::new();
             
             let pattern = if is_regex {
                 query.clone()
@@ -260,13 +261,19 @@ impl UiState {
                         if entry.file_type().map_or(false, |t| t.is_file()) {
                             let path = entry.path().to_path_buf();
                             if let Ok(content) = std::fs::read_to_string(&path) {
-                                for (line_idx, line) in content.lines().enumerate() {
+                                let mut has_match = false;
+                                let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                                for (line_idx, line) in lines.iter().enumerate() {
                                     if re.is_match(line) {
                                         results.push((path.clone(), line_idx, line.trim().to_string()));
+                                        has_match = true;
                                         if results.len() >= 100 {
                                             break;
                                         }
                                     }
+                                }
+                                if has_match {
+                                    file_cache.insert(path, lines);
                                 }
                             }
                         }
@@ -276,7 +283,7 @@ impl UiState {
                     }
                 }
             }
-            let _ = tx.send(results);
+            let _ = tx.send((results, file_cache));
             let _ = proxy.send_event(());
         });
     }
@@ -440,27 +447,31 @@ impl UiState {
         indices: &mut Vec<u16>,
         atlas: &mut FontAtlas,
         queue: &wgpu::Queue,
-        buffer: &Buffer,
-        cursor: &Cursor,
-        secondary_cursors: &[Cursor],
-        width: f32,
-        height: f32,
-        mouse_x: f32,
-        mouse_y: f32,
-        current_backend: wgpu::Backend,
-        tab_paths: &[Option<String>],
-        tab_modified: &[bool],
-        active_tab_idx: usize,
-        dragged_tab_idx: Option<usize>,
-        inactive_panes: &[crate::app::state::Pane],
-        active_pane_idx: usize,
-        is_split_horizontal: bool,
-        terminals: &[TerminalInstance],
-        active_terminal_idx: usize,
-        terminal_focus: bool,
-        _is_window_maximized: bool,
-        tab_scroll_x: f32,
+        input: FrameInput,
     ) {
+        let FrameInput {
+            buffer,
+            cursor,
+            secondary_cursors,
+            width,
+            height,
+            mouse_x,
+            mouse_y,
+            current_backend,
+            tab_paths,
+            tab_modified,
+            active_tab_idx,
+            dragged_tab_idx,
+            inactive_panes,
+            active_pane_idx,
+            is_split_horizontal,
+            terminals,
+            active_terminal_idx,
+            terminal_focus,
+            is_window_maximized: _is_window_maximized,
+            tab_scroll_x,
+        } = input;
+
         self.tab_scroll_x = tab_scroll_x;
         self.active_dock_tab = active_terminal_idx;
 
@@ -504,11 +515,17 @@ impl UiState {
         }
 
         // Drain global search channel
+        let mut got_search = None;
         if let Some(ref rx) = self.global_search_rx {
-            while let Ok(results) = rx.try_recv() {
-                self.global_search_results = results;
-                self.is_searching_globally = false;
+            while let Ok(res) = rx.try_recv() {
+                got_search = Some(res);
             }
+        }
+        if let Some((results, file_cache)) = got_search {
+            self.global_search_results = results;
+            self.project_search_file_cache.extend(file_cache);
+            self.invalidate_search_render_items();
+            self.is_searching_globally = false;
         }
 
         // Drain git diff channel
