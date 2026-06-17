@@ -1,5 +1,6 @@
 use std::path::Path;
-use super::{UiState, FileNode};
+use super::ui_state::UiState;
+use super::types::FileNode;
 
 impl UiState {
     /// Re-scan the directory to populate the project tree asynchronously
