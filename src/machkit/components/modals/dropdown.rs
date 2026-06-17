@@ -1,4 +1,5 @@
-use crate::ui::{UiState, Vertex, FontAtlas, MenuType};
+use crate::machkit::{UiState, Vertex, MenuType};
+use crate::renderer::atlas::FontAtlas;
 
 pub fn draw_dropdown(
     ui: &UiState,
