@@ -1578,15 +1578,20 @@ pub fn handle_mouse_input(
                                                 }
                                             }
                                             if !found_in_tab {
-                                                if let Ok(content) = std::fs::read_to_string(&path) {
-                                                    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-                                                    if line_idx < lines.len() {
-                                                        let new_line = re.replace_all(&lines[line_idx], &ui.global_replace_query).to_string();
-                                                        lines[line_idx] = new_line;
-                                                        let new_content = lines.join("\n");
-                                                        let _ = std::fs::write(&path, new_content);
+                                                let path_clone = path.clone();
+                                                let re_clone = re.clone();
+                                                let replace_query = ui.global_replace_query.clone();
+                                                std::thread::spawn(move || {
+                                                    if let Ok(content) = std::fs::read_to_string(&path_clone) {
+                                                        let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                                                        if line_idx < lines.len() {
+                                                            let new_line = re_clone.replace_all(&lines[line_idx], &replace_query).to_string();
+                                                            lines[line_idx] = new_line;
+                                                            let new_content = lines.join("\n");
+                                                            let _ = std::fs::write(&path_clone, new_content);
+                                                        }
                                                     }
-                                                }
+                                                });
                                             }
                                         }
                                         let q = ui.global_search_query.clone();
@@ -1680,12 +1685,17 @@ pub fn handle_mouse_input(
                                                     }
                                                 }
                                                 if !found_in_tab {
-                                                    if let Ok(content) = std::fs::read_to_string(&path) {
-                                                        let new_content = re.replace_all(&content, &ui.global_replace_query).to_string();
-                                                        if new_content != content {
-                                                            let _ = std::fs::write(&path, new_content);
+                                                    let path_clone = path.clone();
+                                                    let re_clone = re.clone();
+                                                    let replace_query = ui.global_replace_query.clone();
+                                                    std::thread::spawn(move || {
+                                                        if let Ok(content) = std::fs::read_to_string(&path_clone) {
+                                                            let new_content = re_clone.replace_all(&content, &replace_query).to_string();
+                                                            if new_content != content {
+                                                                let _ = std::fs::write(&path_clone, new_content);
+                                                            }
                                                         }
-                                                    }
+                                                    });
                                                 }
                                             }
                                         }
