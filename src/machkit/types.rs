@@ -64,3 +64,24 @@ pub struct FileNode {
 }
 
 pub use crate::git::GitDiffHunk;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SearchRenderItem {
+    FileHeader {
+        path: PathBuf,
+    },
+    CodeLine {
+        path: PathBuf,
+        line_idx: usize,
+        content: String,
+        is_match: bool,
+        result_idx: Option<usize>,
+        is_first_in_range: bool,
+        is_last_in_range: bool,
+        start_line_of_range: usize,
+        end_line_of_range: usize,
+    },
+    Separator {
+        path: PathBuf,
+    },
+}
