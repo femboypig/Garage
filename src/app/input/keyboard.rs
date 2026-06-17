@@ -1746,20 +1746,25 @@ fn sync_file_changes(
         }
     }
 
-    // 4. Write back to disk
-    if let Some(lines) = ui.project_search_file_cache.get(&path) {
-        let joined = lines.join("\n");
-        let _ = std::fs::write(&path, joined);
-    } else {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-            if line_idx < lines.len() {
-                lines[line_idx] = new_line_content;
-                let joined = lines.join("\n");
-                let _ = std::fs::write(&path, joined);
+    // 4. Write back to disk (Asynchronously on a background thread)
+    ui.invalidate_search_render_items();
+    let path_clone = path.clone();
+    let cache_lines = ui.project_search_file_cache.get(&path).cloned();
+    std::thread::spawn(move || {
+        if let Some(lines) = cache_lines {
+            let joined = lines.join("\n");
+            let _ = std::fs::write(&path_clone, joined);
+        } else {
+            if let Ok(content) = std::fs::read_to_string(&path_clone) {
+                let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                if line_idx < lines.len() {
+                    lines[line_idx] = new_line_content;
+                    let joined = lines.join("\n");
+                    let _ = std::fs::write(&path_clone, joined);
+                }
             }
         }
-    }
+    });
 }
 
 pub fn handle_project_search_keyboard(
