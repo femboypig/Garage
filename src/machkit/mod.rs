@@ -17,7 +17,7 @@ pub use scrollbar::Scrollbar;
 pub use cursor::Cursor;
 
 pub use ui_state::{UiState, CommandPaletteMode};
-pub use types::{UiAction, MenuType, ModalType, FileNode, GitDiffHunk, SearchRenderItem};
+pub use types::{UiAction, MenuType, ModalType, FileNode, GitDiffHunk, SearchRenderItem, FrameInput};
 
 pub use crate::editor::config::Theme;
 pub use crate::renderer::wgpu::Vertex;
