@@ -1,4 +1,5 @@
-use crate::ui::{UiState, Vertex, FontAtlas};
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 use std::path::PathBuf;
 
 pub enum SearchRenderItem {
@@ -81,20 +82,20 @@ pub fn draw_project_search(
 
     // Scroll selection into view
     if max_visible_items > 0 {
-        if selected_render_idx < ui.global_search_scroll {
-            ui.global_search_scroll = selected_render_idx;
-        } else if selected_render_idx >= ui.global_search_scroll + max_visible_items {
-            ui.global_search_scroll = selected_render_idx + 1 - max_visible_items;
+        if selected_render_idx < ui.scroll_y {
+            ui.scroll_y = selected_render_idx;
+        } else if selected_render_idx >= ui.scroll_y + max_visible_items {
+            ui.scroll_y = selected_render_idx + 1 - max_visible_items;
         }
     }
     let max_scroll = render_items.len().saturating_sub(max_visible_items);
-    ui.global_search_scroll = ui.global_search_scroll.min(max_scroll);
+    ui.scroll_y = ui.scroll_y.min(max_scroll);
 
-    let start_idx = ui.global_search_scroll;
-    let end_idx = (ui.global_search_scroll + max_visible_items).min(render_items.len());
+    let start_idx = ui.scroll_y;
+    let end_idx = (ui.scroll_y + max_visible_items).min(render_items.len());
 
     for idx in start_idx..end_idx {
-        let item_y = list_y + (idx - ui.global_search_scroll) as f32 * item_height;
+        let item_y = list_y + (idx - ui.scroll_y) as f32 * item_height;
         let text_baseline = (item_y + ui.buffer_font_ascent).round();
 
         let row_hover = mouse_x >= text_area_x && mouse_x < text_area_x + text_viewport_w && mouse_y >= item_y && mouse_y < item_y + item_height;
@@ -200,8 +201,6 @@ pub fn draw_project_search(
                 line_idx,
                 content,
                 result_idx,
-                is_first_in_range,
-                is_last_in_range,
                 ..
             } => {
                 let is_selected = result_idx.map_or(false, |res_idx| res_idx == ui.global_search_selected);
@@ -226,26 +225,7 @@ pub fn draw_project_search(
                     );
                 }
 
-                // Draw expand gutter buttons
-                if *is_first_in_range {
-                    let is_hover = mouse_x >= text_area_x && mouse_x < text_area_x + 22.0 && mouse_y >= item_y && mouse_y < item_y + item_height;
-                    let icon_color = if is_hover { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_muted };
-                    if is_hover {
-                        ui.push_quad(vertices, indices, text_area_x + 4.0, item_y + 2.0, 18.0, item_height - 4.0, white_uv, ui.config.theme.button_hover_bg);
-                    }
-                    // draw horizontal line at top
-                    ui.push_quad(vertices, indices, text_area_x + 6.0, item_y + 3.0, 14.0, 1.5, white_uv, icon_color);
-                    ui.push_icon(vertices, indices, atlas, queue, "chevron_up", text_area_x + 8.0, (item_y + 5.0).round(), icon_color, 10.0);
-                } else if *is_last_in_range {
-                    let is_hover = mouse_x >= text_area_x && mouse_x < text_area_x + 22.0 && mouse_y >= item_y && mouse_y < item_y + item_height;
-                    let icon_color = if is_hover { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_muted };
-                    if is_hover {
-                        ui.push_quad(vertices, indices, text_area_x + 4.0, item_y + 2.0, 18.0, item_height - 4.0, white_uv, ui.config.theme.button_hover_bg);
-                    }
-                    // draw horizontal line at bottom
-                    ui.push_quad(vertices, indices, text_area_x + 6.0, item_y + item_height - 4.5, 14.0, 1.5, white_uv, icon_color);
-                    ui.push_icon(vertices, indices, atlas, queue, "chevron_down", text_area_x + 8.0, (item_y + item_height - 15.0).round(), icon_color, 10.0);
-                }
+
 
                 // Draw line number (centered/padded)
                 let line_str = format!("{}", line_idx + 1);
@@ -280,6 +260,30 @@ pub fn draw_project_search(
                     ui.buffer_font_size,
                     ui.buffer_char_width,
                 );
+
+                if is_selected && !ui.global_search_focused {
+                    let cursor_col_clamped = ui.global_search_col.min(display_content.chars().count());
+                    let cursor_x = snippet_x + cursor_col_clamped as f32 * ui.buffer_char_width;
+                    let mut cursor_ctx = crate::machkit::UiContext {
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        mouse_x: 0.0,
+                        mouse_y: 0.0,
+                        theme: &ui.config.theme,
+                        white_uv,
+                        ui_font_size: ui.ui_font_size,
+                        ui_char_width: ui.ui_char_width,
+                        ui_font_ascent: ui.ui_font_ascent,
+                        ui_line_height: ui.ui_line_height,
+                        buffer_font_size: ui.buffer_font_size,
+                        buffer_font_ascent: ui.buffer_font_ascent,
+                        buffer_line_height: ui.buffer_line_height,
+                    };
+                    crate::machkit::Cursor::new()
+                        .draw(&mut cursor_ctx, cursor_x, item_y + 2.0, item_height - 4.0);
+                }
 
                 // Highlight matched query text
                 let query = &ui.global_search_query;
@@ -333,39 +337,6 @@ pub fn draw_project_search(
         }
     }
 
-    // Draw scrollbar
-    if render_items.len() > max_visible_items {
-        let track_w = 4.0f32;
-        let track_x = text_area_x + text_viewport_w - track_w - 4.0;
-        let track_h = max_visible_items as f32 * item_height;
-
-        ui.push_quad(
-            vertices,
-            indices,
-            track_x,
-            list_y,
-            track_w,
-            track_h,
-            white_uv,
-            ui.config.theme.scrollbar_track,
-        );
-
-        let ratio = max_visible_items as f32 / render_items.len() as f32;
-        let thumb_h = (track_h * ratio).clamp(15.0_f32.min(track_h), track_h);
-        let scroll_ratio = ui.global_search_scroll as f32 / max_scroll as f32;
-        let thumb_y = list_y + scroll_ratio * (track_h - thumb_h);
-
-        ui.push_quad(
-            vertices,
-            indices,
-            track_x,
-            thumb_y,
-            track_w,
-            thumb_h,
-            white_uv,
-            ui.config.theme.scrollbar_thumb,
-        );
-    }
 }
 
 pub fn build_search_render_items(ui: &mut UiState) -> Vec<SearchRenderItem> {
