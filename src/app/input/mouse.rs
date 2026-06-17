@@ -5,7 +5,7 @@ use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::event_loop::EventLoopWindowTarget;
 
 use crate::renderer::wgpu::GpuContext;
-use crate::ui::{UiState, UiAction};
+use crate::machkit::{UiState, UiAction};
 use crate::renderer::atlas::FontAtlas;
 use crate::app::state::AppState;
 use crate::app::handler::handle_action;
@@ -249,14 +249,14 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                 if active_path == "search://project" {
                     let list_y = pane_top + ui.tabbar_height + ui.breadcrumb_height;
                     let item_height = ui.buffer_line_height;
-                    let render_items = crate::ui::components::editor::project_search::build_search_render_items(ui);
+                    let render_items = crate::machkit::components::editor::project_search::build_search_render_items(ui);
                     let item_idx = ui.global_search_scroll + ((mouse_y - list_y) / item_height).floor() as usize;
                     if item_idx < render_items.len() {
                         match &render_items[item_idx] {
-                            crate::ui::components::editor::project_search::SearchRenderItem::FileHeader { .. } => {
+                            crate::machkit::components::editor::project_search::SearchRenderItem::FileHeader { .. } => {
                                 is_pointer = true;
                             }
-                            crate::ui::components::editor::project_search::SearchRenderItem::CodeLine {
+                            crate::machkit::components::editor::project_search::SearchRenderItem::CodeLine {
                                 is_first_in_range,
                                 is_last_in_range,
                                 ..
@@ -288,20 +288,22 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                 if mouse_x >= bar_x && mouse_x < bar_x + bar_w && mouse_y >= bar_y && mouse_y < bar_y + bar_h {
                     let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
 
-                    let input_h = 24.0f32;
-                    let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
-                    let input_y_1 = bar_y + (row_h - input_h) / 2.0;
-                    let input_y_2 = bar_y + row_h + (row_h - input_h) / 2.0;
+                    let input_h = 26.0f32;
+                    let path_h = if is_local { 20.0f32 } else { 0.0f32 };
+                    let remaining_h = bar_h - path_h;
+                    let row_h = if show_replace { remaining_h / 2.0 } else { remaining_h };
+                    let input_y_1 = bar_y + path_h + (row_h - input_h) / 2.0;
+                    let input_y_2 = bar_y + path_h + row_h + (row_h - input_h) / 2.0;
 
-                    let toggle_btn_w = 22.0f32;
+                    let toggle_btn_w = 24.0f32;
                     let toggle_btn_x = bar_x + 10.0;
                     let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
 
-                    let close_btn_w = 22.0f32;
-                    let btn_next_w = 22.0f32;
-                    let btn_prev_w = 22.0f32;
-                    let btn_rep_toggle_w = if is_local { 0.0f32 } else { 22.0f32 };
-                    let btn_filter_w = if is_local { 0.0f32 } else { 22.0f32 };
+                    let close_btn_w = 24.0f32;
+                    let btn_next_w = 24.0f32;
+                    let btn_prev_w = 24.0f32;
+                    let btn_rep_toggle_w = if is_local { 0.0f32 } else { 24.0f32 };
+                    let btn_filter_w = if is_local { 0.0f32 } else { 24.0f32 };
                     let count_w = if is_local { 70.0f32 } else { 75.0f32 };
 
                     let close_x = bar_x + bar_w - 10.0 - close_btn_w;
@@ -318,12 +320,12 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                         (rep_toggle_x, filter_x, count_x)
                     };
 
-                    let input_find_w = 350.0f32.min(count_x - 10.0 - input_start_x).max(50.0);
+                    let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
 
                     // Row 1 hover
                     if mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h {
                         // Options inside find input
-                        let opt_btn_w = 20.0f32;
+                        let opt_btn_w = 22.0f32;
                         let opt_regex_x = input_start_x + input_find_w - 5.0 - opt_btn_w;
                         let opt_word_x = opt_regex_x - 2.0 - opt_btn_w;
                         let opt_case_x = opt_word_x - 2.0 - opt_btn_w;
@@ -467,29 +469,29 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
             // 5. Active modal interactive areas
             else if let Some(modal) = ui.active_modal {
                 let modal_w = match modal {
-                    crate::ui::ModalType::Settings => (45.0 * ui.ui_char_width).max(500.0).round(),
-                    crate::ui::ModalType::About => 520.0,
-                    crate::ui::ModalType::CommandPalette => (50.0 * ui.ui_char_width).max(500.0).round(),
-                    crate::ui::ModalType::UnsavedChanges => 520.0,
-                    crate::ui::ModalType::SidebarInput => 400.0,
-                    crate::ui::ModalType::GlobalSearch => 650.0,
+                    crate::machkit::ModalType::Settings => (45.0 * ui.ui_char_width).max(500.0).round(),
+                    crate::machkit::ModalType::About => 520.0,
+                    crate::machkit::ModalType::CommandPalette => (50.0 * ui.ui_char_width).max(500.0).round(),
+                    crate::machkit::ModalType::UnsavedChanges => 520.0,
+                    crate::machkit::ModalType::SidebarInput => 400.0,
+                    crate::machkit::ModalType::GlobalSearch => 650.0,
                 };
                 let modal_h = match modal {
-                    crate::ui::ModalType::Settings => {
+                    crate::machkit::ModalType::Settings => {
                         let row_height = (ui.ui_line_height * 2.2).round();
                         (row_height * 8.2).max(430.0).round()
                     }
-                    crate::ui::ModalType::About => 190.0,
-                    crate::ui::ModalType::CommandPalette => {
+                    crate::machkit::ModalType::About => 190.0,
+                    crate::machkit::ModalType::CommandPalette => {
                         let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
                         let filtered_len = ui.get_filtered_commands().len();
                         let visible_items = filtered_len.min(10);
                         let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
                         (header_h + visible_items as f32 * item_height).round()
                     }
-                    crate::ui::ModalType::UnsavedChanges => 200.0,
-                    crate::ui::ModalType::SidebarInput => 150.0,
-                    crate::ui::ModalType::GlobalSearch => {
+                    crate::machkit::ModalType::UnsavedChanges => 200.0,
+                    crate::machkit::ModalType::SidebarInput => 150.0,
+                    crate::machkit::ModalType::GlobalSearch => {
                         let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
                         let count = ui.global_search_results.len().min(10).max(1);
                         let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
@@ -503,7 +505,7 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                 let my = mouse_y;
                 if mx >= modal_x && mx <= modal_x + modal_w && my >= modal_y && my <= modal_y + modal_h {
                     match modal {
-                        crate::ui::ModalType::CommandPalette | crate::ui::ModalType::GlobalSearch => {
+                        crate::machkit::ModalType::CommandPalette | crate::machkit::ModalType::GlobalSearch => {
                             let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
                             if my >= modal_y + header_h {
                                 is_pointer = true;
@@ -512,7 +514,7 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                                 return;
                             }
                         }
-                        crate::ui::ModalType::Settings => {
+                        crate::machkit::ModalType::Settings => {
                             let row_height = (ui.ui_line_height * 2.2).round();
                             let control_x = modal_x + 24.0 * ui.ui_char_width;
                             let btn_h = (ui.ui_line_height * 1.3).round().max(24.0);
@@ -566,7 +568,7 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                                 is_pointer = true;
                             }
                         }
-                        crate::ui::ModalType::About => {
+                        crate::machkit::ModalType::About => {
                             let close_btn_w = (12.0 * ui.ui_char_width).max(100.0).round();
                             let close_btn_h = (ui.ui_line_height * 1.6).max(30.0).round();
                             let close_btn_x = modal_x + ((modal_w - close_btn_w) / 2.0).round();
@@ -575,7 +577,7 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                                 is_pointer = true;
                             }
                         }
-                        crate::ui::ModalType::UnsavedChanges => {
+                        crate::machkit::ModalType::UnsavedChanges => {
                             let btn_w = 130.0f32;
                             let btn_h = 34.0f32;
                             let spacing = 15.0f32;
@@ -593,7 +595,7 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                                 is_pointer = true;
                             }
                         }
-                        crate::ui::ModalType::SidebarInput => {
+                        crate::machkit::ModalType::SidebarInput => {
                             let input_x = modal_x + 20.0;
                             let title_y = modal_y + 20.0;
                             let input_y = title_y + ui.ui_line_height + 15.0;
@@ -810,7 +812,9 @@ pub fn handle_cursor_moved(
             let editor_height = status_y - editor_top - hs_height;
             let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
      
-            let virtual_len = if is_diagnostics {
+            let virtual_len = if active_path == "search://project" {
+                crate::machkit::components::editor::project_search::build_search_render_items(ui).len()
+            } else if active_path.starts_with("diagnostics://") {
                 let mut count = 0;
                 for (file_path, diags) in &ui.lsp_diagnostics_details {
                     if diags.is_empty() {
@@ -904,7 +908,7 @@ pub fn handle_cursor_moved(
             };
      
             let line_idx = if is_diagnostics {
-                let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
                 if visual_lines.is_empty() {
                     0
                 } else {
@@ -922,11 +926,11 @@ pub fn handle_cursor_moved(
             };
      
             let line_chars = if is_diagnostics {
-                let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
                 visual_lines.get(line_idx).map_or(0, |vl| match vl {
-                    crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
-                    crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
-                    crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+                    crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                    crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+                    crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
                 })
             } else {
                 state.tabs[state.active_tab_idx].buffer.lines()[line_idx].chars().count()
@@ -1091,6 +1095,8 @@ pub fn handle_mouse_input(
     if button == MouseButton::Left {
         let size = window.inner_size();
         if input_state == ElementState::Pressed {
+            ui.search_focused = false;
+            ui.global_search_focused = false;
             // Check sidebar context menu click
             if let Some((menu_x, menu_y, target_path, _is_dir)) = ui.sidebar_context_menu.clone() {
                 ui.sidebar_context_menu = None;
@@ -1102,7 +1108,7 @@ pub fn handle_mouse_input(
                     let idx = ((state.mouse_y - menu_y) / item_height).floor() as usize;
                     match idx {
                         0 => { // New File
-                            ui.active_modal = Some(crate::ui::ModalType::SidebarInput);
+                            ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
                             ui.sidebar_input_type = "new_file".to_string();
                             ui.sidebar_input_target = target_path;
                             ui.sidebar_input_value.clear();
@@ -1110,7 +1116,7 @@ pub fn handle_mouse_input(
                             return;
                         }
                         1 => { // New Folder
-                            ui.active_modal = Some(crate::ui::ModalType::SidebarInput);
+                            ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
                             ui.sidebar_input_type = "new_folder".to_string();
                             ui.sidebar_input_target = target_path;
                             ui.sidebar_input_value.clear();
@@ -1118,7 +1124,7 @@ pub fn handle_mouse_input(
                             return;
                         }
                         2 => { // Rename
-                            ui.active_modal = Some(crate::ui::ModalType::SidebarInput);
+                            ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
                             ui.sidebar_input_type = "rename".to_string();
                             ui.sidebar_input_target = target_path.clone();
                             ui.sidebar_input_value = target_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -1143,7 +1149,7 @@ pub fn handle_mouse_input(
             }
 
             // Check SidebarInput modal click
-            if ui.active_modal == Some(crate::ui::ModalType::SidebarInput) {
+            if ui.active_modal == Some(crate::machkit::ModalType::SidebarInput) {
                 let modal_w = 400.0f32;
                 let modal_h = 150.0f32;
                 let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
@@ -1233,21 +1239,28 @@ pub fn handle_mouse_input(
                     }
 
                     if state.mouse_x >= bar_x && state.mouse_x < bar_x + bar_w && state.mouse_y >= bar_y && state.mouse_y < bar_y + bar_h {
+                        if is_project_search {
+                            ui.global_search_focused = true;
+                        } else {
+                            ui.search_focused = true;
+                        }
                         let is_local = !is_project_search;
                         let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
 
                         let count_w = if is_local { 70.0f32 } else { 75.0f32 };
-                        let btn_prev_w = 22.0f32;
-                        let btn_next_w = 22.0f32;
-                        let close_btn_w = 22.0f32;
+                        let btn_prev_w = 24.0f32;
+                        let btn_next_w = 24.0f32;
+                        let close_btn_w = 24.0f32;
 
-                        let btn_rep_toggle_w = if is_local { 0.0f32 } else { 22.0f32 };
-                        let btn_filter_w = if is_local { 0.0f32 } else { 22.0f32 };
+                        let btn_rep_toggle_w = if is_local { 0.0f32 } else { 24.0f32 };
+                        let btn_filter_w = if is_local { 0.0f32 } else { 24.0f32 };
 
-                        let input_h = 24.0f32;
-                        let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
-                        let input_y_1 = bar_y + (row_h - input_h) / 2.0;
-                        let input_y_2 = bar_y + row_h + (row_h - input_h) / 2.0;
+                        let input_h = 26.0f32;
+                        let path_h = if is_local { 20.0f32 } else { 0.0f32 };
+                        let remaining_h = bar_h - path_h;
+                        let row_h = if show_replace { remaining_h / 2.0 } else { remaining_h };
+                        let input_y_1 = bar_y + path_h + (row_h - input_h) / 2.0;
+                        let input_y_2 = bar_y + path_h + row_h + (row_h - input_h) / 2.0;
 
                         let close_x = bar_x + bar_w - 10.0 - close_btn_w;
                         let next_x = close_x - 8.0 - btn_next_w;
@@ -1263,10 +1276,10 @@ pub fn handle_mouse_input(
                             (rep_toggle_x, filter_x, count_x)
                         };
                         
-                        let toggle_btn_w = 22.0f32;
+                        let toggle_btn_w = 24.0f32;
                         let toggle_btn_x = bar_x + 10.0;
                         let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
-                        let input_find_w = 350.0f32.min(count_x - 10.0 - input_start_x).max(50.0);
+                        let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
 
                         let pane_top = bar_y - ui.tabbar_height;
                         let pane_bottom = pane_top + (if state.inactive_panes.is_empty() {
@@ -1317,7 +1330,7 @@ pub fn handle_mouse_input(
                             }
 
                             // Check options inside Find input
-                            let opt_btn_w = 20.0f32;
+                            let opt_btn_w = 22.0f32;
                             let opt_y = input_y_1 + 2.0;
                             let opt_h = input_h - 4.0;
                             let opt_regex_x = input_start_x + input_find_w - 5.0 - opt_btn_w;
@@ -1702,8 +1715,8 @@ pub fn handle_mouse_input(
                                 window.request_redraw();
                                 return;
                             }
+                            return;
                         }
-                        return;
                     }
                 }
                  // Check if click is on tab scrollbar
@@ -1938,7 +1951,10 @@ pub fn handle_mouse_input(
                             let hs_height = if show_horizontal_scrollbar { 14.0 } else { 0.0 };
                             let editor_height = editor_bottom_limit - editor_top - hs_height;
  
-                            let virtual_len = if is_diagnostics {
+                            let active_path = state.tabs[active_tab_idx].path.as_deref().unwrap_or("");
+                            let virtual_len = if active_path == "search://project" {
+                                crate::machkit::components::editor::project_search::build_search_render_items(ui).len()
+                            } else if is_diagnostics {
                                 let mut count = 0;
                                 for (file_path, diags) in &ui.lsp_diagnostics_details {
                                     if diags.is_empty() {
@@ -2040,16 +2056,17 @@ pub fn handle_mouse_input(
                                  let bottom_limit = if show_horizontal_scrollbar { editor_bottom_limit - 14.0 } else { editor_bottom_limit };
                                  if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < bottom_limit {
                                          if state.tabs[active_tab_idx].path.as_deref() == Some("search://project") {
+                                               ui.global_search_focused = true;
                                                let list_y = editor_top;
                                                let item_height = ui.buffer_line_height;
                                                if state.mouse_y >= list_y {
                                                    let clicked_idx = ((state.mouse_y - list_y) / item_height).floor() as usize + ui.global_search_scroll;
                                                    
-                                                     let render_items = crate::ui::components::editor::project_search::build_search_render_items(ui);
+                                                     let render_items = crate::machkit::components::editor::project_search::build_search_render_items(ui);
                                                      
                                                      if clicked_idx < render_items.len() {
                                                          match &render_items[clicked_idx] {
-                                                             crate::ui::components::editor::project_search::SearchRenderItem::FileHeader { path } => {
+                                                             crate::machkit::components::editor::project_search::SearchRenderItem::FileHeader { path } => {
                                                                  let selected_path = ui.global_search_results.get(ui.global_search_selected).map(|r| &r.0);
                                                                  let is_file_selected = Some(path) == selected_path;
                                                                  let row_hover = true;
@@ -2079,7 +2096,7 @@ pub fn handle_mouse_input(
                                                                 window.request_redraw();
                                                                 return;
                                                             }
-                                                            crate::ui::components::editor::project_search::SearchRenderItem::CodeLine {
+                                                            crate::machkit::components::editor::project_search::SearchRenderItem::CodeLine {
                                                                 path,
                                                                 line_idx,
                                                                 result_idx,
@@ -2150,7 +2167,7 @@ pub fn handle_mouse_input(
                                                } else if target_type == "code" {
                                                    // Place virtual cursor in diagnostics view
                                                    let clicked_line = ((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y;
-                                                   let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                                                   let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
                                                    if !visual_lines.is_empty() {
                                                        let clicked_line = clicked_line.min(visual_lines.len() - 1);
                                                        let code_start_x = text_area_x + 48.0; // gutter_w is 48.0
@@ -2158,7 +2175,7 @@ pub fn handle_mouse_input(
                                                        let col_idx = col_idx.max(0) as usize;
                                                        
                                                        let active_tab = &mut state.tabs[active_tab_idx];
-                                                       if let Some(crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. }) = visual_lines.get(clicked_line) {
+                                                       if let Some(crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. }) = visual_lines.get(clicked_line) {
                                                            let line_chars = line_content.chars().count();
                                                            let col_idx = col_idx.min(line_chars);
                                                            active_tab.cursor.line = clicked_line;
@@ -2175,7 +2192,7 @@ pub fn handle_mouse_input(
                                        }
                                       if let Some((target_path, target_line, target_col)) = clicked_info {
                                           // Open the file
-                                          let open_action = crate::ui::UiAction::OpenFile(std::path::PathBuf::from(target_path));
+                                          let open_action = crate::machkit::UiAction::OpenFile(std::path::PathBuf::from(target_path));
                                           crate::app::handler::handle_action(
                                               ui,
                                               state,
@@ -2554,7 +2571,7 @@ pub fn handle_mouse_wheel(
     window: &Window,
     delta: MouseScrollDelta,
 ) {
-    if ui.active_modal == Some(crate::ui::ModalType::CommandPalette) {
+    if ui.active_modal == Some(crate::machkit::ModalType::CommandPalette) {
         let scroll_lines = match delta {
             MouseScrollDelta::LineDelta(_, dy) => -dy as isize,
             MouseScrollDelta::PixelDelta(pos) => (pos.y / 15.0) as isize * -1,
@@ -2744,23 +2761,15 @@ pub fn handle_mouse_wheel(
  
     let active_path = state.tabs[state.active_tab_idx].path.as_deref().unwrap_or("");
     if active_path == "search://project" {
-        let mut total_items = 0;
-        let mut last_path = None;
-        for (path, _, _) in &ui.global_search_results {
-            if last_path.as_ref() != Some(path) {
-                total_items += 1;
-                last_path = Some(path.clone());
-            }
-            total_items += 1;
-        }
+        let render_items = crate::machkit::components::editor::project_search::build_search_render_items(ui);
         let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
         let status_y = (window.inner_size().height as f32 - ui.status_height).round();
         let editor_height = status_y - editor_top;
         let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
 
-        let max_scroll = (total_items as isize - visible_lines as isize).max(0);
-        let new_scroll = ui.global_search_scroll as isize + scroll_lines;
-        ui.global_search_scroll = new_scroll.clamp(0, max_scroll) as usize;
+        let max_scroll = (render_items.len() as isize - visible_lines as isize).max(0);
+        let new_scroll = ui.scroll_y as isize + scroll_lines;
+        ui.scroll_y = new_scroll.clamp(0, max_scroll) as usize;
         window.request_redraw();
         return;
     }
