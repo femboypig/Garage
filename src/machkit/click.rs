@@ -1,6 +1,7 @@
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
-use super::{UiState, UiAction, MenuType, ModalType, CommandPaletteMode};
+use super::ui_state::{UiState, CommandPaletteMode};
+use super::types::{UiAction, MenuType, ModalType};
 
 impl UiState {
     /// Handle click coordinates to determine if a menu, tree, or scroll item was clicked
