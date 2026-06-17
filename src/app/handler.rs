@@ -104,6 +104,9 @@ pub fn handle_action(
             };
             if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
                 ui.selected_file = Some(std::path::PathBuf::from(active_path));
+                if active_path == "search://project" {
+                    ui.global_search_focused = true;
+                }
                 if !active_path.starts_with("diagnostics://") && !active_path.starts_with("search://") {
                     let abs_path = crate::editor::get_absolute_path(active_path);
                     ui.diagnostics_file_cache.insert(abs_path, state.tabs[state.active_tab_idx].buffer.lines().to_vec());
@@ -177,6 +180,7 @@ pub fn handle_action(
         UiAction::Find => {
             ui.show_search_panel = true;
             ui.search_focus_replace = false;
+            ui.search_focused = true;
             if state.active_tab_idx < state.tabs.len() {
                 let active_tab = &state.tabs[state.active_tab_idx];
                 if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {

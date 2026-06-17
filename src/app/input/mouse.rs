@@ -288,20 +288,22 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                 if mouse_x >= bar_x && mouse_x < bar_x + bar_w && mouse_y >= bar_y && mouse_y < bar_y + bar_h {
                     let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
 
-                    let input_h = 24.0f32;
-                    let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
-                    let input_y_1 = bar_y + (row_h - input_h) / 2.0;
-                    let input_y_2 = bar_y + row_h + (row_h - input_h) / 2.0;
+                    let input_h = 26.0f32;
+                    let path_h = if is_local { 20.0f32 } else { 0.0f32 };
+                    let remaining_h = bar_h - path_h;
+                    let row_h = if show_replace { remaining_h / 2.0 } else { remaining_h };
+                    let input_y_1 = bar_y + path_h + (row_h - input_h) / 2.0;
+                    let input_y_2 = bar_y + path_h + row_h + (row_h - input_h) / 2.0;
 
-                    let toggle_btn_w = 22.0f32;
+                    let toggle_btn_w = 24.0f32;
                     let toggle_btn_x = bar_x + 10.0;
                     let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
 
-                    let close_btn_w = 22.0f32;
-                    let btn_next_w = 22.0f32;
-                    let btn_prev_w = 22.0f32;
-                    let btn_rep_toggle_w = if is_local { 0.0f32 } else { 22.0f32 };
-                    let btn_filter_w = if is_local { 0.0f32 } else { 22.0f32 };
+                    let close_btn_w = 24.0f32;
+                    let btn_next_w = 24.0f32;
+                    let btn_prev_w = 24.0f32;
+                    let btn_rep_toggle_w = if is_local { 0.0f32 } else { 24.0f32 };
+                    let btn_filter_w = if is_local { 0.0f32 } else { 24.0f32 };
                     let count_w = if is_local { 70.0f32 } else { 75.0f32 };
 
                     let close_x = bar_x + bar_w - 10.0 - close_btn_w;
@@ -318,12 +320,12 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                         (rep_toggle_x, filter_x, count_x)
                     };
 
-                    let input_find_w = 350.0f32.min(count_x - 10.0 - input_start_x).max(50.0);
+                    let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
 
                     // Row 1 hover
                     if mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h {
                         // Options inside find input
-                        let opt_btn_w = 20.0f32;
+                        let opt_btn_w = 22.0f32;
                         let opt_regex_x = input_start_x + input_find_w - 5.0 - opt_btn_w;
                         let opt_word_x = opt_regex_x - 2.0 - opt_btn_w;
                         let opt_case_x = opt_word_x - 2.0 - opt_btn_w;
@@ -810,7 +812,9 @@ pub fn handle_cursor_moved(
             let editor_height = status_y - editor_top - hs_height;
             let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
      
-            let virtual_len = if is_diagnostics {
+            let virtual_len = if active_path == "search://project" {
+                crate::ui::components::editor::project_search::build_search_render_items(ui).len()
+            } else if active_path.starts_with("diagnostics://") {
                 let mut count = 0;
                 for (file_path, diags) in &ui.lsp_diagnostics_details {
                     if diags.is_empty() {
@@ -1091,6 +1095,8 @@ pub fn handle_mouse_input(
     if button == MouseButton::Left {
         let size = window.inner_size();
         if input_state == ElementState::Pressed {
+            ui.search_focused = false;
+            ui.global_search_focused = false;
             // Check sidebar context menu click
             if let Some((menu_x, menu_y, target_path, _is_dir)) = ui.sidebar_context_menu.clone() {
                 ui.sidebar_context_menu = None;
@@ -1233,21 +1239,28 @@ pub fn handle_mouse_input(
                     }
 
                     if state.mouse_x >= bar_x && state.mouse_x < bar_x + bar_w && state.mouse_y >= bar_y && state.mouse_y < bar_y + bar_h {
+                        if is_project_search {
+                            ui.global_search_focused = true;
+                        } else {
+                            ui.search_focused = true;
+                        }
                         let is_local = !is_project_search;
                         let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
 
                         let count_w = if is_local { 70.0f32 } else { 75.0f32 };
-                        let btn_prev_w = 22.0f32;
-                        let btn_next_w = 22.0f32;
-                        let close_btn_w = 22.0f32;
+                        let btn_prev_w = 24.0f32;
+                        let btn_next_w = 24.0f32;
+                        let close_btn_w = 24.0f32;
 
-                        let btn_rep_toggle_w = if is_local { 0.0f32 } else { 22.0f32 };
-                        let btn_filter_w = if is_local { 0.0f32 } else { 22.0f32 };
+                        let btn_rep_toggle_w = if is_local { 0.0f32 } else { 24.0f32 };
+                        let btn_filter_w = if is_local { 0.0f32 } else { 24.0f32 };
 
-                        let input_h = 24.0f32;
-                        let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
-                        let input_y_1 = bar_y + (row_h - input_h) / 2.0;
-                        let input_y_2 = bar_y + row_h + (row_h - input_h) / 2.0;
+                        let input_h = 26.0f32;
+                        let path_h = if is_local { 20.0f32 } else { 0.0f32 };
+                        let remaining_h = bar_h - path_h;
+                        let row_h = if show_replace { remaining_h / 2.0 } else { remaining_h };
+                        let input_y_1 = bar_y + path_h + (row_h - input_h) / 2.0;
+                        let input_y_2 = bar_y + path_h + row_h + (row_h - input_h) / 2.0;
 
                         let close_x = bar_x + bar_w - 10.0 - close_btn_w;
                         let next_x = close_x - 8.0 - btn_next_w;
@@ -1263,10 +1276,10 @@ pub fn handle_mouse_input(
                             (rep_toggle_x, filter_x, count_x)
                         };
                         
-                        let toggle_btn_w = 22.0f32;
+                        let toggle_btn_w = 24.0f32;
                         let toggle_btn_x = bar_x + 10.0;
                         let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
-                        let input_find_w = 350.0f32.min(count_x - 10.0 - input_start_x).max(50.0);
+                        let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
 
                         let pane_top = bar_y - ui.tabbar_height;
                         let pane_bottom = pane_top + (if state.inactive_panes.is_empty() {
@@ -1317,7 +1330,7 @@ pub fn handle_mouse_input(
                             }
 
                             // Check options inside Find input
-                            let opt_btn_w = 20.0f32;
+                            let opt_btn_w = 22.0f32;
                             let opt_y = input_y_1 + 2.0;
                             let opt_h = input_h - 4.0;
                             let opt_regex_x = input_start_x + input_find_w - 5.0 - opt_btn_w;
@@ -1702,8 +1715,8 @@ pub fn handle_mouse_input(
                                 window.request_redraw();
                                 return;
                             }
+                            return;
                         }
-                        return;
                     }
                 }
                  // Check if click is on tab scrollbar
@@ -1938,7 +1951,10 @@ pub fn handle_mouse_input(
                             let hs_height = if show_horizontal_scrollbar { 14.0 } else { 0.0 };
                             let editor_height = editor_bottom_limit - editor_top - hs_height;
  
-                            let virtual_len = if is_diagnostics {
+                            let active_path = state.tabs[active_tab_idx].path.as_deref().unwrap_or("");
+                            let virtual_len = if active_path == "search://project" {
+                                crate::ui::components::editor::project_search::build_search_render_items(ui).len()
+                            } else if is_diagnostics {
                                 let mut count = 0;
                                 for (file_path, diags) in &ui.lsp_diagnostics_details {
                                     if diags.is_empty() {
@@ -2040,6 +2056,7 @@ pub fn handle_mouse_input(
                                  let bottom_limit = if show_horizontal_scrollbar { editor_bottom_limit - 14.0 } else { editor_bottom_limit };
                                  if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < bottom_limit {
                                          if state.tabs[active_tab_idx].path.as_deref() == Some("search://project") {
+                                               ui.global_search_focused = true;
                                                let list_y = editor_top;
                                                let item_height = ui.buffer_line_height;
                                                if state.mouse_y >= list_y {
@@ -2744,23 +2761,15 @@ pub fn handle_mouse_wheel(
  
     let active_path = state.tabs[state.active_tab_idx].path.as_deref().unwrap_or("");
     if active_path == "search://project" {
-        let mut total_items = 0;
-        let mut last_path = None;
-        for (path, _, _) in &ui.global_search_results {
-            if last_path.as_ref() != Some(path) {
-                total_items += 1;
-                last_path = Some(path.clone());
-            }
-            total_items += 1;
-        }
+        let render_items = crate::ui::components::editor::project_search::build_search_render_items(ui);
         let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
         let status_y = (window.inner_size().height as f32 - ui.status_height).round();
         let editor_height = status_y - editor_top;
         let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
 
-        let max_scroll = (total_items as isize - visible_lines as isize).max(0);
-        let new_scroll = ui.global_search_scroll as isize + scroll_lines;
-        ui.global_search_scroll = new_scroll.clamp(0, max_scroll) as usize;
+        let max_scroll = (render_items.len() as isize - visible_lines as isize).max(0);
+        let new_scroll = ui.scroll_y as isize + scroll_lines;
+        ui.scroll_y = new_scroll.clamp(0, max_scroll) as usize;
         window.request_redraw();
         return;
     }

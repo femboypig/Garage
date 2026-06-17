@@ -206,6 +206,24 @@ pub fn draw_modals(
                 );
             }
             ModalType::SidebarInput => {
+                let mut ctx = crate::machkit::UiContext {
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    mouse_x,
+                    mouse_y,
+                    theme: &ui.config.theme,
+                    white_uv,
+                    ui_font_size: ui.ui_font_size,
+                    ui_char_width: ui.ui_char_width,
+                    ui_font_ascent: ui.ui_font_ascent,
+                    ui_line_height: ui.ui_line_height,
+                    buffer_font_size: ui.buffer_font_size,
+                    buffer_font_ascent: ui.buffer_font_ascent,
+                    buffer_line_height: ui.buffer_line_height,
+                };
+
                 let title = match ui.sidebar_input_type.as_str() {
                     "new_file" => "New File",
                     "new_folder" => "New Folder",
@@ -214,104 +232,68 @@ pub fn draw_modals(
                 };
                 
                 let title_y = modal_y + 20.0;
-                ui.push_str(vertices, indices, atlas, queue, title, modal_x + 20.0, title_y + ui.ui_font_ascent, ui.config.theme.modal_text_title, ui.ui_font_size, ui.ui_char_width);
+                ctx.push_str(title, modal_x + 20.0, title_y + ctx.ui_font_ascent, ctx.theme.modal_text_title, ctx.ui_font_size);
                 
                 let input_x = modal_x + 20.0;
-                let input_y = title_y + ui.ui_line_height + 15.0;
+                let input_y = title_y + ctx.ui_line_height + 15.0;
                 let input_w = modal_w - 40.0;
-                let input_h = ui.ui_line_height + 8.0;
+                let input_h = ctx.ui_line_height + 8.0;
                 
-                ui.push_quad(vertices, indices, input_x, input_y, input_w, input_h, white_uv, ui.config.theme.editor_bg);
-                ui.push_quad(vertices, indices, input_x, input_y, input_w, 1.0, white_uv, ui.config.theme.modal_border);
-                ui.push_quad(vertices, indices, input_x, input_y + input_h - 1.0, input_w, 1.0, white_uv, ui.config.theme.modal_border);
-                ui.push_quad(vertices, indices, input_x, input_y, 1.0, input_h, white_uv, ui.config.theme.modal_border);
-                ui.push_quad(vertices, indices, input_x + input_w - 1.0, input_y, 1.0, input_h, white_uv, ui.config.theme.modal_border);
+                crate::machkit::Input::new()
+                    .value(&ui.sidebar_input_value)
+                    .focused(true)
+                    .draw(&mut ctx, input_x, input_y, input_w, input_h);
                 
-                let text_x = input_x + 6.0;
-                let text_baseline = (input_y + input_h / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
-                ui.push_str(vertices, indices, atlas, queue, &ui.sidebar_input_value, text_x, text_baseline, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
-                
-                let cursor_x = text_x + ui.sidebar_input_value.chars().count() as f32 * ui.ui_char_width;
-                if cursor_x < input_x + input_w - 6.0 {
-                    ui.push_quad(
-                        vertices,
-                        indices,
-                        cursor_x,
-                        input_y + 4.0,
-                        1.5,
-                        input_h - 8.0,
-                        white_uv,
-                        ui.config.theme.cursor_color,
-                    );
-                }
-
                 let btn_w = 80.0f32;
                 let btn_h = 24.0f32;
                 let cancel_x = modal_x + modal_w - 20.0 - btn_w * 2.0 - 10.0;
                 let confirm_x = modal_x + modal_w - 20.0 - btn_w;
                 let btn_y = input_y + input_h + 15.0;
                 
-                let cancel_hover = mouse_x >= cancel_x && mouse_x <= cancel_x + btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h;
-                ui.push_quad(vertices, indices, cancel_x, btn_y, btn_w, btn_h, white_uv, if cancel_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-                ui.push_quad(vertices, indices, cancel_x, btn_y, btn_w, 1.0, white_uv, ui.config.theme.button_border);
-                ui.push_quad(vertices, indices, cancel_x, btn_y + btn_h - 1.0, btn_w, 1.0, white_uv, ui.config.theme.button_border);
-                ui.push_quad(vertices, indices, cancel_x, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
-                ui.push_quad(vertices, indices, cancel_x + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
-                let cancel_text_x = cancel_x + ((btn_w - "Cancel".chars().count() as f32 * ui.ui_char_width) / 2.0).round();
-                ui.push_str(vertices, indices, atlas, queue, "Cancel", cancel_text_x, (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round(), ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
+                crate::machkit::Button::new()
+                    .text("Cancel")
+                    .border(true)
+                    .bg_color(ctx.theme.button_bg)
+                    .draw(&mut ctx, cancel_x, btn_y, btn_w, btn_h);
                 
-                let confirm_hover = mouse_x >= confirm_x && mouse_x <= confirm_x + btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h;
-                ui.push_quad(vertices, indices, confirm_x, btn_y, btn_w, btn_h, white_uv, if confirm_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-                ui.push_quad(vertices, indices, confirm_x, btn_y, btn_w, 1.0, white_uv, ui.config.theme.button_border);
-                ui.push_quad(vertices, indices, confirm_x, btn_y + btn_h - 1.0, btn_w, 1.0, white_uv, ui.config.theme.button_border);
-                ui.push_quad(vertices, indices, confirm_x, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
-                ui.push_quad(vertices, indices, confirm_x + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
-                let confirm_text_x = confirm_x + ((btn_w - "OK".chars().count() as f32 * ui.ui_char_width) / 2.0).round();
-                ui.push_str(vertices, indices, atlas, queue, "OK", confirm_text_x, (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round(), ui.config.theme.button_text, ui.ui_font_size, ui.ui_char_width);
+                crate::machkit::Button::new()
+                    .text("OK")
+                    .border(true)
+                    .bg_color(ctx.theme.button_bg)
+                    .draw(&mut ctx, confirm_x, btn_y, btn_w, btn_h);
             }
         }
 
         if modal != ModalType::CommandPalette && modal != ModalType::UnsavedChanges && modal != ModalType::SidebarInput {
-            // Draw generic Close Button (centered horizontally)
-            let btn_w = (12.0 * ui.ui_char_width).max(100.0).round();
-            let btn_h = (ui.ui_line_height * 1.6).max(30.0).round();
-            let btn_x = modal_x + ((modal_w - btn_w) / 2.0).round();
-            let btn_y = modal_y + modal_h - btn_h - (ui.ui_line_height * 1.0).round();
-
-            let close_btn_hover = mouse_x >= btn_x && mouse_x <= btn_x + btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h;
-            ui.push_quad(
-                vertices,
-                indices,
-                btn_x,
-                btn_y,
-                btn_w,
-                btn_h,
-                white_uv,
-                if close_btn_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg },
-            );
-            // Draw borders
-            ui.push_quad(vertices, indices, btn_x, btn_y, btn_w, 1.0, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, btn_x, btn_y + btn_h - 1.0, btn_w, 1.0, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, btn_x, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, btn_x + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
-
-            let close_text = "Close";
-            let close_text_w = close_text.chars().count() as f32 * ui.ui_char_width;
-            let close_text_x = btn_x + ((btn_w - close_text_w) / 2.0).round();
-            let close_text_y = (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
-
-            ui.push_str(
+            let mut ctx = crate::machkit::UiContext {
                 vertices,
                 indices,
                 atlas,
                 queue,
-                close_text,
-                close_text_x,
-                close_text_y,
-                ui.config.theme.button_text,
-                ui.ui_font_size,
-                ui.ui_char_width,
-            );
+                mouse_x,
+                mouse_y,
+                theme: &ui.config.theme,
+                white_uv,
+                ui_font_size: ui.ui_font_size,
+                ui_char_width: ui.ui_char_width,
+                ui_font_ascent: ui.ui_font_ascent,
+                ui_line_height: ui.ui_line_height,
+                buffer_font_size: ui.buffer_font_size,
+                buffer_font_ascent: ui.buffer_font_ascent,
+                buffer_line_height: ui.buffer_line_height,
+            };
+
+            // Draw generic Close Button (centered horizontally)
+            let btn_w = (12.0 * ctx.ui_char_width).max(100.0).round();
+            let btn_h = (ctx.ui_line_height * 1.6).max(30.0).round();
+            let btn_x = modal_x + ((modal_w - btn_w) / 2.0).round();
+            let btn_y = modal_y + modal_h - btn_h - (ctx.ui_line_height * 1.0).round();
+
+            crate::machkit::Button::new()
+                .text("Close")
+                .border(true)
+                .bg_color(ctx.theme.button_bg)
+                .draw(&mut ctx, btn_x, btn_y, btn_w, btn_h);
         }
     }
 }

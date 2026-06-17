@@ -2,6 +2,7 @@ use crate::ui::{UiState, Vertex, FontAtlas};
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 
+
 pub fn draw_breadcrumbs(
     ui: &UiState,
     vertices: &mut Vec<Vertex>,
@@ -24,27 +25,39 @@ pub fn draw_breadcrumbs(
     let bar_y = main_y + ui.tabbar_height;
     let bar_h = ui.breadcrumb_height;
     
-    // Breadcrumb Bar background
-    ui.push_quad(
+    let mut ctx = crate::machkit::UiContext {
         vertices,
         indices,
+        atlas,
+        queue,
+        mouse_x,
+        mouse_y,
+        theme: &ui.config.theme,
+        white_uv,
+        ui_font_size: ui.ui_font_size,
+        ui_char_width: ui.ui_char_width,
+        ui_font_ascent: ui.ui_font_ascent,
+        ui_line_height: ui.ui_line_height,
+        buffer_font_size: ui.buffer_font_size,
+        buffer_font_ascent: ui.buffer_font_ascent,
+        buffer_line_height: ui.buffer_line_height,
+    };
+
+    // Breadcrumb Bar background
+    ctx.push_quad(
         bar_x,
         bar_y,
         bar_w,
         bar_h,
-        white_uv,
-        ui.config.theme.breadcrumb_bg,
+        ctx.theme.breadcrumb_bg,
     );
     // Breadcrumb bottom border
-    ui.push_quad(
-        vertices,
-        indices,
+    ctx.push_quad(
         bar_x,
         bar_y + bar_h - 1.0,
         bar_w,
         1.0,
-        white_uv,
-        ui.config.theme.breadcrumb_border,
+        ctx.theme.breadcrumb_border,
     );
     
     let is_project_search = active_file_path == Some("search://project");
@@ -60,20 +73,29 @@ pub fn draw_breadcrumbs(
         let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
 
         let count_w = if is_local { 70.0f32 } else { 75.0f32 };
-        let btn_prev_w = 22.0f32;
-        let btn_next_w = 22.0f32;
-        let close_btn_w = 22.0f32;
+        let btn_prev_w = 24.0f32;
+        let btn_next_w = 24.0f32;
+        let close_btn_w = 24.0f32;
 
-        let btn_rep_toggle_w = if is_local { 0.0f32 } else { 22.0f32 };
-        let btn_filter_w = if is_local { 0.0f32 } else { 22.0f32 };
+        let btn_rep_toggle_w = if is_local { 0.0f32 } else { 24.0f32 };
+        let btn_filter_w = if is_local { 0.0f32 } else { 24.0f32 };
 
-        let input_h = 24.0f32;
-        let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
-        let input_y_1 = bar_y + (row_h - input_h) / 2.0;
-        let input_y_2 = bar_y + row_h + (row_h - input_h) / 2.0;
+        let input_h = 26.0f32;
+        let (input_y_1, input_y_2) = if is_local {
+            let path_h = 20.0f32;
+            let remaining_h = bar_h - path_h;
+            let row_h = if show_replace { remaining_h / 2.0 } else { remaining_h };
+            let y1 = bar_y + path_h + (row_h - input_h) / 2.0;
+            let y2 = bar_y + path_h + row_h + (row_h - input_h) / 2.0;
+            (y1, y2)
+        } else {
+            let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
+            let y1 = bar_y + (row_h - input_h) / 2.0;
+            let y2 = bar_y + row_h + (row_h - input_h) / 2.0;
+            (y1, y2)
+        };
 
-        let l_baseline_1 = (input_y_1 + input_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
-        let l_baseline_2 = (input_y_2 + input_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+        let l_baseline_1 = (input_y_1 + input_h / 2.0 + ctx.ui_font_ascent / 2.0 - 2.0).round();
 
         let close_x = bar_x + bar_w - 10.0 - close_btn_w;
         let next_x = close_x - 8.0 - btn_next_w;
@@ -89,51 +111,55 @@ pub fn draw_breadcrumbs(
             (rep_toggle_x, filter_x, count_x)
         };
         
-        let toggle_btn_w = 22.0f32;
+        let toggle_btn_w = 24.0f32;
         let toggle_btn_x = bar_x + 10.0;
         let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
-        let input_find_w = 350.0f32.min(count_x - 10.0 - input_start_x).max(50.0);
+        let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
+
+        // Draw path text above the search inputs in local search
+        if is_local {
+            let relative_path = active_file_path.unwrap_or("Untitled");
+            let current_fn = ui.find_current_function(buffer, cursor.line);
+            let breadcrumb_text = if let Some(ref func) = current_fn {
+                format!("{} > {}", relative_path, func)
+            } else {
+                relative_path.to_string()
+            };
+            ctx.push_str(
+                &breadcrumb_text,
+                bar_x + 15.0,
+                (bar_y + 10.0 + ctx.ui_font_ascent / 2.0).round(),
+                ctx.theme.breadcrumb_text,
+                ctx.ui_font_size,
+            );
+        }
 
         // --- ROW 1: FIND ---
         // 0. Toggle Replace button / Collapse All button
-        let toggle_hover = mouse_x >= toggle_btn_x && mouse_x < toggle_btn_x + toggle_btn_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
-        if toggle_hover {
-            ui.push_quad(vertices, indices, toggle_btn_x, input_y_1, toggle_btn_w, input_h, white_uv, ui.config.theme.button_hover_bg);
-        }
-        let toggle_icon_sz = 13.0f32;
-        let toggle_icon_y = (input_y_1 + (input_h - toggle_icon_sz) / 2.0).round();
         let toggle_icon_name = if is_local {
             if show_replace { "chevron_up" } else { "chevron_down" }
         } else {
             "list_collapse"
         };
-        ui.push_icon(
-            vertices,
-            indices,
-            atlas,
-            queue,
-            toggle_icon_name,
-            toggle_btn_x + (toggle_btn_w - toggle_icon_sz) / 2.0,
-            toggle_icon_y,
-            ui.config.theme.modal_text_muted,
-            toggle_icon_sz,
-        );
+        crate::machkit::Button::new()
+            .icon(toggle_icon_name)
+            .text_color(ctx.theme.modal_text_muted)
+            .draw(&mut ctx, toggle_btn_x, input_y_1, toggle_btn_w, input_h);
 
         // 1. Find Input text box
-        ui.push_quad(vertices, indices, input_start_x, input_y_1, input_find_w, input_h, white_uv, ui.config.theme.editor_bg);
-        let border_color_1 = if is_find_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
-        ui.push_quad(vertices, indices, input_start_x, input_y_1, input_find_w, 1.0, white_uv, border_color_1);
-        ui.push_quad(vertices, indices, input_start_x, input_y_1 + input_h - 1.0, input_find_w, 1.0, white_uv, border_color_1);
-        ui.push_quad(vertices, indices, input_start_x, input_y_1, 1.0, input_h, white_uv, border_color_1);
-        ui.push_quad(vertices, indices, input_start_x + input_find_w - 1.0, input_y_1, 1.0, input_h, white_uv, border_color_1);
+        let placeholder = if is_local { "Search query..." } else { "Search in project..." };
+        let opt_btn_w = 22.0f32;
+        let options_w = 3.0 * opt_btn_w + 10.0;
 
-        // Magnifying glass icon inside input box
-        let search_icon_sz = 12.0f32;
-        let search_icon_y = (input_y_1 + (input_h - search_icon_sz) / 2.0).round();
-        ui.push_icon(vertices, indices, atlas, queue, "search", input_start_x + 6.0, search_icon_y, ui.config.theme.modal_text_muted, search_icon_sz);
+        crate::machkit::Input::new()
+            .value(search_query)
+            .placeholder(placeholder)
+            .focused(is_find_focused)
+            .icon("search")
+            .right_padding(options_w)
+            .draw(&mut ctx, input_start_x, input_y_1, input_find_w, input_h);
 
         // Option buttons inside Find Input
-        let opt_btn_w = 20.0f32;
         let opt_y = input_y_1 + 2.0;
         let opt_h = input_h - 4.0;
         let opt_regex_x = input_start_x + input_find_w - 5.0 - opt_btn_w;
@@ -141,51 +167,25 @@ pub fn draw_breadcrumbs(
         let opt_case_x = opt_word_x - 2.0 - opt_btn_w;
 
         // Aa option
-        let case_hover = mouse_x >= opt_case_x && mouse_x < opt_case_x + opt_btn_w && mouse_y >= opt_y && mouse_y < opt_y + opt_h;
-        let case_bg = if case_sensitive { ui.config.theme.selection_bg } else if case_hover { ui.config.theme.button_hover_bg } else { [0.0, 0.0, 0.0, 0.0] };
-        ui.push_quad(vertices, indices, opt_case_x, opt_y, opt_btn_w, opt_h, white_uv, case_bg);
-        let opt_icon_sz = 12.0f32;
-        let opt_icon_y = (opt_y + (opt_h - opt_icon_sz) / 2.0).round();
-        ui.push_icon(vertices, indices, atlas, queue, "case_sensitive", opt_case_x + (opt_btn_w - opt_icon_sz) / 2.0, opt_icon_y, ui.config.theme.modal_text_normal, opt_icon_sz);
+        crate::machkit::Button::new()
+            .icon("case_sensitive")
+            .active(case_sensitive)
+            .text_color(ctx.theme.modal_text_normal)
+            .draw(&mut ctx, opt_case_x, opt_y, opt_btn_w, opt_h);
 
         // W option
-        let word_hover = mouse_x >= opt_word_x && mouse_x < opt_word_x + opt_btn_w && mouse_y >= opt_y && mouse_y < opt_y + opt_h;
-        let word_bg = if whole_word { ui.config.theme.selection_bg } else if word_hover { ui.config.theme.button_hover_bg } else { [0.0, 0.0, 0.0, 0.0] };
-        ui.push_quad(vertices, indices, opt_word_x, opt_y, opt_btn_w, opt_h, white_uv, word_bg);
-        ui.push_icon(vertices, indices, atlas, queue, "whole_word", opt_word_x + (opt_btn_w - opt_icon_sz) / 2.0, opt_icon_y, ui.config.theme.modal_text_normal, opt_icon_sz);
+        crate::machkit::Button::new()
+            .icon("whole_word")
+            .active(whole_word)
+            .text_color(ctx.theme.modal_text_normal)
+            .draw(&mut ctx, opt_word_x, opt_y, opt_btn_w, opt_h);
 
         // .* option
-        let regex_hover = mouse_x >= opt_regex_x && mouse_x < opt_regex_x + opt_btn_w && mouse_y >= opt_y && mouse_y < opt_y + opt_h;
-        let regex_bg = if regex { ui.config.theme.selection_bg } else if regex_hover { ui.config.theme.button_hover_bg } else { [0.0, 0.0, 0.0, 0.0] };
-        ui.push_quad(vertices, indices, opt_regex_x, opt_y, opt_btn_w, opt_h, white_uv, regex_bg);
-        ui.push_icon(vertices, indices, atlas, queue, "regex", opt_regex_x + (opt_btn_w - opt_icon_sz) / 2.0, opt_icon_y, ui.config.theme.modal_text_normal, opt_icon_sz);
-
-        // Draw text inside find input
-        let options_w = 3.0 * opt_btn_w + 10.0;
-        let text_start_x = input_start_x + 22.0;
-        let max_chars = ((input_find_w - 24.0 - options_w) / ui.ui_char_width).floor().max(1.0) as usize;
-        let placeholder = if is_local { "Search query..." } else { "Search in project..." };
-        
-        if search_query.is_empty() {
-            ui.push_str(vertices, indices, atlas, queue, placeholder, text_start_x, l_baseline_1, ui.config.theme.syntax_comment, ui.ui_font_size, ui.ui_char_width);
-        } else {
-            let display_query = if search_query.chars().count() > max_chars {
-                if is_find_focused {
-                    search_query.chars().skip(search_query.chars().count() - max_chars).collect::<String>()
-                } else {
-                    search_query.chars().take(max_chars).collect::<String>()
-                }
-            } else {
-                search_query.clone()
-            };
-            ui.push_str(vertices, indices, atlas, queue, &display_query, text_start_x, l_baseline_1, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
-            if is_find_focused {
-                let cursor_x = text_start_x + display_query.chars().count() as f32 * ui.ui_char_width;
-                if cursor_x < input_start_x + input_find_w - options_w {
-                    ui.push_quad(vertices, indices, cursor_x, input_y_1 + 3.0, 1.5, input_h - 6.0, white_uv, ui.config.theme.cursor_color);
-                }
-            }
-        }
+        crate::machkit::Button::new()
+            .icon("regex")
+            .active(regex)
+            .text_color(ctx.theme.modal_text_normal)
+            .draw(&mut ctx, opt_regex_x, opt_y, opt_btn_w, opt_h);
 
         // 2. Match counts
         let count_str = if is_local {
@@ -206,116 +206,59 @@ pub fn draw_breadcrumbs(
             }
         };
         let count_text_len = count_str.chars().count() as f32;
-        let count_text_x = count_x + ((count_w - count_text_len * ui.ui_char_width) / 2.0).round();
-        ui.push_str(vertices, indices, atlas, queue, &count_str, count_text_x, l_baseline_1, ui.config.theme.modal_text_muted, ui.ui_font_size, ui.ui_char_width);
-
-        let button_icon_sz = 13.0f32;
-        let chevron_y = (input_y_1 + (input_h - button_icon_sz) / 2.0).round();
+        let count_text_x = count_x + ((count_w - count_text_len * ctx.ui_char_width) / 2.0).round();
+        ctx.push_str(&count_str, count_text_x, l_baseline_1, ctx.theme.modal_text_muted, ctx.ui_font_size);
 
         // 2.5 Optional Filter and Replace Toggle buttons for Project Search
         if !is_local {
             // Filter Button
-            let filter_hover = mouse_x >= filter_x && mouse_x < filter_x + btn_filter_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
-            ui.push_quad(vertices, indices, filter_x, input_y_1, btn_filter_w, input_h, white_uv, if filter_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-            ui.push_quad(vertices, indices, filter_x, input_y_1, btn_filter_w, 1.0, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, filter_x, input_y_1 + input_h - 1.0, btn_filter_w, 1.0, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, filter_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, filter_x + btn_filter_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
-            ui.push_icon(vertices, indices, atlas, queue, "filter", filter_x + (btn_filter_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
+            crate::machkit::Button::new()
+                .icon("filter")
+                .draw(&mut ctx, filter_x, input_y_1, btn_filter_w, input_h);
 
             // Replace Toggle Button
-            let rep_toggle_hover = mouse_x >= rep_toggle_x && mouse_x < rep_toggle_x + btn_rep_toggle_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
-            let rep_toggle_bg = if show_replace { ui.config.theme.selection_bg } else if rep_toggle_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg };
-            ui.push_quad(vertices, indices, rep_toggle_x, input_y_1, btn_rep_toggle_w, input_h, white_uv, rep_toggle_bg);
-            ui.push_quad(vertices, indices, rep_toggle_x, input_y_1, btn_rep_toggle_w, 1.0, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, rep_toggle_x, input_y_1 + input_h - 1.0, btn_rep_toggle_w, 1.0, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, rep_toggle_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, rep_toggle_x + btn_rep_toggle_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
-            ui.push_icon(vertices, indices, atlas, queue, "replace", rep_toggle_x + (btn_rep_toggle_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
+            crate::machkit::Button::new()
+                .icon("replace")
+                .active(show_replace)
+                .draw(&mut ctx, rep_toggle_x, input_y_1, btn_rep_toggle_w, input_h);
         }
 
         // 3. Prev Button (Chevron Left)
-        let prev_hover = mouse_x >= prev_x && mouse_x < prev_x + btn_prev_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
-        ui.push_quad(vertices, indices, prev_x, input_y_1, btn_prev_w, input_h, white_uv, if prev_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-        ui.push_quad(vertices, indices, prev_x, input_y_1, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, prev_x, input_y_1 + input_h - 1.0, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, prev_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, prev_x + btn_prev_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_icon(vertices, indices, atlas, queue, "chevron_left", prev_x + (btn_prev_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
+        crate::machkit::Button::new()
+            .icon("chevron_left")
+            .draw(&mut ctx, prev_x, input_y_1, btn_prev_w, input_h);
 
         // 4. Next Button (Chevron Right)
-        let next_hover = mouse_x >= next_x && mouse_x < next_x + btn_next_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
-        ui.push_quad(vertices, indices, next_x, input_y_1, btn_next_w, input_h, white_uv, if next_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-        ui.push_quad(vertices, indices, next_x, input_y_1, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, next_x, input_y_1 + input_h - 1.0, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, next_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, next_x + btn_next_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_icon(vertices, indices, atlas, queue, "chevron_right", next_x + (btn_next_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
+        crate::machkit::Button::new()
+            .icon("chevron_right")
+            .draw(&mut ctx, next_x, input_y_1, btn_next_w, input_h);
 
         // 5. Close Button (✕)
-        let close_hover = mouse_x >= close_x && mouse_x < close_x + close_btn_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
-        if close_hover {
-            ui.push_quad(vertices, indices, close_x, input_y_1, close_btn_w, input_h, white_uv, ui.config.theme.button_hover_bg);
-        }
-        let close_icon_y = (input_y_1 + (input_h - button_icon_sz) / 2.0).round();
-        ui.push_icon(vertices, indices, atlas, queue, "close", close_x + (close_btn_w - button_icon_sz) / 2.0, close_icon_y, if close_hover { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_muted }, button_icon_sz);
+        let close_hover = ctx.mouse_x >= close_x && ctx.mouse_x < close_x + close_btn_w && ctx.mouse_y >= input_y_1 && ctx.mouse_y < input_y_1 + input_h;
+        let close_color = if close_hover { ctx.theme.modal_text_title } else { ctx.theme.modal_text_muted };
+        crate::machkit::Button::new()
+            .icon("close")
+            .text_color(close_color)
+            .draw(&mut ctx, close_x, input_y_1, close_btn_w, input_h);
 
         // --- ROW 2: REPLACE ---
         if show_replace {
-            let rep_icon_y = (input_y_2 + (input_h - button_icon_sz) / 2.0).round();
-            ui.push_quad(vertices, indices, input_start_x, input_y_2, input_find_w, input_h, white_uv, ui.config.theme.editor_bg);
-            let border_color_2 = if is_replace_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
-            ui.push_quad(vertices, indices, input_start_x, input_y_2, input_find_w, 1.0, white_uv, border_color_2);
-            ui.push_quad(vertices, indices, input_start_x, input_y_2 + input_h - 1.0, input_find_w, 1.0, white_uv, border_color_2);
-            ui.push_quad(vertices, indices, input_start_x, input_y_2, 1.0, input_h, white_uv, border_color_2);
-            ui.push_quad(vertices, indices, input_start_x + input_find_w - 1.0, input_y_2, 1.0, input_h, white_uv, border_color_2);
-
-            // Replace icon inside input box
-            let replace_icon_sz = 12.0f32;
-            let replace_icon_y = (input_y_2 + (input_h - replace_icon_sz) / 2.0).round();
-            ui.push_icon(vertices, indices, atlas, queue, "replace", input_start_x + 6.0, replace_icon_y, ui.config.theme.modal_text_muted, replace_icon_sz);
-
-            let max_replace_chars = ((input_find_w - 24.0) / ui.ui_char_width).floor().max(1.0) as usize;
-            if replace_query.is_empty() {
-                ui.push_str(vertices, indices, atlas, queue, "Replace with...", text_start_x, l_baseline_2, ui.config.theme.syntax_comment, ui.ui_font_size, ui.ui_char_width);
-            } else {
-                let display_replace = if replace_query.chars().count() > max_replace_chars {
-                    if is_replace_focused {
-                        replace_query.chars().skip(replace_query.chars().count() - max_replace_chars).collect::<String>()
-                    } else {
-                        replace_query.chars().take(max_replace_chars).collect::<String>()
-                    }
-                } else {
-                    replace_query.clone()
-                };
-                ui.push_str(vertices, indices, atlas, queue, &display_replace, text_start_x, l_baseline_2, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
-                if is_replace_focused {
-                    let cursor_x = text_start_x + display_replace.chars().count() as f32 * ui.ui_char_width;
-                    if cursor_x < input_start_x + input_find_w - 5.0 {
-                        ui.push_quad(vertices, indices, cursor_x, input_y_2 + 3.0, 1.5, input_h - 6.0, white_uv, ui.config.theme.cursor_color);
-                    }
-                }
-            }
+            crate::machkit::Input::new()
+                .value(replace_query)
+                .placeholder("Replace with...")
+                .focused(is_replace_focused)
+                .icon("replace")
+                .draw(&mut ctx, input_start_x, input_y_2, input_find_w, input_h);
 
             // 7. Replace Button (Icon: replace)
-            let rep_hover = mouse_x >= prev_x && mouse_x < prev_x + btn_prev_w && mouse_y >= input_y_2 && mouse_y < input_y_2 + input_h;
-            ui.push_quad(vertices, indices, prev_x, input_y_2, btn_prev_w, input_h, white_uv, if rep_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-            ui.push_quad(vertices, indices, prev_x, input_y_2, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, prev_x, input_y_2 + input_h - 1.0, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, prev_x, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, prev_x + btn_prev_w - 1.0, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
-            
-            ui.push_icon(vertices, indices, atlas, queue, "replace", prev_x + (btn_prev_w - button_icon_sz) / 2.0, rep_icon_y, ui.config.theme.button_text, button_icon_sz);
+            crate::machkit::Button::new()
+                .icon("replace")
+                .draw(&mut ctx, prev_x, input_y_2, btn_prev_w, input_h);
 
             // 8. Replace All Button (Icon: replace_all)
-            let rep_all_hover = mouse_x >= next_x && mouse_x < next_x + btn_next_w && mouse_y >= input_y_2 && mouse_y < input_y_2 + input_h;
-            ui.push_quad(vertices, indices, next_x, input_y_2, btn_next_w, input_h, white_uv, if rep_all_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-            ui.push_quad(vertices, indices, next_x, input_y_2, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, next_x, input_y_2 + input_h - 1.0, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, next_x, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
-            ui.push_quad(vertices, indices, next_x + btn_next_w - 1.0, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
-            
-            ui.push_icon(vertices, indices, atlas, queue, "replace_all", next_x + (btn_next_w - button_icon_sz) / 2.0, rep_icon_y, ui.config.theme.button_text, button_icon_sz);
+            crate::machkit::Button::new()
+                .icon("replace_all")
+                .draw(&mut ctx, next_x, input_y_2, btn_next_w, input_h);
         }
     } else {
         // Construct breadcrumb text: relative_path > current_function
@@ -328,17 +271,12 @@ pub fn draw_breadcrumbs(
         } else {
             relative_path.to_string()
         };
-        ui.push_str(
-            vertices,
-            indices,
-            atlas,
-            queue,
+        ctx.push_str(
             &breadcrumb_text,
             bar_x + 15.0,
-            (bar_y + bar_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round(),
-            ui.config.theme.breadcrumb_text,
-            ui.ui_font_size,
-            ui.ui_char_width,
+            (bar_y + bar_h / 2.0 + ctx.ui_font_ascent / 2.0 - 2.0).round(),
+            ctx.theme.breadcrumb_text,
+            ctx.ui_font_size,
         );
     }
 }

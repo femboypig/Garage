@@ -62,34 +62,7 @@ impl UiState {
         white_uv: [f32; 2],
         color: [f32; 4],
     ) {
-        // Round panel coordinates to integer pixels for crisp borders
-        let rx = x.round();
-        let ry = y.round();
-        let rw = (x + w).round() - rx;
-        let rh = (y + h).round() - ry;
-
-        let start = vertices.len() as u16;
-        vertices.push(Vertex {
-            position: [rx, ry],
-            tex_coords: white_uv,
-            color,
-        });
-        vertices.push(Vertex {
-            position: [rx + rw, ry],
-            tex_coords: white_uv,
-            color,
-        });
-        vertices.push(Vertex {
-            position: [rx + rw, ry + rh],
-            tex_coords: white_uv,
-            color,
-        });
-        vertices.push(Vertex {
-            position: [rx, ry + rh],
-            tex_coords: white_uv,
-            color,
-        });
-        indices.extend_from_slice(&[start, start + 1, start + 2, start + 2, start + 3, start]);
+        crate::machkit::context::push_quad_raw(vertices, indices, white_uv, x, y, w, h, color);
     }
 
     /// Push a single text character glyph using the font atlas
@@ -107,101 +80,24 @@ impl UiState {
         char_width: f32,
     ) -> f32 {
         let white_uv = atlas.white_pixel_uv();
-        if let Some(info) = atlas.get_or_rasterize(queue, c, font_size) {
-            if info.width == 0.0 || info.height == 0.0 {
-                return char_width;
-            }
-
-            let cp = c as u32;
-            let is_box_drawing = c >= '\u{2500}' && c <= '\u{257f}';
-            let is_powerline = c >= '\u{e0b0}' && c <= '\u{e0d4}';
-            
-            let is_pua = (cp >= 0xE000 && cp <= 0xF8FF)
-                || (cp >= 0xF0000 && cp <= 0xFFFFF)
-                || (cp >= 0x100000 && cp <= 0x10FFFF);
-            let is_emoji = (cp >= 0x1F300 && cp <= 0x1F9FF)
-                || (cp >= 0x1F600 && cp <= 0x1F64F)
-                || (cp >= 0x2600 && cp <= 0x27BF);
-            let is_special_icon = (is_pua || is_emoji) && !is_powerline;
-
-            let (x, y, w, h) = if is_box_drawing || is_powerline {
-                let x_min = pen_x.round();
-                let x_max = (pen_x + char_width).round();
-                
-                let (ascent, line_h) = if (font_size - self.buffer_font_size).abs() < 0.1 {
-                    (self.buffer_font_ascent, self.buffer_line_height)
-                } else {
-                    (self.ui_font_ascent, self.ui_line_height)
-                };
-                
-                let y_min = (baseline_y - ascent).round();
-                let y_max = (baseline_y - ascent + line_h).round();
-                
-                (x_min, y_min, x_max - x_min, y_max - y_min)
-            } else if is_special_icon {
-                let (ascent, line_h) = if (font_size - self.buffer_font_size).abs() < 0.1 {
-                    (self.buffer_font_ascent, self.buffer_line_height)
-                } else {
-                    (self.ui_font_ascent, self.ui_line_height)
-                };
-
-                let max_w = char_width * 0.9;
-                let max_h = line_h * 0.9;
-
-                let scale_w = max_w / info.width;
-                let scale_h = max_h / info.height;
-                let scale = scale_w.min(scale_h).min(1.0);
-
-                let w_val = (info.width * scale).round();
-                let h_val = (info.height * scale).round();
-
-                let x_val = (pen_x + (char_width - w_val) / 2.0).round();
-                let y_val = (baseline_y - ascent + (line_h - h_val) / 2.0).round();
-
-                (x_val, y_val, w_val, h_val)
-            } else {
-                let x = (pen_x + info.bearing_x).round();
-                let y = (baseline_y - info.bearing_y - info.height).round();
-                let w = info.width.round();
-                let h = info.height.round();
-                (x, y, w, h)
-            };
-
-            // Draw under-fill solid quad for powerline solid separators to prevent any horizontal gaps
-            if is_powerline {
-                let cp = c as u32;
-                let sliver_w = 1.5;
-                if cp % 4 == 0 {
-                    self.push_quad(vertices, indices, x, y, sliver_w, h, white_uv, color);
-                } else if cp % 4 == 2 {
-                    self.push_quad(vertices, indices, x + w - sliver_w, y, sliver_w, h, white_uv, color);
-                }
-            }
-
-            let start = vertices.len() as u16;
-            vertices.push(Vertex {
-                position: [x, y],
-                tex_coords: info.uv_min,
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x + w, y],
-                tex_coords: [info.uv_max[0], info.uv_min[1]],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x + w, y + h],
-                tex_coords: info.uv_max,
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x, y + h],
-                tex_coords: [info.uv_min[0], info.uv_max[1]],
-                color,
-            });
-            indices.extend_from_slice(&[start, start + 1, start + 2, start + 2, start + 3, start]);
-        }
-        char_width
+        let mut ctx = crate::machkit::UiContext {
+            vertices,
+            indices,
+            atlas,
+            queue,
+            mouse_x: 0.0,
+            mouse_y: 0.0,
+            theme: &self.config.theme,
+            white_uv,
+            ui_font_size: self.ui_font_size,
+            ui_char_width: self.ui_char_width,
+            ui_font_ascent: self.ui_font_ascent,
+            ui_line_height: self.ui_line_height,
+            buffer_font_size: self.buffer_font_size,
+            buffer_font_ascent: self.buffer_font_ascent,
+            buffer_line_height: self.buffer_line_height,
+        };
+        ctx.push_char(c, pen_x, baseline_y, color, font_size, char_width)
     }
 
     pub fn push_icon(
@@ -216,39 +112,25 @@ impl UiState {
         color: [f32; 4],
         size: f32,
     ) -> f32 {
-        if let Some(info) = atlas.get_or_rasterize_icon(queue, icon_path, size) {
-            let start = vertices.len() as u16;
-            let rx = x.round();
-            let ry = y.round();
-            let rw = info.width.round();
-            let rh = info.height.round();
-
-            vertices.push(Vertex {
-                position: [rx, ry],
-                tex_coords: [info.uv_min[0], info.uv_min[1]],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [rx + rw, ry],
-                tex_coords: [info.uv_max[0], info.uv_min[1]],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [rx + rw, ry + rh],
-                tex_coords: [info.uv_max[0], info.uv_max[1]],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [rx, ry + rh],
-                tex_coords: [info.uv_min[0], info.uv_max[1]],
-                color,
-            });
-
-            indices.extend_from_slice(&[start, start + 1, start + 2, start + 2, start + 3, start]);
-            rw
-        } else {
-            0.0
-        }
+        let white_uv = atlas.white_pixel_uv();
+        let mut ctx = crate::machkit::UiContext {
+            vertices,
+            indices,
+            atlas,
+            queue,
+            mouse_x: 0.0,
+            mouse_y: 0.0,
+            theme: &self.config.theme,
+            white_uv,
+            ui_font_size: self.ui_font_size,
+            ui_char_width: self.ui_char_width,
+            ui_font_ascent: self.ui_font_ascent,
+            ui_line_height: self.ui_line_height,
+            buffer_font_size: self.buffer_font_size,
+            buffer_font_ascent: self.buffer_font_ascent,
+            buffer_line_height: self.buffer_line_height,
+        };
+        ctx.push_icon(icon_path, x, y, color, size)
     }
 
     pub fn push_str(
@@ -258,17 +140,31 @@ impl UiState {
         atlas: &mut FontAtlas,
         queue: &wgpu::Queue,
         text: &str,
-        mut x: f32,
+        x: f32,
         y: f32,
         color: [f32; 4],
         font_size: f32,
         char_width: f32,
     ) -> f32 {
-        let start_x = x;
-        for c in text.chars() {
-            x += self.push_char(vertices, indices, atlas, queue, c, x, y, color, font_size, char_width);
-        }
-        x - start_x
+        let white_uv = atlas.white_pixel_uv();
+        let mut ctx = crate::machkit::UiContext {
+            vertices,
+            indices,
+            atlas,
+            queue,
+            mouse_x: 0.0,
+            mouse_y: 0.0,
+            theme: &self.config.theme,
+            white_uv,
+            ui_font_size: self.ui_font_size,
+            ui_char_width: self.ui_char_width,
+            ui_font_ascent: self.ui_font_ascent,
+            ui_line_height: self.ui_line_height,
+            buffer_font_size: self.buffer_font_size,
+            buffer_font_ascent: self.buffer_font_ascent,
+            buffer_line_height: self.buffer_line_height,
+        };
+        ctx.push_str_spaced(text, x, y, color, font_size, char_width)
     }
 
     /// Parse enclosing function/struct backwards from cursor line
@@ -569,9 +465,18 @@ impl UiState {
 
         let active_file_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
         let is_project_search = active_file_path == Some("search://project");
-
-        if self.show_search_panel || is_project_search {
-            self.breadcrumb_height = (self.ui_line_height * 3.6).round().max(60.0);
+        if is_project_search {
+            if self.global_show_replace {
+                self.breadcrumb_height = 64.0;
+            } else {
+                self.breadcrumb_height = 34.0;
+            }
+        } else if self.show_search_panel {
+            if self.show_replace {
+                self.breadcrumb_height = 84.0;
+            } else {
+                self.breadcrumb_height = 52.0;
+            }
         } else {
             self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
         }

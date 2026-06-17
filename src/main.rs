@@ -5,6 +5,7 @@ pub mod app;
 pub mod terminal;
 pub mod git;
 pub mod experiments;
+pub mod machkit;
 
 fn main() {
     experiments::startup::record_start_time();
