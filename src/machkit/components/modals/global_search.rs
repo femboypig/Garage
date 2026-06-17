@@ -1,4 +1,5 @@
-use crate::ui::{UiState, Vertex, FontAtlas};
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 
 pub fn draw_global_search(
     ui: &mut UiState,
