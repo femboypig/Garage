@@ -176,6 +176,254 @@ impl UiState {
         None
     }
 
+    fn handle_settings_modal_click(
+        &mut self,
+        mx: f32,
+        my: f32,
+        modal_x: f32,
+        modal_y: f32,
+    ) -> Option<UiAction> {
+        let row_height = (self.ui_line_height * 2.2).round();
+        let control_x = modal_x + 24.0 * self.ui_char_width;
+        let btn_h = (self.ui_line_height * 1.3).round().max(24.0);
+        let btn_w = (self.ui_char_width * 3.0).round().max(24.0);
+        let backend_btn_w = (self.ui_char_width * 10.0).round().max(80.0);
+        let theme_btn_w = (self.ui_char_width * 16.0).round().max(140.0);
+
+        let row1_y = modal_y + row_height * 1.0;
+        let btn1_y = row1_y + ((self.ui_line_height - btn_h) / 2.0).round();
+        let row2_y = modal_y + row_height * 2.0;
+        let btn2_y = row2_y + ((self.ui_line_height - btn_h) / 2.0).round();
+        let row3_y = modal_y + row_height * 3.0;
+        let btn3_y = row3_y + ((self.ui_line_height - btn_h) / 2.0).round();
+        let row4_y = modal_y + row_height * 4.0;
+        let btn4_y = row4_y + ((self.ui_line_height - btn_h) / 2.0).round();
+        let row5_y = modal_y + row_height * 5.0;
+        let btn5_y = row5_y + ((self.ui_line_height - btn_h) / 2.0).round();
+        let row6_y = modal_y + row_height * 6.0;
+        let btn6_y = row6_y + ((self.ui_line_height - btn_h) / 2.0).round();
+
+        // Handle dropdown clicks if open
+        if self.theme_dropdown_open {
+            let dropdown_y = btn4_y + btn_h;
+            let item_height = (self.ui_line_height * 1.5).round().max(24.0);
+            let dropdown_h = 2.0 * item_height;
+
+            if mx >= control_x && mx <= control_x + theme_btn_w && my >= dropdown_y && my <= dropdown_y + dropdown_h {
+                let idx = ((my - dropdown_y) / item_height).floor() as usize;
+                let themes = ["Light Theme", "Dark Theme"];
+                if idx < 2 {
+                    self.theme_dropdown_open = false;
+                    return Some(UiAction::ChangeTheme(themes[idx].to_string()));
+                }
+            }
+
+            // Check if clicked the theme button itself to close it
+            if mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h {
+                self.theme_dropdown_open = false;
+                return Some(UiAction::None);
+            }
+
+            // Otherwise, close the dropdown and let the click continue to other controls
+            self.theme_dropdown_open = false;
+        }
+
+        // Check other buttons
+        // Row 1: Editor Font Size [-] and [+]
+        // Decrease [-]
+        if mx >= control_x && mx <= control_x + btn_w && my >= btn1_y && my <= btn1_y + btn_h {
+            return Some(UiAction::ChangeBufferFontSize(-1.0));
+        }
+        // Increase [+]
+        let inc_btn_x = control_x + btn_w + self.ui_char_width;
+        if mx >= inc_btn_x && mx <= inc_btn_x + btn_w && my >= btn1_y && my <= btn1_y + btn_h {
+            return Some(UiAction::ChangeBufferFontSize(1.0));
+        }
+
+        // Row 2: UI Font Size [-] and [+]
+        // Decrease [-]
+        if mx >= control_x && mx <= control_x + btn_w && my >= btn2_y && my <= btn2_y + btn_h {
+            return Some(UiAction::ChangeUiFontSize(-1.0));
+        }
+        // Increase [+]
+        if mx >= inc_btn_x && mx <= inc_btn_x + btn_w && my >= btn2_y && my <= btn2_y + btn_h {
+            return Some(UiAction::ChangeUiFontSize(1.0));
+        }
+
+        // Row 3: Backend Selection
+        if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h {
+            return Some(UiAction::ChangeBackend(wgpu::Backend::Vulkan));
+        }
+        let opengl_btn_x = control_x + backend_btn_w + self.ui_char_width;
+        if mx >= opengl_btn_x && mx <= opengl_btn_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h {
+            return Some(UiAction::ChangeBackend(wgpu::Backend::Gl));
+        }
+
+        // Row 4: Theme Selector Button Click
+        if mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h {
+            self.theme_dropdown_open = true;
+            return Some(UiAction::None);
+        }
+
+        // Row 5: Git Blame Selection
+        if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h {
+            return Some(UiAction::ChangeGitBlame(true));
+        }
+        let disabled5_btn_x = control_x + backend_btn_w + self.ui_char_width;
+        if mx >= disabled5_btn_x && mx <= disabled5_btn_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h {
+            return Some(UiAction::ChangeGitBlame(false));
+        }
+
+        // Row 6: Git Branch Selection
+        if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h {
+            return Some(UiAction::ChangeGitBranch(true));
+        }
+        let disabled6_btn_x = control_x + backend_btn_w + self.ui_char_width;
+        if mx >= disabled6_btn_x && mx <= disabled6_btn_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h {
+            return Some(UiAction::ChangeGitBranch(false));
+        }
+
+        None
+    }
+
+    fn handle_command_palette_modal_click(
+        &mut self,
+        mx: f32,
+        my: f32,
+        modal_x: f32,
+        modal_y: f32,
+        modal_w: f32,
+        modal_h: f32,
+        buffer: &mut Buffer,
+        cursor: &mut Cursor,
+        tab_paths: &[Option<String>],
+        active_tab_idx: usize,
+    ) -> Option<UiAction> {
+        let input_y = modal_y + 15.0;
+        let sep_y = input_y + self.ui_line_height + 15.0;
+        let list_y = sep_y + 1.0;
+        let item_height = (self.ui_line_height * 1.6).round().max(26.0);
+        let filtered = self.get_filtered_commands();
+        let max_visible_items = ((modal_y + modal_h - list_y) / item_height).round() as usize;
+        
+        // Scrollbar click detection
+        if filtered.len() > max_visible_items {
+            let track_x = modal_x + modal_w - 12.0;
+            if mx >= track_x && mx <= modal_x + modal_w && my >= list_y && my <= modal_y + modal_h {
+                let track_h = max_visible_items as f32 * item_height;
+                let relative_y = (my - list_y).clamp(0.0, track_h);
+                let scroll_ratio = relative_y / track_h;
+                let max_scroll = filtered.len().saturating_sub(max_visible_items);
+                self.command_palette_scroll = (scroll_ratio * max_scroll as f32).round() as usize;
+                return Some(UiAction::None);
+            }
+        }
+
+        let list_w = if filtered.len() > max_visible_items { modal_w - 12.0 } else { modal_w };
+        if mx >= modal_x && mx <= modal_x + list_w && my >= list_y && my <= modal_y + modal_h {
+            let idx = ((my - list_y) / item_height).floor() as usize + self.command_palette_scroll;
+            if idx < filtered.len() {
+                let cmd = filtered[idx];
+                self.active_modal = None;
+                let active_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
+                return Some(self.execute_command(cmd, buffer, cursor, active_path));
+            }
+        }
+        None
+    }
+
+    fn handle_global_search_modal_click(
+        &mut self,
+        mx: f32,
+        my: f32,
+        modal_x: f32,
+        modal_y: f32,
+        modal_w: f32,
+        modal_h: f32,
+    ) -> Option<UiAction> {
+        let input_y = modal_y + 15.0;
+        let sep_y = input_y + self.ui_line_height + 15.0;
+        let list_y = sep_y + 1.0;
+        let item_height = (self.ui_line_height * 1.6).round().max(26.0);
+        let results_len = self.global_search_results.len();
+        let max_visible_items = ((modal_y + modal_h - list_y) / item_height).round() as usize;
+
+        // Scrollbar click detection
+        if results_len > max_visible_items {
+            let track_x = modal_x + modal_w - 12.0;
+            if mx >= track_x && mx <= modal_x + modal_w && my >= list_y && my <= modal_y + modal_h {
+                let track_h = max_visible_items as f32 * item_height;
+                let relative_y = (my - list_y).clamp(0.0, track_h);
+                let scroll_ratio = relative_y / track_h;
+                let max_scroll = results_len.saturating_sub(max_visible_items);
+                self.global_search_scroll = (scroll_ratio * max_scroll as f32).round() as usize;
+                return Some(UiAction::None);
+            }
+        }
+
+        let list_w = if results_len > max_visible_items { modal_w - 12.0 } else { modal_w };
+        if mx >= modal_x && mx <= modal_x + list_w && my >= list_y && my <= modal_y + modal_h {
+            let idx = ((my - list_y) / item_height).floor() as usize + self.global_search_scroll;
+            if idx < results_len {
+                let (path, line_idx, _) = &self.global_search_results[idx];
+                self.active_modal = None;
+                return Some(UiAction::OpenFileAt(path.clone(), *line_idx));
+            }
+        }
+        Some(UiAction::None)
+    }
+
+    fn handle_unsaved_changes_modal_click(
+        &mut self,
+        mx: f32,
+        my: f32,
+        modal_x: f32,
+        modal_y: f32,
+        modal_w: f32,
+        modal_h: f32,
+        clicked_outside: bool,
+    ) -> Option<UiAction> {
+        let btn_w = 130.0f32;
+        let btn_h = 34.0f32;
+        let spacing = 15.0f32;
+        let total_btn_block_w = 3.0 * btn_w + 2.0 * spacing;
+        let start_btn_x = modal_x + ((modal_w - total_btn_block_w) / 2.0).round();
+        let btn_y = modal_y + modal_h - btn_h - 20.0;
+
+        if let Some(tab_idx) = self.tab_to_close {
+            // Check Save button
+            let save_x = start_btn_x;
+            if mx >= save_x && mx <= save_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
+                self.active_modal = None;
+                self.tab_to_close = None;
+                return Some(UiAction::SaveAndCloseTab(tab_idx));
+            }
+
+            // Check Don't Save button
+            let dont_save_x = start_btn_x + btn_w + spacing;
+            if mx >= dont_save_x && mx <= dont_save_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
+                self.active_modal = None;
+                self.tab_to_close = None;
+                return Some(UiAction::ForceCloseTab(tab_idx));
+            }
+
+            // Check Cancel button
+            let cancel_x = start_btn_x + 2.0 * (btn_w + spacing);
+            if mx >= cancel_x && mx <= cancel_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
+                self.active_modal = None;
+                self.tab_to_close = None;
+                return Some(UiAction::CloseModal);
+            }
+        }
+
+        if clicked_outside {
+            self.active_modal = None;
+            self.tab_to_close = None;
+            return Some(UiAction::CloseModal);
+        }
+        Some(UiAction::None)
+    }
+
     pub fn handle_modal_click(
         &mut self,
         mx: f32,
@@ -224,214 +472,29 @@ impl UiState {
 
         let clicked_outside = mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h;
 
+        // Delegate to helpers
         if modal == ModalType::Settings {
-            let row_height = (self.ui_line_height * 2.2).round();
-            let control_x = modal_x + 24.0 * self.ui_char_width;
-            let btn_h = (self.ui_line_height * 1.3).round().max(24.0);
-            let btn_w = (self.ui_char_width * 3.0).round().max(24.0);
-            let backend_btn_w = (self.ui_char_width * 10.0).round().max(80.0);
-            let theme_btn_w = (self.ui_char_width * 16.0).round().max(140.0);
-
-            let row1_y = modal_y + row_height * 1.0;
-            let btn1_y = row1_y + ((self.ui_line_height - btn_h) / 2.0).round();
-            let row2_y = modal_y + row_height * 2.0;
-            let btn2_y = row2_y + ((self.ui_line_height - btn_h) / 2.0).round();
-            let row3_y = modal_y + row_height * 3.0;
-            let btn3_y = row3_y + ((self.ui_line_height - btn_h) / 2.0).round();
-            let row4_y = modal_y + row_height * 4.0;
-            let btn4_y = row4_y + ((self.ui_line_height - btn_h) / 2.0).round();
-            let row5_y = modal_y + row_height * 5.0;
-            let btn5_y = row5_y + ((self.ui_line_height - btn_h) / 2.0).round();
-            let row6_y = modal_y + row_height * 6.0;
-            let btn6_y = row6_y + ((self.ui_line_height - btn_h) / 2.0).round();
-
-            // Handle dropdown clicks if open
-            if self.theme_dropdown_open {
-                let dropdown_y = btn4_y + btn_h;
-                let item_height = (self.ui_line_height * 1.5).round().max(24.0);
-                let dropdown_h = 2.0 * item_height;
-
-                if mx >= control_x && mx <= control_x + theme_btn_w && my >= dropdown_y && my <= dropdown_y + dropdown_h {
-                    let idx = ((my - dropdown_y) / item_height).floor() as usize;
-                    let themes = ["Light Theme", "Dark Theme"];
-                    if idx < 2 {
-                        self.theme_dropdown_open = false;
-                        return UiAction::ChangeTheme(themes[idx].to_string());
-                    }
-                }
-
-                // Check if clicked the theme button itself to close it
-                if mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h {
-                    self.theme_dropdown_open = false;
-                    return UiAction::None;
-                }
-
-                // Otherwise, close the dropdown and let the click continue to other controls
-                self.theme_dropdown_open = false;
+            if let Some(action) = self.handle_settings_modal_click(mx, my, modal_x, modal_y) {
+                return action;
             }
-
-            // Check other buttons
-            // Row 1: Editor Font Size [-] and [+]
-            // Decrease [-]
-            if mx >= control_x && mx <= control_x + btn_w && my >= btn1_y && my <= btn1_y + btn_h {
-                return UiAction::ChangeBufferFontSize(-1.0);
+        } else if modal == ModalType::CommandPalette {
+            if let Some(action) = self.handle_command_palette_modal_click(
+                mx, my, modal_x, modal_y, modal_w, modal_h, buffer, cursor, tab_paths, active_tab_idx
+            ) {
+                return action;
             }
-            // Increase [+]
-            let inc_btn_x = control_x + btn_w + self.ui_char_width;
-            if mx >= inc_btn_x && mx <= inc_btn_x + btn_w && my >= btn1_y && my <= btn1_y + btn_h {
-                return UiAction::ChangeBufferFontSize(1.0);
+        } else if modal == ModalType::GlobalSearch {
+            if let Some(action) = self.handle_global_search_modal_click(
+                mx, my, modal_x, modal_y, modal_w, modal_h
+            ) {
+                return action;
             }
-
-            // Row 2: UI Font Size [-] and [+]
-            // Decrease [-]
-            if mx >= control_x && mx <= control_x + btn_w && my >= btn2_y && my <= btn2_y + btn_h {
-                return UiAction::ChangeUiFontSize(-1.0);
+        } else if modal == ModalType::UnsavedChanges {
+            if let Some(action) = self.handle_unsaved_changes_modal_click(
+                mx, my, modal_x, modal_y, modal_w, modal_h, clicked_outside
+            ) {
+                return action;
             }
-            // Increase [+]
-            if mx >= inc_btn_x && mx <= inc_btn_x + btn_w && my >= btn2_y && my <= btn2_y + btn_h {
-                return UiAction::ChangeUiFontSize(1.0);
-            }
-
-            // Row 3: Backend Selection
-            if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h {
-                return UiAction::ChangeBackend(wgpu::Backend::Vulkan);
-            }
-            let opengl_btn_x = control_x + backend_btn_w + self.ui_char_width;
-            if mx >= opengl_btn_x && mx <= opengl_btn_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h {
-                return UiAction::ChangeBackend(wgpu::Backend::Gl);
-            }
-
-            // Row 4: Theme Selector Button Click
-            if mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h {
-                self.theme_dropdown_open = true;
-                return UiAction::None;
-            }
-
-            // Row 5: Git Blame Selection
-            if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h {
-                return UiAction::ChangeGitBlame(true);
-            }
-            let disabled5_btn_x = control_x + backend_btn_w + self.ui_char_width;
-            if mx >= disabled5_btn_x && mx <= disabled5_btn_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h {
-                return UiAction::ChangeGitBlame(false);
-            }
-
-            // Row 6: Git Branch Selection
-            if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h {
-                return UiAction::ChangeGitBranch(true);
-            }
-            let disabled6_btn_x = control_x + backend_btn_w + self.ui_char_width;
-            if mx >= disabled6_btn_x && mx <= disabled6_btn_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h {
-                return UiAction::ChangeGitBranch(false);
-            }
-        }
-
-        if modal == ModalType::CommandPalette {
-            let input_y = modal_y + 15.0;
-            let sep_y = input_y + self.ui_line_height + 15.0;
-            let list_y = sep_y + 1.0;
-            let item_height = (self.ui_line_height * 1.6).round().max(26.0);
-            let filtered = self.get_filtered_commands();
-            let max_visible_items = ((modal_y + modal_h - list_y) / item_height).round() as usize;
-            
-            // Scrollbar click detection
-            if filtered.len() > max_visible_items {
-                let track_x = modal_x + modal_w - 12.0;
-                if mx >= track_x && mx <= modal_x + modal_w && my >= list_y && my <= modal_y + modal_h {
-                    let track_h = max_visible_items as f32 * item_height;
-                    let relative_y = (my - list_y).clamp(0.0, track_h);
-                    let scroll_ratio = relative_y / track_h;
-                    let max_scroll = filtered.len().saturating_sub(max_visible_items);
-                    self.command_palette_scroll = (scroll_ratio * max_scroll as f32).round() as usize;
-                    return UiAction::None;
-                }
-            }
-
-            let list_w = if filtered.len() > max_visible_items { modal_w - 12.0 } else { modal_w };
-            if mx >= modal_x && mx <= modal_x + list_w && my >= list_y && my <= modal_y + modal_h {
-                let idx = ((my - list_y) / item_height).floor() as usize + self.command_palette_scroll;
-                if idx < filtered.len() {
-                    let cmd = filtered[idx];
-                    self.active_modal = None;
-                    let active_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
-                    return self.execute_command(cmd, buffer, cursor, active_path);
-                }
-            }
-        }
-
-        if modal == ModalType::GlobalSearch {
-            let input_y = modal_y + 15.0;
-            let sep_y = input_y + self.ui_line_height + 15.0;
-            let list_y = sep_y + 1.0;
-            let item_height = (self.ui_line_height * 1.6).round().max(26.0);
-            let results_len = self.global_search_results.len();
-            let max_visible_items = ((modal_y + modal_h - list_y) / item_height).round() as usize;
-
-            // Scrollbar click detection
-            if results_len > max_visible_items {
-                let track_x = modal_x + modal_w - 12.0;
-                if mx >= track_x && mx <= modal_x + modal_w && my >= list_y && my <= modal_y + modal_h {
-                    let track_h = max_visible_items as f32 * item_height;
-                    let relative_y = (my - list_y).clamp(0.0, track_h);
-                    let scroll_ratio = relative_y / track_h;
-                    let max_scroll = results_len.saturating_sub(max_visible_items);
-                    self.global_search_scroll = (scroll_ratio * max_scroll as f32).round() as usize;
-                    return UiAction::None;
-                }
-            }
-
-            let list_w = if results_len > max_visible_items { modal_w - 12.0 } else { modal_w };
-            if mx >= modal_x && mx <= modal_x + list_w && my >= list_y && my <= modal_y + modal_h {
-                let idx = ((my - list_y) / item_height).floor() as usize + self.global_search_scroll;
-                if idx < results_len {
-                    let (path, line_idx, _) = &self.global_search_results[idx];
-                    self.active_modal = None;
-                    return UiAction::OpenFileAt(path.clone(), *line_idx);
-                }
-            }
-            return UiAction::None;
-        }
-
-        if modal == ModalType::UnsavedChanges {
-            let btn_w = 130.0f32;
-            let btn_h = 34.0f32;
-            let spacing = 15.0f32;
-            let total_btn_block_w = 3.0 * btn_w + 2.0 * spacing;
-            let start_btn_x = modal_x + ((modal_w - total_btn_block_w) / 2.0).round();
-            let btn_y = modal_y + modal_h - btn_h - 20.0;
-
-            if let Some(tab_idx) = self.tab_to_close {
-                // Check Save button
-                let save_x = start_btn_x;
-                if mx >= save_x && mx <= save_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
-                    self.active_modal = None;
-                    self.tab_to_close = None;
-                    return UiAction::SaveAndCloseTab(tab_idx);
-                }
-
-                // Check Don't Save button
-                let dont_save_x = start_btn_x + btn_w + spacing;
-                if mx >= dont_save_x && mx <= dont_save_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
-                    self.active_modal = None;
-                    self.tab_to_close = None;
-                    return UiAction::ForceCloseTab(tab_idx);
-                }
-
-                // Check Cancel button
-                let cancel_x = start_btn_x + 2.0 * (btn_w + spacing);
-                if mx >= cancel_x && mx <= cancel_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
-                    self.active_modal = None;
-                    self.tab_to_close = None;
-                    return UiAction::CloseModal;
-                }
-            }
-
-            if clicked_outside {
-                self.active_modal = None;
-                self.tab_to_close = None;
-                return UiAction::CloseModal;
-            }
-            return UiAction::None;
         }
 
         // Check if clicked close button (centered horizontally)
