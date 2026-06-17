@@ -1,26 +1,6 @@
-use crate::machkit::{UiState, Vertex};
+use crate::machkit::{UiState, Vertex, SearchRenderItem};
 use crate::renderer::atlas::FontAtlas;
 use std::path::PathBuf;
-
-pub enum SearchRenderItem {
-    FileHeader {
-        path: PathBuf,
-    },
-    CodeLine {
-        path: PathBuf,
-        line_idx: usize,
-        content: String,
-        is_match: bool,
-        result_idx: Option<usize>,
-        is_first_in_range: bool,
-        is_last_in_range: bool,
-        start_line_of_range: usize,
-        end_line_of_range: usize,
-    },
-    Separator {
-        path: PathBuf,
-    },
-}
 
 pub fn draw_project_search(
     ui: &mut UiState,
@@ -340,6 +320,9 @@ pub fn draw_project_search(
 }
 
 pub fn build_search_render_items(ui: &mut UiState) -> Vec<SearchRenderItem> {
+    if let Some(ref items) = ui.project_search_render_items {
+        return items.clone();
+    }
     let mut file_groups: Vec<(PathBuf, Vec<(usize, usize)>)> = Vec::new();
     for (result_idx, (path, line_idx, _)) in ui.global_search_results.iter().enumerate() {
         if let Some(pos) = file_groups.iter().position(|(p, _)| p == path) {
@@ -414,6 +397,7 @@ pub fn build_search_render_items(ui: &mut UiState) -> Vec<SearchRenderItem> {
             }
         }
     }
+    ui.project_search_render_items = Some(render_items.clone());
     render_items
 }
 
