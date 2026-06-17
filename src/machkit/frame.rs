@@ -553,7 +553,7 @@ impl UiState {
         let dock_start_y = status_y;
 
         // --- 1. Draw Titlebar Menu Headers (Light Theme) ---
-        crate::ui::components::titlebar::draw_titlebar(
+        crate::machkit::components::titlebar::draw_titlebar(
             self,
             vertices,
             indices,
@@ -565,7 +565,7 @@ impl UiState {
         );
 
         // --- 2. Draw Sidebar Panel (Light Theme) ---
-        crate::ui::components::sidebar::draw_sidebar(
+        crate::machkit::components::sidebar::draw_sidebar(
             self,
             vertices,
             indices,
@@ -583,7 +583,7 @@ impl UiState {
         let sidebar_original = self.sidebar_width;
         
         if inactive_panes.is_empty() {
-            crate::ui::components::editor_view::draw_editor_view(
+            crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
                 indices,
@@ -630,7 +630,7 @@ impl UiState {
             }
             let p0_scroll_x = if active_pane_idx == 0 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
  
-            crate::ui::components::editor_view::draw_editor_view(
+            crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
                 indices,
@@ -681,7 +681,7 @@ impl UiState {
             let orig_titlebar_height = self.titlebar_height;
             self.titlebar_height = main_y + pane_height;
             
-            crate::ui::components::editor_view::draw_editor_view(
+            crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
                 indices,
@@ -748,7 +748,7 @@ impl UiState {
             }
             let p0_scroll_x = if active_pane_idx == 0 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
  
-            crate::ui::components::editor_view::draw_editor_view(
+            crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
                 indices,
@@ -798,7 +798,7 @@ impl UiState {
             // Temporarily shift sidebar_width to start right pane at sidebar_original + pane_width
             self.sidebar_width = sidebar_original + pane_width;
             
-            crate::ui::components::editor_view::draw_editor_view(
+            crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
                 indices,
@@ -840,7 +840,7 @@ impl UiState {
         }
 
         // --- 4.5. Draw Bottom Dock ---
-        crate::ui::components::dock::draw_dock(
+        crate::machkit::components::dock::draw_dock(
             self,
             vertices,
             indices,
@@ -857,7 +857,7 @@ impl UiState {
 
         // --- 5. Draw Statusbar ---
         let active_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
-        crate::ui::components::statusbar::draw_statusbar(
+        crate::machkit::components::statusbar::draw_statusbar(
             self,
             vertices,
             indices,
@@ -873,7 +873,7 @@ impl UiState {
         );
 
         // --- 6. Draw Context Dropdown Menus & 7. Modal Dialogs ---
-        crate::ui::components::modals::draw_modals(
+        crate::machkit::components::modals::draw_modals(
             self,
             vertices,
             indices,
@@ -1151,7 +1151,7 @@ impl UiState {
             if let Some(dragged_idx) = dragged_tab_idx {
                 let path_str = tab_paths.get(dragged_idx).and_then(|p| p.as_deref());
                 let is_modified = tab_modified.get(dragged_idx).copied().unwrap_or(false);
-                crate::ui::components::editor::tab_bar::draw_floating_tab(
+                crate::machkit::components::editor::tab_bar::draw_floating_tab(
                     self,
                     vertices,
                     indices,
