@@ -4,14 +4,7 @@ use std::path::PathBuf;
 use crate::renderer::atlas::FontAtlas;
 use crate::editor::cursor::Cursor;
 
-pub mod components;
-pub mod types;
-pub mod tree;
-pub mod click;
-pub mod frame;
-
-pub use types::{UiAction, MenuType, ModalType, FileNode};
-pub use crate::renderer::wgpu::Vertex;
+use super::types::{UiAction, MenuType, ModalType, FileNode};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommandPaletteMode {
@@ -151,6 +144,9 @@ pub struct UiState {
     pub collapsed_search_files: std::collections::HashSet<std::path::PathBuf>,
     pub last_searched_global_query: String,
     pub global_search_expanded_margins: std::collections::HashMap<(std::path::PathBuf, usize), (usize, usize)>,
+    pub search_focused: bool,
+    pub global_search_focused: bool,
+    pub global_search_col: usize,
 }
 
 
@@ -328,6 +324,9 @@ impl UiState {
             global_replace_query: String::new(),
             last_searched_global_query: String::new(),
             global_search_expanded_margins: std::collections::HashMap::new(),
+            search_focused: false,
+            global_search_focused: false,
+            global_search_col: 0,
         };
 
 
