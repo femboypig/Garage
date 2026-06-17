@@ -57,13 +57,14 @@ pub fn draw_breadcrumbs(
         let regex = if is_local { ui.search_regex } else { ui.global_search_regex };
         let is_replace_focused = if is_local { ui.search_focus_replace } else { ui.global_search_focus_replace };
         let is_find_focused = !is_replace_focused;
+        let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
 
         let count_w = 70.0f32;
         let btn_prev_w = 22.0f32;
         let btn_next_w = 22.0f32;
         let close_btn_w = 22.0f32;
 
-        let row_h = bar_h / 2.0;
+        let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
         let input_h = row_h - 6.0;
         let input_y_1 = bar_y + 3.0;
         let input_y_2 = bar_y + row_h + 3.0;
@@ -75,10 +76,33 @@ pub fn draw_breadcrumbs(
         let next_x = close_x - 10.0 - btn_next_w;
         let prev_x = next_x - 4.0 - btn_prev_w;
         let count_x = prev_x - 10.0 - count_w;
-        let input_start_x = bar_x + 10.0;
+        
+        let toggle_btn_w = 22.0f32;
+        let toggle_btn_x = bar_x + 10.0;
+        let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
         let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
 
         // --- ROW 1: FIND ---
+        // 0. Toggle Replace button (Chevron down/up)
+        let toggle_hover = mouse_x >= toggle_btn_x && mouse_x < toggle_btn_x + toggle_btn_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
+        if toggle_hover {
+            ui.push_quad(vertices, indices, toggle_btn_x, input_y_1, toggle_btn_w, input_h, white_uv, ui.config.theme.button_hover_bg);
+        }
+        let toggle_icon_sz = 13.0f32;
+        let toggle_icon_y = (input_y_1 + (input_h - toggle_icon_sz) / 2.0).round();
+        let toggle_icon_name = if show_replace { "chevron_up" } else { "chevron_down" };
+        ui.push_icon(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            toggle_icon_name,
+            toggle_btn_x + (toggle_btn_w - toggle_icon_sz) / 2.0,
+            toggle_icon_y,
+            ui.config.theme.modal_text_muted,
+            toggle_icon_sz,
+        );
+
         // 1. Find Input text box
         ui.push_quad(vertices, indices, input_start_x, input_y_1, input_find_w, input_h, white_uv, ui.config.theme.editor_bg);
         let border_color_1 = if is_find_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
@@ -104,20 +128,21 @@ pub fn draw_breadcrumbs(
         let case_hover = mouse_x >= opt_case_x && mouse_x < opt_case_x + opt_btn_w && mouse_y >= opt_y && mouse_y < opt_y + opt_h;
         let case_bg = if case_sensitive { ui.config.theme.selection_bg } else if case_hover { ui.config.theme.button_hover_bg } else { [0.0, 0.0, 0.0, 0.0] };
         ui.push_quad(vertices, indices, opt_case_x, opt_y, opt_btn_w, opt_h, white_uv, case_bg);
-        let opt_icon_y = (opt_y + (opt_h - 12.0) / 2.0).round();
-        ui.push_icon(vertices, indices, atlas, queue, "case_sensitive", opt_case_x + (opt_btn_w - 12.0) / 2.0, opt_icon_y, ui.config.theme.modal_text_normal, 12.0);
+        let opt_icon_sz = 12.0f32;
+        let opt_icon_y = (opt_y + (opt_h - opt_icon_sz) / 2.0).round();
+        ui.push_icon(vertices, indices, atlas, queue, "case_sensitive", opt_case_x + (opt_btn_w - opt_icon_sz) / 2.0, opt_icon_y, ui.config.theme.modal_text_normal, opt_icon_sz);
 
         // W option
         let word_hover = mouse_x >= opt_word_x && mouse_x < opt_word_x + opt_btn_w && mouse_y >= opt_y && mouse_y < opt_y + opt_h;
         let word_bg = if whole_word { ui.config.theme.selection_bg } else if word_hover { ui.config.theme.button_hover_bg } else { [0.0, 0.0, 0.0, 0.0] };
         ui.push_quad(vertices, indices, opt_word_x, opt_y, opt_btn_w, opt_h, white_uv, word_bg);
-        ui.push_icon(vertices, indices, atlas, queue, "whole_word", opt_word_x + (opt_btn_w - 12.0) / 2.0, opt_icon_y, ui.config.theme.modal_text_normal, 12.0);
+        ui.push_icon(vertices, indices, atlas, queue, "whole_word", opt_word_x + (opt_btn_w - opt_icon_sz) / 2.0, opt_icon_y, ui.config.theme.modal_text_normal, opt_icon_sz);
 
         // .* option
         let regex_hover = mouse_x >= opt_regex_x && mouse_x < opt_regex_x + opt_btn_w && mouse_y >= opt_y && mouse_y < opt_y + opt_h;
         let regex_bg = if regex { ui.config.theme.selection_bg } else if regex_hover { ui.config.theme.button_hover_bg } else { [0.0, 0.0, 0.0, 0.0] };
         ui.push_quad(vertices, indices, opt_regex_x, opt_y, opt_btn_w, opt_h, white_uv, regex_bg);
-        ui.push_icon(vertices, indices, atlas, queue, "regex", opt_regex_x + (opt_btn_w - 12.0) / 2.0, opt_icon_y, ui.config.theme.modal_text_normal, 12.0);
+        ui.push_icon(vertices, indices, atlas, queue, "regex", opt_regex_x + (opt_btn_w - opt_icon_sz) / 2.0, opt_icon_y, ui.config.theme.modal_text_normal, opt_icon_sz);
 
         // Draw text inside find input
         let options_w = 3.0 * opt_btn_w + 10.0;
@@ -176,8 +201,9 @@ pub fn draw_breadcrumbs(
         ui.push_quad(vertices, indices, prev_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
         ui.push_quad(vertices, indices, prev_x + btn_prev_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
         
-        let chevron_y = (input_y_1 + (input_h - 12.0) / 2.0).round();
-        ui.push_icon(vertices, indices, atlas, queue, "chevron_up", prev_x + (btn_prev_w - 12.0) / 2.0, chevron_y, ui.config.theme.button_text, 12.0);
+        let button_icon_sz = 13.0f32;
+        let chevron_y = (input_y_1 + (input_h - button_icon_sz) / 2.0).round();
+        ui.push_icon(vertices, indices, atlas, queue, "chevron_up", prev_x + (btn_prev_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
 
         // 4. Next Button (Chevron Down)
         let next_hover = mouse_x >= next_x && mouse_x < next_x + btn_next_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
@@ -187,72 +213,73 @@ pub fn draw_breadcrumbs(
         ui.push_quad(vertices, indices, next_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
         ui.push_quad(vertices, indices, next_x + btn_next_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
         
-        ui.push_icon(vertices, indices, atlas, queue, "chevron_down", next_x + (btn_next_w - 12.0) / 2.0, chevron_y, ui.config.theme.button_text, 12.0);
+        ui.push_icon(vertices, indices, atlas, queue, "chevron_down", next_x + (btn_next_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
 
         // 5. Close Button (✕)
         let close_hover = mouse_x >= close_x && mouse_x < close_x + close_btn_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
         if close_hover {
             ui.push_quad(vertices, indices, close_x, input_y_1, close_btn_w, input_h, white_uv, ui.config.theme.button_hover_bg);
         }
-        let close_icon_y = (input_y_1 + (input_h - 12.0) / 2.0).round();
-        ui.push_icon(vertices, indices, atlas, queue, "close", close_x + (close_btn_w - 12.0) / 2.0, close_icon_y, if close_hover { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_muted }, 12.0);
+        let close_icon_y = (input_y_1 + (input_h - button_icon_sz) / 2.0).round();
+        ui.push_icon(vertices, indices, atlas, queue, "close", close_x + (close_btn_w - button_icon_sz) / 2.0, close_icon_y, if close_hover { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_muted }, button_icon_sz);
 
         // --- ROW 2: REPLACE ---
-        // 6. Replace Input text box
-        ui.push_quad(vertices, indices, input_start_x, input_y_2, input_find_w, input_h, white_uv, ui.config.theme.editor_bg);
-        let border_color_2 = if is_replace_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
-        ui.push_quad(vertices, indices, input_start_x, input_y_2, input_find_w, 1.0, white_uv, border_color_2);
-        ui.push_quad(vertices, indices, input_start_x, input_y_2 + input_h - 1.0, input_find_w, 1.0, white_uv, border_color_2);
-        ui.push_quad(vertices, indices, input_start_x, input_y_2, 1.0, input_h, white_uv, border_color_2);
-        ui.push_quad(vertices, indices, input_start_x + input_find_w - 1.0, input_y_2, 1.0, input_h, white_uv, border_color_2);
+        if show_replace {
+            let rep_icon_y = (input_y_2 + (input_h - button_icon_sz) / 2.0).round();
+            ui.push_quad(vertices, indices, input_start_x, input_y_2, input_find_w, input_h, white_uv, ui.config.theme.editor_bg);
+            let border_color_2 = if is_replace_focused { ui.config.theme.cursor_color } else { ui.config.theme.modal_border };
+            ui.push_quad(vertices, indices, input_start_x, input_y_2, input_find_w, 1.0, white_uv, border_color_2);
+            ui.push_quad(vertices, indices, input_start_x, input_y_2 + input_h - 1.0, input_find_w, 1.0, white_uv, border_color_2);
+            ui.push_quad(vertices, indices, input_start_x, input_y_2, 1.0, input_h, white_uv, border_color_2);
+            ui.push_quad(vertices, indices, input_start_x + input_find_w - 1.0, input_y_2, 1.0, input_h, white_uv, border_color_2);
 
-        // Replace icon inside input box
-        let replace_icon_sz = 12.0f32;
-        let replace_icon_y = (input_y_2 + (input_h - replace_icon_sz) / 2.0).round();
-        ui.push_icon(vertices, indices, atlas, queue, "replace", input_start_x + 6.0, replace_icon_y, ui.config.theme.modal_text_muted, replace_icon_sz);
+            // Replace icon inside input box
+            let replace_icon_sz = 12.0f32;
+            let replace_icon_y = (input_y_2 + (input_h - replace_icon_sz) / 2.0).round();
+            ui.push_icon(vertices, indices, atlas, queue, "replace", input_start_x + 6.0, replace_icon_y, ui.config.theme.modal_text_muted, replace_icon_sz);
 
-        let max_replace_chars = ((input_find_w - 24.0) / ui.ui_char_width).floor().max(1.0) as usize;
-        if replace_query.is_empty() {
-            ui.push_str(vertices, indices, atlas, queue, "Replace with...", text_start_x, l_baseline_2, ui.config.theme.syntax_comment, ui.ui_font_size, ui.ui_char_width);
-        } else {
-            let display_replace = if replace_query.chars().count() > max_replace_chars {
-                if is_replace_focused {
-                    replace_query.chars().skip(replace_query.chars().count() - max_replace_chars).collect::<String>()
-                } else {
-                    replace_query.chars().take(max_replace_chars).collect::<String>()
-                }
+            let max_replace_chars = ((input_find_w - 24.0) / ui.ui_char_width).floor().max(1.0) as usize;
+            if replace_query.is_empty() {
+                ui.push_str(vertices, indices, atlas, queue, "Replace with...", text_start_x, l_baseline_2, ui.config.theme.syntax_comment, ui.ui_font_size, ui.ui_char_width);
             } else {
-                replace_query.clone()
-            };
-            ui.push_str(vertices, indices, atlas, queue, &display_replace, text_start_x, l_baseline_2, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
-            if is_replace_focused {
-                let cursor_x = text_start_x + display_replace.chars().count() as f32 * ui.ui_char_width;
-                if cursor_x < input_start_x + input_find_w - 5.0 {
-                    ui.push_quad(vertices, indices, cursor_x, input_y_2 + 3.0, 1.5, input_h - 6.0, white_uv, ui.config.theme.cursor_color);
+                let display_replace = if replace_query.chars().count() > max_replace_chars {
+                    if is_replace_focused {
+                        replace_query.chars().skip(replace_query.chars().count() - max_replace_chars).collect::<String>()
+                    } else {
+                        replace_query.chars().take(max_replace_chars).collect::<String>()
+                    }
+                } else {
+                    replace_query.clone()
+                };
+                ui.push_str(vertices, indices, atlas, queue, &display_replace, text_start_x, l_baseline_2, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
+                if is_replace_focused {
+                    let cursor_x = text_start_x + display_replace.chars().count() as f32 * ui.ui_char_width;
+                    if cursor_x < input_start_x + input_find_w - 5.0 {
+                        ui.push_quad(vertices, indices, cursor_x, input_y_2 + 3.0, 1.5, input_h - 6.0, white_uv, ui.config.theme.cursor_color);
+                    }
                 }
             }
+
+            // 7. Replace Button (Icon: replace)
+            let rep_hover = mouse_x >= prev_x && mouse_x < prev_x + btn_prev_w && mouse_y >= input_y_2 && mouse_y < input_y_2 + input_h;
+            ui.push_quad(vertices, indices, prev_x, input_y_2, btn_prev_w, input_h, white_uv, if rep_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
+            ui.push_quad(vertices, indices, prev_x, input_y_2, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, prev_x, input_y_2 + input_h - 1.0, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, prev_x, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, prev_x + btn_prev_w - 1.0, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
+            
+            ui.push_icon(vertices, indices, atlas, queue, "replace", prev_x + (btn_prev_w - button_icon_sz) / 2.0, rep_icon_y, ui.config.theme.button_text, button_icon_sz);
+
+            // 8. Replace All Button (Icon: replace_all)
+            let rep_all_hover = mouse_x >= next_x && mouse_x < next_x + btn_next_w && mouse_y >= input_y_2 && mouse_y < input_y_2 + input_h;
+            ui.push_quad(vertices, indices, next_x, input_y_2, btn_next_w, input_h, white_uv, if rep_all_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
+            ui.push_quad(vertices, indices, next_x, input_y_2, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, next_x, input_y_2 + input_h - 1.0, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, next_x, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, next_x + btn_next_w - 1.0, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
+            
+            ui.push_icon(vertices, indices, atlas, queue, "replace_all", next_x + (btn_next_w - button_icon_sz) / 2.0, rep_icon_y, ui.config.theme.button_text, button_icon_sz);
         }
-
-        // 7. Replace Button (Icon: replace)
-        let rep_hover = mouse_x >= prev_x && mouse_x < prev_x + btn_prev_w && mouse_y >= input_y_2 && mouse_y < input_y_2 + input_h;
-        ui.push_quad(vertices, indices, prev_x, input_y_2, btn_prev_w, input_h, white_uv, if rep_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-        ui.push_quad(vertices, indices, prev_x, input_y_2, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, prev_x, input_y_2 + input_h - 1.0, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, prev_x, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, prev_x + btn_prev_w - 1.0, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        
-        let rep_icon_y = (input_y_2 + (input_h - 12.0) / 2.0).round();
-        ui.push_icon(vertices, indices, atlas, queue, "replace", prev_x + (btn_prev_w - 12.0) / 2.0, rep_icon_y, ui.config.theme.button_text, 12.0);
-
-        // 8. Replace All Button (Icon: replace_all)
-        let rep_all_hover = mouse_x >= next_x && mouse_x < next_x + btn_next_w && mouse_y >= input_y_2 && mouse_y < input_y_2 + input_h;
-        ui.push_quad(vertices, indices, next_x, input_y_2, btn_next_w, input_h, white_uv, if rep_all_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
-        ui.push_quad(vertices, indices, next_x, input_y_2, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, next_x, input_y_2 + input_h - 1.0, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, next_x, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, next_x + btn_next_w - 1.0, input_y_2, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        
-        ui.push_icon(vertices, indices, atlas, queue, "replace_all", next_x + (btn_next_w - 12.0) / 2.0, rep_icon_y, ui.config.theme.button_text, 12.0);
     } else {
         // Construct breadcrumb text: relative_path > current_function
         let relative_path = active_file_path

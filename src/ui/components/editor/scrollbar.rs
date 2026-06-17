@@ -114,7 +114,7 @@ pub fn draw_scrollbars(
     }
 
     // --- 2. Draw Horizontal Scrollbar ---
-    if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
+    if active_file_path.map_or(false, |p| p.starts_with("diagnostics://") || p == "search://project") {
         return;
     }
     

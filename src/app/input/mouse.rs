@@ -193,7 +193,7 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
 
     let active_tab = &hovered_tabs[hovered_active_tab_idx.min(hovered_tabs.len() - 1)];
     let buffer = &active_tab.buffer;
-    let is_diagnostics = active_tab.path.as_deref().map_or(false, |p| p.starts_with("diagnostics://"));
+    let is_diagnostics = active_tab.path.as_deref().map_or(false, |p| p.starts_with("diagnostics://") || p == "search://project");
     let max_line_digits = buffer.len().to_string().len().max(3);
     let gutter_width = if is_diagnostics { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
     let activity_bar_width = 0.0;
@@ -736,7 +736,7 @@ pub fn handle_cursor_moved(
         ui.sidebar_width = sidebar_width;
         if state.is_dragging_scroll {
             let active_path = state.tabs[state.active_tab_idx].path.as_deref().unwrap_or("");
-            let is_diagnostics = active_path.starts_with("diagnostics://");
+            let is_diagnostics = active_path.starts_with("diagnostics://") || active_path == "search://project";
      
             let editor_top = pane_top + ui.tabbar_height + ui.breadcrumb_height;
             let status_y = pane_bottom.round();
@@ -837,7 +837,7 @@ pub fn handle_cursor_moved(
             
             ui.scroll_y = clicked_line.saturating_sub(visible_lines / 2).min(max_scroll as usize);
         } else if state.is_dragging {
-            let is_diagnostics = state.tabs[state.active_tab_idx].path.as_deref().map_or(false, |p| p.starts_with("diagnostics://"));
+            let is_diagnostics = state.tabs[state.active_tab_idx].path.as_deref().map_or(false, |p| p.starts_with("diagnostics://") || p == "search://project");
             let max_line_digits = if is_diagnostics { 3 } else { state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3) };
             let gutter_width = if is_diagnostics { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
             let text_area_x = ui.sidebar_width + gutter_width;
@@ -1183,12 +1183,15 @@ pub fn handle_mouse_input(
                     }
 
                     if state.mouse_x >= bar_x && state.mouse_x < bar_x + bar_w && state.mouse_y >= bar_y && state.mouse_y < bar_y + bar_h {
+                        let is_local = !is_project_search;
+                        let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
+
                         let count_w = 70.0f32;
                         let btn_prev_w = 22.0f32;
                         let btn_next_w = 22.0f32;
                         let close_btn_w = 22.0f32;
 
-                        let row_h = bar_h / 2.0;
+                        let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
                         let input_h = row_h - 6.0;
                         let input_y_1 = bar_y + 3.0;
                         let input_y_2 = bar_y + row_h + 3.0;
@@ -1197,7 +1200,10 @@ pub fn handle_mouse_input(
                         let next_x = close_x - 10.0 - btn_next_w;
                         let prev_x = next_x - 4.0 - btn_prev_w;
                         let count_x = prev_x - 10.0 - count_w;
-                        let input_start_x = bar_x + 10.0;
+                        
+                        let toggle_btn_w = 22.0f32;
+                        let toggle_btn_x = bar_x + 10.0;
+                        let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
                         let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
 
                         let pane_top = bar_y - ui.tabbar_height;
@@ -1211,6 +1217,17 @@ pub fn handle_mouse_input(
 
                         // Check Row 1 click (Find, Prev, Next, Close, and options inside find input)
                         if state.mouse_y >= input_y_1 && state.mouse_y < input_y_1 + input_h {
+                            // Check Toggle Replace button click
+                            if state.mouse_x >= toggle_btn_x && state.mouse_x < toggle_btn_x + toggle_btn_w {
+                                if is_local {
+                                    ui.show_replace = !ui.show_replace;
+                                } else {
+                                    ui.global_show_replace = !ui.global_show_replace;
+                                }
+                                window.request_redraw();
+                                return;
+                            }
+
                             // Check options inside Find input
                             let opt_btn_w = 20.0f32;
                             let opt_y = input_y_1 + 2.0;
@@ -1598,9 +1615,8 @@ pub fn handle_mouse_input(
                                 return;
                             }
                         }
+                        return;
                     }
-
-                    return;
                 }
                  // Check if click is on tab scrollbar
             let tabbar_start_x = ui.sidebar_width;
@@ -1813,7 +1829,7 @@ pub fn handle_mouse_input(
 
                             let editor_top = pane_top + ui.tabbar_height + ui.breadcrumb_height;
                             let editor_bottom_limit = pane_bottom;
-                            let is_diagnostics = state.tabs[active_tab_idx].path.as_deref().map_or(false, |p| p.starts_with("diagnostics://"));
+                            let is_diagnostics = state.tabs[active_tab_idx].path.as_deref().map_or(false, |p| p.starts_with("diagnostics://") || p == "search://project");
                             let active_tab_len = state.tabs[active_tab_idx].buffer.len();
                             let max_line_digits = active_tab_len.to_string().len().max(3);
                             let gutter_width = if is_diagnostics { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
@@ -1910,7 +1926,7 @@ pub fn handle_mouse_input(
                                 }
                             }
                             // 3. Check if click is on horizontal scrollbar
-                            else if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_bottom_limit - 14.0 && state.mouse_y < editor_bottom_limit {
+                            else if show_horizontal_scrollbar && state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_bottom_limit - 14.0 && state.mouse_y < editor_bottom_limit {
                                 state.is_dragging_horizontal_scroll = true;
                                 let active_tab = &mut state.tabs[active_tab_idx];
                                 let max_line_len = ui.get_max_line_len(&active_tab.buffer, active_tab.path.as_deref(), active_tab.cursor.line);
@@ -1933,7 +1949,8 @@ pub fn handle_mouse_input(
                                 }
                             } else {
                                  // Click inside editor area
-                                 if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit - 14.0 {
+                                 let bottom_limit = if show_horizontal_scrollbar { editor_bottom_limit - 14.0 } else { editor_bottom_limit };
+                                 if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < bottom_limit {
                                         if state.tabs[active_tab_idx].path.as_deref() == Some("search://project") {
                                               let list_y = editor_top;
                                               let item_height = ui.buffer_line_height;
@@ -2588,6 +2605,27 @@ pub fn handle_mouse_wheel(
     };
  
     let active_path = state.tabs[state.active_tab_idx].path.as_deref().unwrap_or("");
+    if active_path == "search://project" {
+        let mut total_items = 0;
+        let mut last_path = None;
+        for (path, _, _) in &ui.global_search_results {
+            if last_path.as_ref() != Some(path) {
+                total_items += 1;
+                last_path = Some(path.clone());
+            }
+            total_items += 1;
+        }
+        let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;
+        let status_y = (window.inner_size().height as f32 - ui.status_height).round();
+        let editor_height = status_y - editor_top;
+        let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
+
+        let max_scroll = (total_items as isize - visible_lines as isize).max(0);
+        let new_scroll = ui.global_search_scroll as isize + scroll_lines;
+        ui.global_search_scroll = new_scroll.clamp(0, max_scroll) as usize;
+        window.request_redraw();
+        return;
+    }
     let is_diagnostics = active_path.starts_with("diagnostics://");
 
     let editor_top = ui.titlebar_height + ui.tabbar_height + ui.breadcrumb_height;

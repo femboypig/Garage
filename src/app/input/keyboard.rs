@@ -200,7 +200,11 @@ pub fn handle_keyboard_input(
                 return;
             }
             Key::Named(NamedKey::Tab) => {
-                ui.search_focus_replace = !ui.search_focus_replace;
+                if ui.show_replace {
+                    ui.search_focus_replace = !ui.search_focus_replace;
+                } else {
+                    ui.search_focus_replace = false;
+                }
                 window.request_redraw();
                 return;
             }
@@ -1717,7 +1721,11 @@ pub fn handle_project_search_keyboard(
             window.request_redraw();
         }
         Key::Named(NamedKey::Tab) => {
-            ui.global_search_focus_replace = !ui.global_search_focus_replace;
+            if ui.global_show_replace {
+                ui.global_search_focus_replace = !ui.global_search_focus_replace;
+            } else {
+                ui.global_search_focus_replace = false;
+            }
             window.request_redraw();
         }
         Key::Named(NamedKey::Backspace) => {

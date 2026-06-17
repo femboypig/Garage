@@ -26,6 +26,7 @@ pub fn draw_editor_view(
 ) {
     let active_file_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
     let is_diagnostics = active_file_path.map_or(false, |p| p.starts_with("diagnostics://"));
+    let is_project_search = active_file_path == Some("search://project");
     let main_y = ui.titlebar_height;
 
     // Sidebar Navigator (Activity Bar) Width
@@ -33,11 +34,11 @@ pub fn draw_editor_view(
 
     // Calculate dynamic layouts
     let max_line_digits = buffer.len().to_string().len().max(3);
-    let gutter_width = if is_diagnostics { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
+    let gutter_width = if is_diagnostics || is_project_search { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
     let text_area_x = activity_bar_width + ui.sidebar_width + gutter_width;
     
     let scrollbar_width = ui.scrollbar_width();
-    let minimap_width = if is_diagnostics { 0.0 } else { ui.minimap_width() };
+    let minimap_width = if is_diagnostics || is_project_search { 0.0 } else { ui.minimap_width() };
     let sb_x = width - scrollbar_width;
     let minimap_x = sb_x - minimap_width;
     let text_viewport_w = minimap_x - text_area_x;
@@ -124,7 +125,7 @@ pub fn draw_editor_view(
     );
 
     // 3. Draw Gutter
-    if !is_diagnostics {
+    if !is_diagnostics && !is_project_search {
         gutter::draw_gutter(
             ui,
             vertices,
@@ -194,7 +195,7 @@ pub fn draw_editor_view(
     );
 
     // 6. Draw Minimap
-    if !is_diagnostics {
+    if !is_diagnostics && !is_project_search {
         minimap::draw_minimap(
             ui,
             vertices,
