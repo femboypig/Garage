@@ -1,4 +1,5 @@
-use crate::ui::{UiState, Vertex, FontAtlas};
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 use std::path::Path;
 
 pub fn draw_unsaved_changes(
@@ -16,6 +17,24 @@ pub fn draw_unsaved_changes(
     white_uv: [f32; 2],
     tab_paths: &[Option<String>],
 ) {
+    let mut ctx = crate::machkit::UiContext {
+        vertices,
+        indices,
+        atlas,
+        queue,
+        mouse_x,
+        mouse_y,
+        theme: &ui.config.theme,
+        white_uv,
+        ui_font_size: ui.ui_font_size,
+        ui_char_width: ui.ui_char_width,
+        ui_font_ascent: ui.ui_font_ascent,
+        ui_line_height: ui.ui_line_height,
+        buffer_font_size: ui.buffer_font_size,
+        buffer_font_ascent: ui.buffer_font_ascent,
+        buffer_line_height: ui.buffer_line_height,
+    };
+
     let file_name = ui.tab_to_close
         .and_then(|idx| tab_paths.get(idx).cloned())
         .flatten()
@@ -23,17 +42,12 @@ pub fn draw_unsaved_changes(
         .unwrap_or_else(|| "untitled.txt".to_string());
 
     let title_text = "Unsaved Changes";
-    ui.push_str(
-        vertices,
-        indices,
-        atlas,
-        queue,
+    ctx.push_str(
         title_text,
         modal_x + 20.0,
         modal_y + 35.0,
-        ui.config.theme.modal_text_title,
-        ui.ui_font_size,
-        ui.ui_char_width,
+        ctx.theme.modal_text_title,
+        ctx.ui_font_size,
     );
 
     let mut truncated_name = file_name.clone();
@@ -42,31 +56,21 @@ pub fn draw_unsaved_changes(
         truncated_name = format!("{}...", prefix);
     }
     let msg_text = format!("'{}' has unsaved changes.", truncated_name);
-    ui.push_str(
-        vertices,
-        indices,
-        atlas,
-        queue,
+    ctx.push_str(
         &msg_text,
         modal_x + 20.0,
         modal_y + 70.0,
-        ui.config.theme.modal_text_normal,
-        ui.ui_font_size,
-        ui.ui_char_width,
+        ctx.theme.modal_text_normal,
+        ctx.ui_font_size,
     );
 
     let msg_text_2 = "Save changes before closing?";
-    ui.push_str(
-        vertices,
-        indices,
-        atlas,
-        queue,
+    ctx.push_str(
         msg_text_2,
         modal_x + 20.0,
         modal_y + 92.0,
-        ui.config.theme.modal_text_normal,
-        ui.ui_font_size,
-        ui.ui_char_width,
+        ctx.theme.modal_text_normal,
+        ctx.ui_font_size,
     );
 
     let btn_w = 130.0f32;
@@ -80,39 +84,12 @@ pub fn draw_unsaved_changes(
     let btn_labels = ["Save", "Don't Save", "Cancel"];
     for i in 0..3 {
         let bx = start_btn_x + i as f32 * (btn_w + spacing);
-        let is_btn_hovered = mouse_x >= bx && mouse_x <= bx + btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h;
-
-        ui.push_quad(
-            vertices,
-            indices,
-            bx,
-            btn_y,
-            btn_w,
-            btn_h,
-            white_uv,
-            if is_btn_hovered { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg },
-        );
-        ui.push_quad(vertices, indices, bx, btn_y, btn_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, bx, btn_y + btn_h - 1.0, btn_w, 1.0, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, bx, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
-        ui.push_quad(vertices, indices, bx + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
-
         let label = btn_labels[i];
-        let label_w = label.chars().count() as f32 * ui.ui_char_width;
-        let tx = bx + ((btn_w - label_w) / 2.0).round();
-        let ty = (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
 
-        ui.push_str(
-            vertices,
-            indices,
-            atlas,
-            queue,
-            label,
-            tx,
-            ty,
-            ui.config.theme.button_text,
-            ui.ui_font_size,
-            ui.ui_char_width,
-        );
+        crate::machkit::Button::new()
+            .text(label)
+            .border(true)
+            .bg_color(ctx.theme.button_bg)
+            .draw(&mut ctx, bx, btn_y, btn_w, btn_h);
     }
 }
