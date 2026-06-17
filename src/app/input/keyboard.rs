@@ -5,7 +5,7 @@ use winit::keyboard::{Key, PhysicalKey, NamedKey};
 use winit::event_loop::EventLoopWindowTarget;
 
 use crate::renderer::wgpu::GpuContext;
-use crate::ui::{UiState, UiAction};
+use crate::machkit::{UiState, UiAction};
 use crate::renderer::atlas::FontAtlas;
 use crate::app::state::AppState;
 use crate::app::handler::handle_action;
@@ -61,7 +61,7 @@ pub fn handle_keyboard_input(
                     return;
                 }
                 crate::editor::actions::Action::CommandPalette => {
-                    ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
+                    ui.active_modal = Some(crate::machkit::ModalType::CommandPalette);
                     ui.command_palette_query.clear();
                     ui.command_palette_selected = 0;
                     window.request_redraw();
@@ -100,7 +100,7 @@ pub fn handle_keyboard_input(
     };
 
     // Handle typing inside the Search Panel
-    if ui.show_search_panel {
+    if ui.show_search_panel && ui.search_focused {
         // First, check if there's an action mapped
         if let Some(action) = crate::editor::keymap::map_key(&ui.keymap, &logical_key, physical_key, ctrl, shift, alt, &["Editor", "Workspace"]) {
             match action {
@@ -115,6 +115,7 @@ pub fn handle_keyboard_input(
                             }
                         }
                     }
+                    ui.search_focused = true;
                     ui.search_focus_replace = false;
                     ui.perform_search(state);
                     window.request_redraw();
@@ -172,7 +173,7 @@ pub fn handle_keyboard_input(
                     return;
                 }
                 crate::editor::actions::Action::CommandPalette => {
-                    ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
+                    ui.active_modal = Some(crate::machkit::ModalType::CommandPalette);
                     ui.command_palette_query.clear();
                     ui.command_palette_selected = 0;
                     window.request_redraw();
@@ -263,7 +264,7 @@ pub fn handle_keyboard_input(
     }
 
     // Handle typing inside the SidebarInput modal
-    if ui.active_modal == Some(crate::ui::ModalType::SidebarInput) {
+    if ui.active_modal == Some(crate::machkit::ModalType::SidebarInput) {
         match &logical_key {
             Key::Named(NamedKey::Escape) => {
                 ui.active_modal = None;
@@ -548,11 +549,11 @@ pub fn handle_command_palette_input(
     font_bytes: &[u8],
     logical_key: &Key,
 ) -> bool {
-    if let Some(crate::ui::ModalType::CommandPalette) = ui.active_modal {
+    if let Some(crate::machkit::ModalType::CommandPalette) = ui.active_modal {
         match logical_key {
             Key::Named(NamedKey::Escape) => {
                 ui.active_modal = None;
-                ui.command_palette_mode = crate::ui::CommandPaletteMode::Commands;
+                ui.command_palette_mode = crate::machkit::CommandPaletteMode::Commands;
                 window.request_redraw();
             }
             Key::Named(NamedKey::ArrowDown) => {
@@ -616,7 +617,7 @@ pub fn handle_global_search_input(
     font_bytes: &[u8],
     logical_key: &Key,
 ) -> bool {
-    if let Some(crate::ui::ModalType::GlobalSearch) = ui.active_modal {
+    if let Some(crate::machkit::ModalType::GlobalSearch) = ui.active_modal {
         match logical_key {
             Key::Named(NamedKey::Escape) => {
                 ui.active_modal = None;
@@ -715,14 +716,14 @@ pub fn handle_diagnostics_keyboard(
                     crate::editor::actions::Action::MoveUp { .. } => {
                         let active_tab = &mut state.tabs[state.active_tab_idx];
                         active_tab.cursor.clear_selection();
-                        let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                        let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
                         if active_tab.cursor.line > 0 {
                             active_tab.cursor.line -= 1;
                         }
                         let line_len = visual_lines.get(active_tab.cursor.line).map_or(0, |vl| match vl {
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
                         });
                         active_tab.cursor.col = active_tab.cursor.col.min(line_len);
                         active_tab.cursor.intended_col = active_tab.cursor.col;
@@ -730,14 +731,14 @@ pub fn handle_diagnostics_keyboard(
                     crate::editor::actions::Action::MoveDown { .. } => {
                         let active_tab = &mut state.tabs[state.active_tab_idx];
                         active_tab.cursor.clear_selection();
-                        let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                        let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
                         if !visual_lines.is_empty() && active_tab.cursor.line < visual_lines.len() - 1 {
                             active_tab.cursor.line += 1;
                         }
                         let line_len = visual_lines.get(active_tab.cursor.line).map_or(0, |vl| match vl {
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
                         });
                         active_tab.cursor.col = active_tab.cursor.col.min(line_len);
                         active_tab.cursor.intended_col = active_tab.cursor.col;
@@ -749,9 +750,9 @@ pub fn handle_diagnostics_keyboard(
                             active_tab.cursor.col -= 1;
                         } else if active_tab.cursor.line > 0 {
                             active_tab.cursor.line -= 1;
-                            let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                            let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
                             let line_len = visual_lines.get(active_tab.cursor.line).map_or(0, |vl| match vl {
-                                crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                                crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
                                 _ => 0,
                             });
                             active_tab.cursor.col = line_len;
@@ -761,11 +762,11 @@ pub fn handle_diagnostics_keyboard(
                     crate::editor::actions::Action::MoveRight { .. } => {
                         let active_tab = &mut state.tabs[state.active_tab_idx];
                         active_tab.cursor.clear_selection();
-                        let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                        let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
                         let line_len = visual_lines.get(active_tab.cursor.line).map_or(0, |vl| match vl {
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
                         });
                         if active_tab.cursor.col < line_len {
                             active_tab.cursor.col += 1;
@@ -784,11 +785,11 @@ pub fn handle_diagnostics_keyboard(
                     crate::editor::actions::Action::MoveToLineEnd { .. } => {
                         let active_tab = &mut state.tabs[state.active_tab_idx];
                         active_tab.cursor.clear_selection();
-                        let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                        let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
                         let line_len = visual_lines.get(active_tab.cursor.line).map_or(0, |vl| match vl {
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
                         });
                         active_tab.cursor.col = line_len;
                         active_tab.cursor.intended_col = line_len;
@@ -828,16 +829,16 @@ pub fn handle_diagnostics_keyboard(
                 };
 
                 if is_modifying_action {
-                    let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                    let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
                     let current_visual_line = {
                         let active_tab = &state.tabs[state.active_tab_idx];
                         visual_lines.get(active_tab.cursor.line).cloned()
                     };
 
                     let path_opt = current_visual_line.as_ref().map(|vl| match vl {
-                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.clone(),
-                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { path, .. } => path.clone(),
-                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { path, .. } => path.clone(),
+                        crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.clone(),
+                        crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { path, .. } => path.clone(),
+                        crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { path, .. } => path.clone(),
                     });
 
                     if let Some(path) = path_opt {
@@ -860,7 +861,7 @@ pub fn handle_diagnostics_keyboard(
                         };
 
                         let (target_line, target_col) = match current_visual_line.as_ref().unwrap() {
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_idx, line_content, .. } => {
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_idx, line_content, .. } => {
                                 let line_idx = *line_idx;
                                 let target_line = line_idx.min(state.tabs[target_tab_idx].buffer.len().saturating_sub(1));
                                 let line_len = state.tabs[target_tab_idx].buffer.lines().get(target_line).map_or(0, |l| l.chars().count());
@@ -870,10 +871,10 @@ pub fn handle_diagnostics_keyboard(
                                 };
                                 (target_line, target_col)
                             }
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { line, col, .. } => {
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { line, col, .. } => {
                                 (*line, *col)
                             }
-                            crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => {
+                            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => {
                                 (diag.line, diag.col)
                             }
                         };
@@ -897,16 +898,16 @@ pub fn handle_diagnostics_keyboard(
 
                         state.active_tab_idx = original_active_tab_idx;
 
-                        let visual_lines_new = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui);
+                        let visual_lines_new = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
 
                         let active_tab = &mut state.tabs[state.active_tab_idx];
-                        if let crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_idx: orig_line_idx, .. } = current_visual_line.as_ref().unwrap() {
+                        if let crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_idx: orig_line_idx, .. } = current_visual_line.as_ref().unwrap() {
                             if new_line == *orig_line_idx {
                                 active_tab.cursor.col = new_col;
                                 active_tab.cursor.intended_col = new_col;
                             } else if let Some(new_v_idx) = visual_lines_new.iter().position(|vl| {
                                 match vl {
-                                    crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { path: p, line_idx: li, .. } => {
+                                    crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { path: p, line_idx: li, .. } => {
                                         p == &path && *li == new_line
                                     }
                                     _ => false
@@ -948,6 +949,7 @@ pub fn handle_editor_keyboard(
             crate::editor::actions::Action::Find => {
                 ui.show_search_panel = true;
                 ui.search_focus_replace = false;
+                ui.search_focused = true;
                 if state.active_tab_idx < state.tabs.len() {
                     let active_tab = &state.tabs[state.active_tab_idx];
                     if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
@@ -1000,7 +1002,7 @@ pub fn handle_editor_keyboard(
                 ui.update_buffer_font_size(&atlas.font, new_size);
             }
             crate::editor::actions::Action::CommandPalette => {
-                ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
+                ui.active_modal = Some(crate::machkit::ModalType::CommandPalette);
                 ui.command_palette_query.clear();
                 ui.command_palette_selected = 0;
             }
@@ -1661,6 +1663,105 @@ pub fn handle_editor_keyboard(
     window.request_redraw();
 }
 
+fn insert_char_at(s: &str, idx: usize, c: char) -> String {
+    let mut result = String::new();
+    let mut inserted = false;
+    for (i, ch) in s.chars().enumerate() {
+        if i == idx {
+            result.push(c);
+            inserted = true;
+        }
+        result.push(ch);
+    }
+    if !inserted {
+        result.push(c);
+    }
+    result
+}
+
+fn remove_char_at(s: &str, idx: usize) -> String {
+    let mut result = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i != idx {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+fn sync_file_changes(
+    ui: &mut UiState,
+    state: &mut AppState,
+    path: std::path::PathBuf,
+    line_idx: usize,
+    new_line_content: String,
+) {
+    // 1. Update project_search_file_cache
+    if let Some(lines) = ui.project_search_file_cache.get_mut(&path) {
+        if line_idx < lines.len() {
+            lines[line_idx] = new_line_content.clone();
+        }
+    }
+
+    // 2. Update all open tabs/buffers matching this path in active and inactive panes
+    let abs_target_path = crate::editor::get_absolute_path(&path.to_string_lossy());
+    
+    // Check active tabs
+    for tab in &mut state.tabs {
+        if let Some(ref tab_path) = tab.path {
+            if crate::editor::get_absolute_path(tab_path) == abs_target_path {
+                if line_idx < tab.buffer.len() {
+                    let old_line_len = tab.buffer.lines()[line_idx].chars().count();
+                    tab.buffer.commit_transaction();
+                    tab.buffer.start_transaction();
+                    tab.buffer.delete(line_idx, 0, line_idx, old_line_len);
+                    tab.buffer.insert(line_idx, 0, &new_line_content);
+                    tab.buffer.commit_transaction();
+                }
+            }
+        }
+    }
+    // Check inactive pane tabs
+    for pane in &mut state.inactive_panes {
+        for tab in &mut pane.tabs {
+            if let Some(ref tab_path) = tab.path {
+                if crate::editor::get_absolute_path(tab_path) == abs_target_path {
+                    if line_idx < tab.buffer.len() {
+                        let old_line_len = tab.buffer.lines()[line_idx].chars().count();
+                        tab.buffer.commit_transaction();
+                        tab.buffer.start_transaction();
+                        tab.buffer.delete(line_idx, 0, line_idx, old_line_len);
+                        tab.buffer.insert(line_idx, 0, &new_line_content);
+                        tab.buffer.commit_transaction();
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Update all instances in ui.global_search_results
+    for (res_path, res_line_idx, res_content) in &mut ui.global_search_results {
+        if *res_path == path && *res_line_idx == line_idx {
+            *res_content = new_line_content.clone();
+        }
+    }
+
+    // 4. Write back to disk
+    if let Some(lines) = ui.project_search_file_cache.get(&path) {
+        let joined = lines.join("\n");
+        let _ = std::fs::write(&path, joined);
+    } else {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+            if line_idx < lines.len() {
+                lines[line_idx] = new_line_content;
+                let joined = lines.join("\n");
+                let _ = std::fs::write(&path, joined);
+            }
+        }
+    }
+}
+
 pub fn handle_project_search_keyboard(
     ui: &mut UiState,
     state: &mut AppState,
@@ -1696,71 +1797,159 @@ pub fn handle_project_search_keyboard(
         }
     }
 
-    match logical_key {
-        Key::Named(NamedKey::ArrowDown) => {
-            let items_count = ui.global_search_results.len();
-            if items_count > 0 {
-                ui.global_search_selected = (ui.global_search_selected + 1) % items_count;
-            }
-            window.request_redraw();
-        }
-        Key::Named(NamedKey::ArrowUp) => {
-            let items_count = ui.global_search_results.len();
-            if items_count > 0 {
-                ui.global_search_selected = (ui.global_search_selected + items_count - 1) % items_count;
-            }
-            window.request_redraw();
-        }
-        Key::Named(NamedKey::Enter) => {
-            if alt {
-                let results_len = ui.global_search_results.len();
-                if ui.global_search_selected < results_len {
-                    let (path, line_idx, _) = &ui.global_search_results[ui.global_search_selected];
-                    handle_action(ui, state, UiAction::OpenFileAt(path.clone(), *line_idx), window, elwt, gpu, atlas, font_bytes);
-                }
-            } else {
-                let q = ui.global_search_query.clone();
-                ui.run_global_search(q);
-            }
-            window.request_redraw();
-        }
-        Key::Named(NamedKey::Tab) => {
-            if ui.global_show_replace {
-                ui.global_search_focus_replace = !ui.global_search_focus_replace;
-            } else {
-                ui.global_search_focus_replace = false;
-            }
-            window.request_redraw();
-        }
-        Key::Named(NamedKey::Backspace) => {
-            if !ctrl && !alt {
-                if ui.global_search_focus_replace {
-                    ui.global_replace_query.pop();
-                } else {
-                    ui.global_search_query.pop();
-                    ui.global_search_selected = 0;
+    if ui.global_search_focused {
+        match logical_key {
+            Key::Named(NamedKey::ArrowDown) => {
+                let items_count = ui.global_search_results.len();
+                if items_count > 0 {
+                    ui.global_search_selected = (ui.global_search_selected + 1) % items_count;
                 }
                 window.request_redraw();
             }
+            Key::Named(NamedKey::ArrowUp) => {
+                let items_count = ui.global_search_results.len();
+                if items_count > 0 {
+                    ui.global_search_selected = (ui.global_search_selected + items_count - 1) % items_count;
+                }
+                window.request_redraw();
+            }
+            Key::Named(NamedKey::Enter) => {
+                if alt {
+                    let results_len = ui.global_search_results.len();
+                    if ui.global_search_selected < results_len {
+                        let (path, line_idx, _) = &ui.global_search_results[ui.global_search_selected];
+                        handle_action(ui, state, UiAction::OpenFileAt(path.clone(), *line_idx), window, elwt, gpu, atlas, font_bytes);
+                    }
+                } else {
+                    let q = ui.global_search_query.clone();
+                    ui.run_global_search(q);
+                }
+                window.request_redraw();
+            }
+            Key::Named(NamedKey::Tab) => {
+                if ui.global_show_replace {
+                    ui.global_search_focus_replace = !ui.global_search_focus_replace;
+                } else {
+                    ui.global_search_focus_replace = false;
+                }
+                window.request_redraw();
+            }
+            Key::Named(NamedKey::Backspace) => {
+                if !ctrl && !alt {
+                    if ui.global_search_focus_replace {
+                        ui.global_replace_query.pop();
+                    } else {
+                        ui.global_search_query.pop();
+                        ui.global_search_selected = 0;
+                    }
+                    window.request_redraw();
+                }
+            }
+            Key::Character(text) => {
+                if !ctrl && !alt {
+                    for c in text.chars() {
+                        if !c.is_control() {
+                            if ui.global_search_focus_replace {
+                                ui.global_replace_query.push(c);
+                            } else {
+                                ui.global_search_query.push(c);
+                            }
+                        }
+                    }
+                    if !ui.global_search_focus_replace {
+                        ui.global_search_selected = 0;
+                    }
+                    window.request_redraw();
+                }
+            }
+            _ => {}
         }
-        Key::Character(text) => {
-            if !ctrl && !alt {
-                for c in text.chars() {
-                    if !c.is_control() {
-                        if ui.global_search_focus_replace {
-                            ui.global_replace_query.push(c);
-                        } else {
-                            ui.global_search_query.push(c);
+    } else {
+        let results_len = ui.global_search_results.len();
+        if ui.global_search_selected < results_len {
+            let (path, line_idx, current_content) = ui.global_search_results[ui.global_search_selected].clone();
+            
+            match logical_key {
+                Key::Named(NamedKey::ArrowLeft) => {
+                    ui.global_search_col = ui.global_search_col.saturating_sub(1);
+                    window.request_redraw();
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    let char_count = current_content.chars().count();
+                    ui.global_search_col = (ui.global_search_col + 1).min(char_count);
+                    window.request_redraw();
+                }
+                Key::Named(NamedKey::Home) => {
+                    ui.global_search_col = 0;
+                    window.request_redraw();
+                }
+                Key::Named(NamedKey::End) => {
+                    let char_count = current_content.chars().count();
+                    ui.global_search_col = char_count;
+                    window.request_redraw();
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    let items_count = ui.global_search_results.len();
+                    if items_count > 0 {
+                        ui.global_search_selected = (ui.global_search_selected + 1) % items_count;
+                        let new_content = &ui.global_search_results[ui.global_search_selected].2;
+                        ui.global_search_col = ui.global_search_col.min(new_content.chars().count());
+                    }
+                    window.request_redraw();
+                }
+                Key::Named(NamedKey::ArrowUp) => {
+                    let items_count = ui.global_search_results.len();
+                    if items_count > 0 {
+                        ui.global_search_selected = (ui.global_search_selected + items_count - 1) % items_count;
+                        let new_content = &ui.global_search_results[ui.global_search_selected].2;
+                        ui.global_search_col = ui.global_search_col.min(new_content.chars().count());
+                    }
+                    window.request_redraw();
+                }
+                Key::Named(NamedKey::Enter) => {
+                    handle_action(ui, state, UiAction::OpenFileAt(path.clone(), line_idx), window, elwt, gpu, atlas, font_bytes);
+                    window.request_redraw();
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    if !ctrl && !alt {
+                        if ui.global_search_col > 0 {
+                            let new_content = remove_char_at(&current_content, ui.global_search_col - 1);
+                            ui.global_search_col -= 1;
+                            sync_file_changes(ui, state, path, line_idx, new_content);
+                            window.request_redraw();
                         }
                     }
                 }
-                if !ui.global_search_focus_replace {
-                    ui.global_search_selected = 0;
+                Key::Named(NamedKey::Delete) => {
+                    if !ctrl && !alt {
+                        let char_count = current_content.chars().count();
+                        if ui.global_search_col < char_count {
+                            let new_content = remove_char_at(&current_content, ui.global_search_col);
+                            sync_file_changes(ui, state, path, line_idx, new_content);
+                            window.request_redraw();
+                        }
+                    }
                 }
-                window.request_redraw();
+                Key::Character(text) => {
+                    if !ctrl && !alt {
+                        let mut temp_content = current_content.clone();
+                        let mut inserted_count = 0;
+                        for c in text.chars() {
+                            if !c.is_control() {
+                                temp_content = insert_char_at(&temp_content, ui.global_search_col + inserted_count, c);
+                                inserted_count += 1;
+                            }
+                        }
+                        if inserted_count > 0 {
+                            ui.global_search_col += inserted_count;
+                            sync_file_changes(ui, state, path, line_idx, temp_content);
+                            window.request_redraw();
+                        }
+                    }
+                }
+                _ => {}
             }
         }
-        _ => {}
     }
     true
 }
