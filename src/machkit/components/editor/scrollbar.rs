@@ -1,4 +1,5 @@
-use crate::ui::{UiState, Vertex, FontAtlas};
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 
@@ -7,7 +8,7 @@ pub fn draw_scrollbars(
     vertices: &mut Vec<Vertex>,
     indices: &mut Vec<u16>,
     atlas: &mut FontAtlas,
-    _queue: &wgpu::Queue,
+    queue: &wgpu::Queue,
     buffer: &Buffer,
     cursor: &Cursor,
     editor_y: f32,
@@ -23,10 +24,11 @@ pub fn draw_scrollbars(
     mouse_y: f32,
     active_file_path: Option<&str>,
 ) {
-    let white_uv = atlas.white_pixel_uv();
-    
     // --- 1. Draw Vertical Scrollbar ---
-    let (virtual_len, visible_count) = if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
+    let (virtual_len, visible_count) = if active_file_path == Some("search://project") {
+        let items_len = crate::machkit::components::editor::project_search::build_search_render_items(ui).len();
+        (items_len, visible_lines)
+    } else if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
         let mut count = 0;
         for (file_path, diags) in &ui.lsp_diagnostics_details {
             if diags.is_empty() {
@@ -49,133 +51,56 @@ pub fn draw_scrollbars(
         (buffer.len(), visible_lines)
     };
 
-    if virtual_len > visible_count {
-        let is_sb_hovered = ui.active_modal.is_none() && mouse_x >= sb_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
+    let max_line_len = ui.get_max_line_len(buffer, active_file_path, cursor.line);
+    let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
 
-        // Scrollbar Track background
-        ui.push_quad(
-            vertices,
-            indices,
-            sb_x,
-            editor_y,
-            scrollbar_width,
-            total_editor_height,
-            white_uv,
-            ui.config.theme.scrollbar_track,
-        );
-        // Vertical track separator (left of scrollbar)
-        ui.push_quad(
-            vertices,
-            indices,
-            sb_x - 1.0,
-            editor_y,
-            1.0,
-            total_editor_height,
-            white_uv,
-            ui.config.theme.scrollbar_border,
-        );
+    let is_sb_hovered = ui.active_modal.is_none() && mouse_x >= sb_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
 
-        let track_h = editor_height;
-        let ratio = visible_count as f32 / virtual_len as f32;
-        let thumb_h = (track_h * ratio).clamp(20.0_f32.min(track_h), track_h);
-        let max_scroll_f = (virtual_len as isize - visible_count as isize).max(0) as f32;
-        let scroll_ratio = if max_scroll_f > 0.0 { ui.scroll_y as f32 / max_scroll_f } else { 0.0 };
-        let thumb_y = editor_y + scroll_ratio * (track_h - thumb_h);
+    let white_uv = atlas.white_pixel_uv();
+    let mut ctx = crate::machkit::UiContext {
+        vertices,
+        indices,
+        atlas,
+        queue,
+        mouse_x,
+        mouse_y,
+        theme: &ui.config.theme,
+        white_uv,
+        ui_font_size: ui.ui_font_size,
+        ui_char_width: ui.ui_char_width,
+        ui_font_ascent: ui.ui_font_ascent,
+        ui_line_height: ui.ui_line_height,
+        buffer_font_size: ui.buffer_font_size,
+        buffer_font_ascent: ui.buffer_font_ascent,
+        buffer_line_height: ui.buffer_line_height,
+    };
 
-        let thumb_color = if is_sb_hovered {
-            ui.config.theme.scrollbar_thumb_hover
-        } else {
-            ui.config.theme.scrollbar_thumb
-        };
-
-        // Draw Scrollbar Thumb
-        ui.push_quad(
-            vertices,
-            indices,
-            sb_x + 2.0,
-            thumb_y,
-            scrollbar_width - 4.0,
-            thumb_h,
-            white_uv,
-            thumb_color,
-        );
-    } else {
-        // Draw editor background in scrollbar area to avoid a black gap when scrollbar is hidden
-        ui.push_quad(
-            vertices,
-            indices,
-            sb_x - 1.0,
-            editor_y,
-            scrollbar_width + 1.0,
-            total_editor_height,
-            white_uv,
-            ui.config.theme.editor_bg,
-        );
-    }
+    crate::machkit::Scrollbar::new()
+        .vertical(true)
+        .virtual_len(virtual_len)
+        .visible_count(visible_count)
+        .scroll_pos(ui.scroll_y)
+        .hovered(is_sb_hovered)
+        .draw(&mut ctx, sb_x, editor_y, scrollbar_width, total_editor_height);
 
     // --- 2. Draw Horizontal Scrollbar ---
     if active_file_path.map_or(false, |p| p.starts_with("diagnostics://") || p == "search://project") {
         return;
     }
     
-    let max_line_len = ui.get_max_line_len(buffer, active_file_path, cursor.line);
-    let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
-    
-    if max_line_len > visible_cols {
-        let hs_y = editor_y + editor_height;
-        let hs_h = 14.0f32;
-        let is_hs_hovered = ui.active_modal.is_none()
-            && mouse_x >= text_area_x
-            && mouse_x < minimap_x
-            && mouse_y >= hs_y
-            && mouse_y < hs_y + hs_h;
+    let hs_y = editor_y + editor_height;
+    let hs_h = 14.0f32;
+    let is_hs_hovered = ui.active_modal.is_none()
+        && mouse_x >= text_area_x
+        && mouse_x < minimap_x
+        && mouse_y >= hs_y
+        && mouse_y < hs_y + hs_h;
 
-        // Draw Horizontal Scrollbar Track Background
-        ui.push_quad(
-            vertices,
-            indices,
-            text_area_x,
-            hs_y,
-            text_viewport_w,
-            hs_h,
-            white_uv,
-            ui.config.theme.scrollbar_track,
-        );
-
-        // Draw horizontal track border separator (top of horizontal scrollbar)
-        ui.push_quad(
-            vertices,
-            indices,
-            text_area_x,
-            hs_y,
-            text_viewport_w,
-            1.0,
-            white_uv,
-            ui.config.theme.scrollbar_border,
-        );
-        // Calculate horizontal scrollbar thumb
-        let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
-        let thumb_w = (text_viewport_w * ratio_x).clamp(20.0_f32.min(text_viewport_w), text_viewport_w);
-        let max_scroll_x = (max_line_len as isize - visible_cols as isize).max(0) as f32;
-        let scroll_ratio_x = if max_scroll_x > 0.0 { ui.scroll_x as f32 / max_scroll_x } else { 0.0 };
-        let thumb_x = text_area_x + scroll_ratio_x * (text_viewport_w - thumb_w);
-
-        let thumb_color_x = if is_hs_hovered {
-            ui.config.theme.scrollbar_thumb_hover
-        } else {
-            ui.config.theme.scrollbar_thumb
-        };
-
-        // Draw Horizontal Scrollbar Thumb (height 10.0, padded by 2.0 from top and bottom)
-        ui.push_quad(
-            vertices,
-            indices,
-            thumb_x,
-            hs_y + 2.0,
-            thumb_w,
-            10.0,
-            white_uv,
-            thumb_color_x,
-        );
-    }
+    crate::machkit::Scrollbar::new()
+        .vertical(false)
+        .virtual_len(max_line_len)
+        .visible_count(visible_cols)
+        .scroll_pos(ui.scroll_x)
+        .hovered(is_hs_hovered)
+        .draw(&mut ctx, text_area_x, hs_y, text_viewport_w, hs_h);
 }
