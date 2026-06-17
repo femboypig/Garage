@@ -253,10 +253,10 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                     let item_idx = ui.global_search_scroll + ((mouse_y - list_y) / item_height).floor() as usize;
                     if item_idx < render_items.len() {
                         match &render_items[item_idx] {
-                            crate::machkit::components::editor::project_search::SearchRenderItem::FileHeader { .. } => {
+                            crate::machkit::SearchRenderItem::FileHeader { .. } => {
                                 is_pointer = true;
                             }
-                            crate::machkit::components::editor::project_search::SearchRenderItem::CodeLine {
+                            crate::machkit::SearchRenderItem::CodeLine {
                                 is_first_in_range,
                                 is_last_in_range,
                                 ..
@@ -1310,6 +1310,7 @@ pub fn handle_mouse_input(
                                             ui.collapsed_search_files.insert(path);
                                         }
                                     }
+                                    ui.invalidate_search_render_items();
                                 }
                                 window.request_redraw();
                                 return;
@@ -2076,7 +2077,7 @@ pub fn handle_mouse_input(
                                                      
                                                      if clicked_idx < render_items.len() {
                                                          match &render_items[clicked_idx] {
-                                                             crate::machkit::components::editor::project_search::SearchRenderItem::FileHeader { path } => {
+                                                             crate::machkit::SearchRenderItem::FileHeader { path } => {
                                                                  let selected_path = ui.global_search_results.get(ui.global_search_selected).map(|r| &r.0);
                                                                  let is_file_selected = Some(path) == selected_path;
                                                                  let row_hover = true;
@@ -2102,11 +2103,12 @@ pub fn handle_mouse_input(
                                                                     } else {
                                                                         ui.collapsed_search_files.insert(path.clone());
                                                                     }
+                                                                    ui.invalidate_search_render_items();
                                                                 }
                                                                 window.request_redraw();
                                                                 return;
                                                             }
-                                                            crate::machkit::components::editor::project_search::SearchRenderItem::CodeLine {
+                                                            crate::machkit::SearchRenderItem::CodeLine {
                                                                 path,
                                                                 line_idx,
                                                                 result_idx,
@@ -2123,6 +2125,7 @@ pub fn handle_mouse_input(
                                                                             let match_line = ui.global_search_results[pos].1;
                                                                             let entry = ui.global_search_expanded_margins.entry((path.clone(), match_line)).or_insert((2, 2));
                                                                             entry.0 += 10;
+                                                                            ui.invalidate_search_render_items();
                                                                             window.request_redraw();
                                                                         }
                                                                     } else if *is_last_in_range {
@@ -2130,6 +2133,7 @@ pub fn handle_mouse_input(
                                                                             let match_line = ui.global_search_results[pos].1;
                                                                             let entry = ui.global_search_expanded_margins.entry((path.clone(), match_line)).or_insert((2, 2));
                                                                             entry.1 += 10;
+                                                                            ui.invalidate_search_render_items();
                                                                             window.request_redraw();
                                                                         }
                                                                     }
