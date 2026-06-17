@@ -85,3 +85,26 @@ pub enum SearchRenderItem {
         path: PathBuf,
     },
 }
+
+pub struct FrameInput<'a> {
+    pub buffer: &'a crate::editor::buffer::Buffer,
+    pub cursor: &'a crate::editor::cursor::Cursor,
+    pub secondary_cursors: &'a [crate::editor::cursor::Cursor],
+    pub width: f32,
+    pub height: f32,
+    pub mouse_x: f32,
+    pub mouse_y: f32,
+    pub current_backend: wgpu::Backend,
+    pub tab_paths: &'a [Option<String>],
+    pub tab_modified: &'a [bool],
+    pub active_tab_idx: usize,
+    pub dragged_tab_idx: Option<usize>,
+    pub inactive_panes: &'a [crate::app::state::Pane],
+    pub active_pane_idx: usize,
+    pub is_split_horizontal: bool,
+    pub terminals: &'a [crate::terminal::TerminalInstance],
+    pub active_terminal_idx: usize,
+    pub terminal_focus: bool,
+    pub is_window_maximized: bool,
+    pub tab_scroll_x: f32,
+}
