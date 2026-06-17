@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::renderer::atlas::FontAtlas;
 use crate::editor::cursor::Cursor;
 
-use super::types::{UiAction, MenuType, ModalType, FileNode};
+use super::types::{UiAction, MenuType, ModalType, FileNode, GitDiffHunk};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommandPaletteMode {
@@ -71,9 +71,9 @@ pub struct UiState {
     pub git_status_rx: Option<std::sync::mpsc::Receiver<std::collections::HashMap<PathBuf, String>>>,
     pub git_status_tx: std::sync::mpsc::Sender<std::collections::HashMap<PathBuf, String>>,
 
-    pub git_diffs: std::collections::HashMap<String, Vec<types::GitDiffHunk>>,
-    pub git_diff_rx: Option<std::sync::mpsc::Receiver<(String, Vec<types::GitDiffHunk>)>>,
-    pub git_diff_tx: std::sync::mpsc::Sender<(String, Vec<types::GitDiffHunk>)>,
+    pub git_diffs: std::collections::HashMap<String, Vec<GitDiffHunk>>,
+    pub git_diff_rx: Option<std::sync::mpsc::Receiver<(String, Vec<GitDiffHunk>)>>,
+    pub git_diff_tx: std::sync::mpsc::Sender<(String, Vec<GitDiffHunk>)>,
 
     pub languages: std::collections::HashMap<String, String>,
 
