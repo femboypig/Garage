@@ -1,4 +1,5 @@
-use crate::ui::{UiState, Vertex, FontAtlas};
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 
 pub fn draw_command_palette(
     ui: &mut UiState,
@@ -111,7 +112,7 @@ pub fn draw_command_palette(
 
         let mut icon_key = "file";
         let mut icon_color = item_text_color;
-        if ui.command_palette_mode == crate::ui::CommandPaletteMode::Languages {
+        if ui.command_palette_mode == crate::machkit::CommandPaletteMode::Languages {
             match display_name.as_str() {
                 "Rust" => {
                     icon_key = "rust";
@@ -165,15 +166,15 @@ pub fn draw_command_palette(
                     icon_key = "file";
                 }
             }
-        } else if ui.command_palette_mode == crate::ui::CommandPaletteMode::Encodings {
+        } else if ui.command_palette_mode == crate::machkit::CommandPaletteMode::Encodings {
             icon_key = "binary";
             icon_color = [0.38, 0.69, 0.94, 1.0];
-        } else if ui.command_palette_mode == crate::ui::CommandPaletteMode::LineEndings {
+        } else if ui.command_palette_mode == crate::machkit::CommandPaletteMode::LineEndings {
             icon_key = "file";
             icon_color = [0.38, 0.69, 0.94, 1.0];
         }
 
-        let has_icon = ui.command_palette_mode != crate::ui::CommandPaletteMode::Commands;
+        let has_icon = ui.command_palette_mode != crate::machkit::CommandPaletteMode::Commands;
         let text_offset_x = if has_icon {
             let icon_sz = 16.0f32;
             let icon_x = modal_x + 20.0;
@@ -218,7 +219,7 @@ pub fn draw_command_palette(
         let name_len = display_name.chars().count() as f32;
         let name_w = name_len * ui.ui_char_width;
         
-        if ui.command_palette_mode == crate::ui::CommandPaletteMode::Commands && desc_x > modal_x + name_w + 40.0 {
+        if ui.command_palette_mode == crate::machkit::CommandPaletteMode::Commands && desc_x > modal_x + name_w + 40.0 {
             ui.push_str(
                 vertices,
                 indices,
