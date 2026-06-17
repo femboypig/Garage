@@ -209,6 +209,7 @@ pub fn handle_keyboard_input(
                 return;
             }
             Key::Named(NamedKey::Enter) => {
+                ui.perform_search(state);
                 if !ui.search_matches.is_empty() {
                     if shift {
                         if ui.active_search_match_idx == 0 {
@@ -238,7 +239,6 @@ pub fn handle_keyboard_input(
                     ui.replace_query.pop();
                 } else {
                     ui.search_query.pop();
-                    ui.perform_search(state);
                 }
                 window.request_redraw();
                 return;
@@ -253,9 +253,6 @@ pub fn handle_keyboard_input(
                                 ui.search_query.push(c);
                             }
                         }
-                    }
-                    if !ui.search_focus_replace {
-                        ui.perform_search(state);
                     }
                     window.request_redraw();
                     return;
@@ -640,19 +637,23 @@ pub fn handle_global_search_input(
                 window.request_redraw();
             }
             Key::Named(NamedKey::Enter) => {
-                let results_len = ui.global_search_results.len();
-                if ui.global_search_selected < results_len {
-                    let (path, line_idx, _) = &ui.global_search_results[ui.global_search_selected];
-                    ui.active_modal = None;
-                    handle_action(ui, state, UiAction::OpenFileAt(path.clone(), *line_idx), window, elwt, gpu, atlas, font_bytes);
+                if ui.global_search_query != ui.last_searched_global_query {
+                    ui.last_searched_global_query = ui.global_search_query.clone();
+                    let q = ui.global_search_query.clone();
+                    ui.run_global_search(q);
+                } else {
+                    let results_len = ui.global_search_results.len();
+                    if ui.global_search_selected < results_len {
+                        let (path, line_idx, _) = &ui.global_search_results[ui.global_search_selected];
+                        ui.active_modal = None;
+                        handle_action(ui, state, UiAction::OpenFileAt(path.clone(), *line_idx), window, elwt, gpu, atlas, font_bytes);
+                    }
                 }
                 window.request_redraw();
             }
             Key::Named(NamedKey::Backspace) => {
                 ui.global_search_query.pop();
                 ui.global_search_selected = 0;
-                let q = ui.global_search_query.clone();
-                ui.run_global_search(q);
                 window.request_redraw();
             }
             Key::Character(text) => {
@@ -662,8 +663,6 @@ pub fn handle_global_search_input(
                     }
                 }
                 ui.global_search_selected = 0;
-                let q = ui.global_search_query.clone();
-                ui.run_global_search(q);
                 window.request_redraw();
             }
             _ => {}
@@ -1713,10 +1712,15 @@ pub fn handle_project_search_keyboard(
             window.request_redraw();
         }
         Key::Named(NamedKey::Enter) => {
-            let results_len = ui.global_search_results.len();
-            if ui.global_search_selected < results_len {
-                let (path, line_idx, _) = &ui.global_search_results[ui.global_search_selected];
-                handle_action(ui, state, UiAction::OpenFileAt(path.clone(), *line_idx), window, elwt, gpu, atlas, font_bytes);
+            if alt {
+                let results_len = ui.global_search_results.len();
+                if ui.global_search_selected < results_len {
+                    let (path, line_idx, _) = &ui.global_search_results[ui.global_search_selected];
+                    handle_action(ui, state, UiAction::OpenFileAt(path.clone(), *line_idx), window, elwt, gpu, atlas, font_bytes);
+                }
+            } else {
+                let q = ui.global_search_query.clone();
+                ui.run_global_search(q);
             }
             window.request_redraw();
         }
@@ -1735,8 +1739,6 @@ pub fn handle_project_search_keyboard(
                 } else {
                     ui.global_search_query.pop();
                     ui.global_search_selected = 0;
-                    let q = ui.global_search_query.clone();
-                    ui.run_global_search(q);
                 }
                 window.request_redraw();
             }
@@ -1754,8 +1756,6 @@ pub fn handle_project_search_keyboard(
                 }
                 if !ui.global_search_focus_replace {
                     ui.global_search_selected = 0;
-                    let q = ui.global_search_query.clone();
-                    ui.run_global_search(q);
                 }
                 window.request_redraw();
             }

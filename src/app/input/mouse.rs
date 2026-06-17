@@ -12,7 +12,7 @@ use crate::app::handler::handle_action;
 
 
 
-pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
+pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
     if state.is_actually_dragging_tab() {
         window.set_cursor_icon(winit::window::CursorIcon::Grabbing);
         return;
@@ -224,8 +224,12 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
     } else if on_dock_border {
         window.set_cursor_icon(winit::window::CursorIcon::RowResize);
     } else {
+        let active_path = active_tab.path.as_deref().unwrap_or("");
+        let is_special_view = active_path.starts_with("diagnostics://") || active_path == "search://project";
+
         let is_in_editor = ui.active_modal.is_none()
             && ui.active_menu.is_none()
+            && !is_special_view
             && mouse_x >= text_area_x
             && mouse_x < minimap_x
             && mouse_y >= pane_top + ui.tabbar_height + ui.breadcrumb_height
@@ -236,79 +240,125 @@ pub fn update_cursor_icon(window: &Window, ui: &UiState, state: &AppState) {
         } else {
             let mut is_pointer = false;
 
-            // Check horizontal search panel hover
-            if ui.show_search_panel && hovered_pane_idx == state.active_pane_idx && active_tab.path.as_deref() != Some("search://project") {
+            if is_special_view
+                && mouse_x >= text_area_x
+                && mouse_x < minimap_x
+                && mouse_y >= pane_top + ui.tabbar_height + ui.breadcrumb_height
+                && mouse_y < pane_bottom - 14.0
+            {
+                if active_path == "search://project" {
+                    let list_y = pane_top + ui.tabbar_height + ui.breadcrumb_height;
+                    let item_height = ui.buffer_line_height;
+                    let render_items = crate::ui::components::editor::project_search::build_search_render_items(ui);
+                    let item_idx = ui.global_search_scroll + ((mouse_y - list_y) / item_height).floor() as usize;
+                    if item_idx < render_items.len() {
+                        match &render_items[item_idx] {
+                            crate::ui::components::editor::project_search::SearchRenderItem::FileHeader { .. } => {
+                                is_pointer = true;
+                            }
+                            crate::ui::components::editor::project_search::SearchRenderItem::CodeLine {
+                                is_first_in_range,
+                                is_last_in_range,
+                                ..
+                            } => {
+                                if (*is_first_in_range || *is_last_in_range)
+                                    && mouse_x >= text_area_x
+                                    && mouse_x < text_area_x + 22.0
+                                {
+                                    is_pointer = true;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                } else {
+                    is_pointer = true;
+                }
+            }
+
+            let is_local = active_path != "search://project";
+            let is_search_shown = ui.show_search_panel || !is_local;
+
+            if is_search_shown {
                 let bar_x = sidebar_width;
                 let bar_w = w_width - sidebar_width;
                 let bar_y = pane_top + ui.tabbar_height;
                 let bar_h = ui.breadcrumb_height;
 
                 if mouse_x >= bar_x && mouse_x < bar_x + bar_w && mouse_y >= bar_y && mouse_y < bar_y + bar_h {
-                    let label_find_w = 40.0f32;
-                    let input_find_w = 120.0f32;
-                    let count_w = 60.0f32;
-                    let btn_prev_w = 20.0f32;
-                    let btn_next_w = 20.0f32;
-                    let label_replace_w = 60.0f32;
-                    let input_replace_w = 120.0f32;
-                    let btn_replace_w = 60.0f32;
-                    let close_btn_w = 20.0f32;
+                    let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
 
-                    let mut cur_x = bar_x + 10.0;
-                    let input_h = bar_h - 6.0;
-                    let input_y = bar_y + 3.0;
+                    let input_h = 24.0f32;
+                    let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
+                    let input_y_1 = bar_y + (row_h - input_h) / 2.0;
+                    let input_y_2 = bar_y + row_h + (row_h - input_h) / 2.0;
 
-                    // Find label
-                    cur_x += label_find_w;
+                    let toggle_btn_w = 22.0f32;
+                    let toggle_btn_x = bar_x + 10.0;
+                    let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
 
-                    // Find input
-                    let find_in_start = cur_x;
-                    let find_in_end = cur_x + input_find_w;
-                    cur_x += input_find_w + 10.0;
+                    let close_btn_w = 22.0f32;
+                    let btn_next_w = 22.0f32;
+                    let btn_prev_w = 22.0f32;
+                    let btn_rep_toggle_w = if is_local { 0.0f32 } else { 22.0f32 };
+                    let btn_filter_w = if is_local { 0.0f32 } else { 22.0f32 };
+                    let count_w = if is_local { 70.0f32 } else { 75.0f32 };
 
-                    // Count label
-                    cur_x += count_w;
+                    let close_x = bar_x + bar_w - 10.0 - close_btn_w;
+                    let next_x = close_x - 8.0 - btn_next_w;
+                    let prev_x = next_x - 4.0 - btn_prev_w;
 
-                    // Prev button
-                    let prev_btn_start = cur_x;
-                    let prev_btn_end = cur_x + btn_prev_w;
-                    cur_x += btn_prev_w + 4.0;
+                    let (rep_toggle_x, filter_x, count_x) = if is_local {
+                        let count_x = prev_x - 8.0 - count_w;
+                        (prev_x, prev_x, count_x)
+                    } else {
+                        let rep_toggle_x = prev_x - 8.0 - btn_rep_toggle_w;
+                        let filter_x = rep_toggle_x - 4.0 - btn_filter_w;
+                        let count_x = filter_x - 8.0 - count_w;
+                        (rep_toggle_x, filter_x, count_x)
+                    };
 
-                    // Next button
-                    let next_btn_start = cur_x;
-                    let next_btn_end = cur_x + btn_next_w;
-                    cur_x += btn_next_w + 15.0;
+                    let input_find_w = 350.0f32.min(count_x - 10.0 - input_start_x).max(50.0);
 
-                    // Replace label
-                    cur_x += label_replace_w;
+                    // Row 1 hover
+                    if mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h {
+                        // Options inside find input
+                        let opt_btn_w = 20.0f32;
+                        let opt_regex_x = input_start_x + input_find_w - 5.0 - opt_btn_w;
+                        let opt_word_x = opt_regex_x - 2.0 - opt_btn_w;
+                        let opt_case_x = opt_word_x - 2.0 - opt_btn_w;
 
-                    // Replace input
-                    let rep_in_start = cur_x;
-                    let rep_in_end = cur_x + input_replace_w;
-                    cur_x += input_replace_w + 10.0;
-
-                    // Replace button
-                    let rep_btn_start = cur_x;
-                    let rep_btn_end = cur_x + btn_replace_w;
-
-                    // Close button
-                    let close_btn_start = bar_x + bar_w - 25.0;
-                    let close_btn_end = close_btn_start + close_btn_w;
-
-                    if mouse_y >= input_y && mouse_y < input_y + input_h {
-                        if (mouse_x >= find_in_start && mouse_x < find_in_end) || (mouse_x >= rep_in_start && mouse_x < rep_in_end) {
+                        if mouse_x >= opt_case_x && mouse_x < opt_regex_x + opt_btn_w {
+                            window.set_cursor_icon(winit::window::CursorIcon::Pointer);
+                            return;
+                        } else if mouse_x >= input_start_x && mouse_x < input_start_x + input_find_w {
                             window.set_cursor_icon(winit::window::CursorIcon::Text);
                             return;
-                        }
-                        if (mouse_x >= prev_btn_start && mouse_x < prev_btn_end)
-                            || (mouse_x >= next_btn_start && mouse_x < next_btn_end)
-                            || (mouse_x >= rep_btn_start && mouse_x < rep_btn_end)
-                            || (mouse_x >= close_btn_start && mouse_x < close_btn_end)
+                        } else if (mouse_x >= toggle_btn_x && mouse_x < toggle_btn_x + toggle_btn_w)
+                            || (mouse_x >= filter_x && mouse_x < filter_x + btn_filter_w)
+                            || (mouse_x >= rep_toggle_x && mouse_x < rep_toggle_x + btn_rep_toggle_w)
+                            || (mouse_x >= prev_x && mouse_x < prev_x + btn_prev_w)
+                            || (mouse_x >= next_x && mouse_x < next_x + btn_next_w)
+                            || (mouse_x >= close_x && mouse_x < close_x + close_btn_w)
                         {
                             window.set_cursor_icon(winit::window::CursorIcon::Pointer);
                             return;
                         }
                     }
+
+                    // Row 2 hover
+                    if show_replace && mouse_y >= input_y_2 && mouse_y < input_y_2 + input_h {
+                        if mouse_x >= input_start_x && mouse_x < input_start_x + input_find_w {
+                            window.set_cursor_icon(winit::window::CursorIcon::Text);
+                            return;
+                        } else if (mouse_x >= prev_x && mouse_x < prev_x + btn_prev_w)
+                            || (mouse_x >= next_x && mouse_x < next_x + btn_next_w)
+                        {
+                            window.set_cursor_icon(winit::window::CursorIcon::Pointer);
+                            return;
+                        }
+                    }
+
                     window.set_cursor_icon(winit::window::CursorIcon::Default);
                     return;
                 }
@@ -1186,25 +1236,37 @@ pub fn handle_mouse_input(
                         let is_local = !is_project_search;
                         let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
 
-                        let count_w = 70.0f32;
+                        let count_w = if is_local { 70.0f32 } else { 75.0f32 };
                         let btn_prev_w = 22.0f32;
                         let btn_next_w = 22.0f32;
                         let close_btn_w = 22.0f32;
 
-                        let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
-                        let input_h = row_h - 6.0;
-                        let input_y_1 = bar_y + 3.0;
-                        let input_y_2 = bar_y + row_h + 3.0;
+                        let btn_rep_toggle_w = if is_local { 0.0f32 } else { 22.0f32 };
+                        let btn_filter_w = if is_local { 0.0f32 } else { 22.0f32 };
 
-                        let close_x = bar_x + bar_w - 25.0;
-                        let next_x = close_x - 10.0 - btn_next_w;
+                        let input_h = 24.0f32;
+                        let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
+                        let input_y_1 = bar_y + (row_h - input_h) / 2.0;
+                        let input_y_2 = bar_y + row_h + (row_h - input_h) / 2.0;
+
+                        let close_x = bar_x + bar_w - 10.0 - close_btn_w;
+                        let next_x = close_x - 8.0 - btn_next_w;
                         let prev_x = next_x - 4.0 - btn_prev_w;
-                        let count_x = prev_x - 10.0 - count_w;
+
+                        let (rep_toggle_x, filter_x, count_x) = if is_local {
+                            let count_x = prev_x - 8.0 - count_w;
+                            (prev_x, prev_x, count_x)
+                        } else {
+                            let rep_toggle_x = prev_x - 8.0 - btn_rep_toggle_w;
+                            let filter_x = rep_toggle_x - 4.0 - btn_filter_w;
+                            let count_x = filter_x - 8.0 - count_w;
+                            (rep_toggle_x, filter_x, count_x)
+                        };
                         
                         let toggle_btn_w = 22.0f32;
                         let toggle_btn_x = bar_x + 10.0;
                         let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
-                        let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
+                        let input_find_w = 350.0f32.min(count_x - 10.0 - input_start_x).max(50.0);
 
                         let pane_top = bar_y - ui.tabbar_height;
                         let pane_bottom = pane_top + (if state.inactive_panes.is_empty() {
@@ -1217,15 +1279,41 @@ pub fn handle_mouse_input(
 
                         // Check Row 1 click (Find, Prev, Next, Close, and options inside find input)
                         if state.mouse_y >= input_y_1 && state.mouse_y < input_y_1 + input_h {
-                            // Check Toggle Replace button click
+                            // Check Toggle Replace / Collapse All button click
                             if state.mouse_x >= toggle_btn_x && state.mouse_x < toggle_btn_x + toggle_btn_w {
                                 if is_local {
                                     ui.show_replace = !ui.show_replace;
                                 } else {
-                                    ui.global_show_replace = !ui.global_show_replace;
+                                    let mut unique_files = std::collections::HashSet::new();
+                                    for (path, _, _) in &ui.global_search_results {
+                                        unique_files.insert(path.clone());
+                                    }
+                                    let unique_files_count = unique_files.len();
+                                    let all_collapsed = unique_files_count > 0 && ui.collapsed_search_files.len() >= unique_files_count;
+                                    if all_collapsed {
+                                        ui.collapsed_search_files.clear();
+                                    } else {
+                                        for path in unique_files {
+                                            ui.collapsed_search_files.insert(path);
+                                        }
+                                    }
                                 }
                                 window.request_redraw();
                                 return;
+                            }
+
+                            if !is_local {
+                                // Click on Replace Toggle button
+                                if state.mouse_x >= rep_toggle_x && state.mouse_x < rep_toggle_x + btn_rep_toggle_w {
+                                    ui.global_show_replace = !ui.global_show_replace;
+                                    window.request_redraw();
+                                    return;
+                                }
+                                // Click on Filter button
+                                if state.mouse_x >= filter_x && state.mouse_x < filter_x + btn_filter_w {
+                                    window.request_redraw();
+                                    return;
+                                }
                             }
 
                             // Check options inside Find input
@@ -1951,42 +2039,92 @@ pub fn handle_mouse_input(
                                  // Click inside editor area
                                  let bottom_limit = if show_horizontal_scrollbar { editor_bottom_limit - 14.0 } else { editor_bottom_limit };
                                  if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < bottom_limit {
-                                        if state.tabs[active_tab_idx].path.as_deref() == Some("search://project") {
-                                              let list_y = editor_top;
-                                              let item_height = ui.buffer_line_height;
-                                              if state.mouse_y >= list_y {
-                                                  let clicked_idx = ((state.mouse_y - list_y) / item_height).floor() as usize + ui.global_search_scroll;
-                                                  
-                                                  let mut render_items = Vec::new();
-                                                  let mut last_path = None;
-                                                  for (idx, (path, line_idx, _content)) in ui.global_search_results.iter().enumerate() {
-                                                      if last_path.as_ref() != Some(path) {
-                                                          render_items.push((None, path.clone(), 0));
-                                                          last_path = Some(path.clone());
-                                                      }
-                                                      render_items.push((Some(idx), path.clone(), *line_idx));
-                                                  }
-                                                  
-                                                  if clicked_idx < render_items.len() {
-                                                      if let (Some(result_idx), path, line_idx) = &render_items[clicked_idx] {
-                                                          ui.global_search_selected = *result_idx;
-                                                          crate::app::handler::handle_action(
-                                                              ui,
-                                                              state,
-                                                              UiAction::OpenFileAt(path.clone(), *line_idx),
-                                                              window,
-                                                              elwt,
-                                                              gpu,
-                                                              atlas,
-                                                              font_bytes,
-                                                          );
-                                                          window.request_redraw();
-                                                          return;
-                                                      }
-                                                  }
-                                              }
-                                              return;
-                                         }
+                                         if state.tabs[active_tab_idx].path.as_deref() == Some("search://project") {
+                                               let list_y = editor_top;
+                                               let item_height = ui.buffer_line_height;
+                                               if state.mouse_y >= list_y {
+                                                   let clicked_idx = ((state.mouse_y - list_y) / item_height).floor() as usize + ui.global_search_scroll;
+                                                   
+                                                     let render_items = crate::ui::components::editor::project_search::build_search_render_items(ui);
+                                                     
+                                                     if clicked_idx < render_items.len() {
+                                                         match &render_items[clicked_idx] {
+                                                             crate::ui::components::editor::project_search::SearchRenderItem::FileHeader { path } => {
+                                                                 let selected_path = ui.global_search_results.get(ui.global_search_selected).map(|r| &r.0);
+                                                                 let is_file_selected = Some(path) == selected_path;
+                                                                 let row_hover = true;
+                                                                 let show_open_btn = row_hover || is_file_selected;
+
+                                                                let btn_text = "Open File Alt-Enter";
+                                                                let btn_chars = btn_text.chars().count();
+                                                                let btn_w = btn_chars as f32 * ui.ui_char_width + 16.0;
+                                                                let btn_x = text_area_x + text_viewport_w - btn_w - 15.0;
+
+                                                                if show_open_btn && state.mouse_x >= btn_x && state.mouse_x < btn_x + btn_w {
+                                                                    if let Some(pos) = ui.global_search_results.iter().position(|(p, _, _)| p == path) {
+                                                                        let (_, line_idx, _) = &ui.global_search_results[pos];
+                                                                        crate::app::handler::handle_action(
+                                                                            ui, state,
+                                                                            UiAction::OpenFileAt(path.clone(), *line_idx),
+                                                                            window, elwt, gpu, atlas, font_bytes,
+                                                                        );
+                                                                    }
+                                                                } else {
+                                                                    if ui.collapsed_search_files.contains(path) {
+                                                                        ui.collapsed_search_files.remove(path);
+                                                                    } else {
+                                                                        ui.collapsed_search_files.insert(path.clone());
+                                                                    }
+                                                                }
+                                                                window.request_redraw();
+                                                                return;
+                                                            }
+                                                            crate::ui::components::editor::project_search::SearchRenderItem::CodeLine {
+                                                                path,
+                                                                line_idx,
+                                                                result_idx,
+                                                                is_first_in_range,
+                                                                is_last_in_range,
+                                                                start_line_of_range,
+                                                                end_line_of_range,
+                                                                ..
+                                                            } => {
+                                                                // Check if click is on expand buttons in the gutter
+                                                                if state.mouse_x >= text_area_x && state.mouse_x < text_area_x + 22.0 {
+                                                                    if *is_first_in_range {
+                                                                        if let Some(pos) = ui.global_search_results.iter().position(|(p, l, _)| p == path && *l >= *start_line_of_range && *l <= *end_line_of_range) {
+                                                                            let match_line = ui.global_search_results[pos].1;
+                                                                            let entry = ui.global_search_expanded_margins.entry((path.clone(), match_line)).or_insert((2, 2));
+                                                                            entry.0 += 10;
+                                                                            window.request_redraw();
+                                                                        }
+                                                                    } else if *is_last_in_range {
+                                                                        if let Some(pos) = ui.global_search_results.iter().rposition(|(p, l, _)| p == path && *l >= *start_line_of_range && *l <= *end_line_of_range) {
+                                                                            let match_line = ui.global_search_results[pos].1;
+                                                                            let entry = ui.global_search_expanded_margins.entry((path.clone(), match_line)).or_insert((2, 2));
+                                                                            entry.1 += 10;
+                                                                            window.request_redraw();
+                                                                        }
+                                                                    }
+                                                                } else {
+                                                                    if let Some(res_idx) = result_idx {
+                                                                        ui.global_search_selected = *res_idx;
+                                                                    }
+                                                                    crate::app::handler::handle_action(
+                                                                        ui, state,
+                                                                        UiAction::OpenFileAt(path.clone(), *line_idx),
+                                                                        window, elwt, gpu, atlas, font_bytes,
+                                                                    );
+                                                                    window.request_redraw();
+                                                                }
+                                                                return;
+                                                            }
+                                                            _ => {}
+                                                        }
+                                                    }
+                                                }
+                                                return;
+                                          }
 
                                        // 2. Check if virtual diagnostics tab item was clicked
                                        let mut clicked_info = None;

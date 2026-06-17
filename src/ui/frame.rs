@@ -317,6 +317,7 @@ impl UiState {
     }
 
     pub fn run_global_search(&mut self, query: String) {
+        self.project_search_file_cache.clear();
         if query.is_empty() {
             self.global_search_results.clear();
             self.global_search_selected = 0;

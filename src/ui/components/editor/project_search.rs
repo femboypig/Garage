@@ -1,9 +1,24 @@
 use crate::ui::{UiState, Vertex, FontAtlas};
 use std::path::PathBuf;
 
-enum SearchRenderItem {
-    FileHeader { path: PathBuf },
-    Match { line_idx: usize, content: String, result_idx: usize },
+pub enum SearchRenderItem {
+    FileHeader {
+        path: PathBuf,
+    },
+    CodeLine {
+        path: PathBuf,
+        line_idx: usize,
+        content: String,
+        is_match: bool,
+        result_idx: Option<usize>,
+        is_first_in_range: bool,
+        is_last_in_range: bool,
+        start_line_of_range: usize,
+        end_line_of_range: usize,
+    },
+    Separator {
+        path: PathBuf,
+    },
 }
 
 pub fn draw_project_search(
@@ -33,20 +48,8 @@ pub fn draw_project_search(
         ui.config.theme.editor_bg,
     );
 
-    // 2. Construct flat rendering items (grouped by file)
-    let mut render_items = Vec::new();
-    let mut last_path = None;
-    for (idx, (path, line_idx, content)) in ui.global_search_results.iter().enumerate() {
-        if last_path.as_ref() != Some(path) {
-            render_items.push(SearchRenderItem::FileHeader { path: path.clone() });
-            last_path = Some(path.clone());
-        }
-        render_items.push(SearchRenderItem::Match {
-            line_idx: *line_idx,
-            content: content.clone(),
-            result_idx: idx,
-        });
-    }
+    // 2. Build search rendering items
+    let render_items = build_search_render_items(ui);
 
     let list_y = editor_y;
     let item_height = ui.buffer_line_height;
@@ -72,7 +75,7 @@ pub fn draw_project_search(
 
     // Find render index of the selected match
     let selected_render_idx = render_items.iter().position(|item| match item {
-        SearchRenderItem::Match { result_idx, .. } => *result_idx == ui.global_search_selected,
+        SearchRenderItem::CodeLine { result_idx: Some(res_idx), .. } => *res_idx == ui.global_search_selected,
         _ => false,
     }).unwrap_or(0);
 
@@ -110,39 +113,98 @@ pub fn draw_project_search(
                     if row_hover { ui.config.theme.titlebar_hover_bg } else { ui.config.theme.tabbar_bg },
                 );
 
-                // Detect file extension for icon
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                let icon_name = match ext {
-                    "rs" => "rust",
-                    "toml" => "toml",
-                    "json" => "json",
-                    "md" => "md",
-                    _ => "file",
-                };
-                
-                // Draw icon
-                let icon_sz = 14.0f32;
-                let icon_y = (item_y + (item_height - icon_sz) / 2.0).round();
-                ui.push_icon(vertices, indices, atlas, queue, icon_name, text_area_x + 10.0, icon_y, ui.config.theme.syntax_keyword, icon_sz);
+                // Draw collapse chevron (right if collapsed, down if expanded)
+                let is_collapsed = ui.collapsed_search_files.contains(path);
+                let chevron_icon = if is_collapsed { "chevron_right" } else { "chevron_down" };
+                let chevron_sz = 14.0f32;
+                let chevron_y = (item_y + (item_height - chevron_sz) / 2.0).round();
+                ui.push_icon(vertices, indices, atlas, queue, chevron_icon, text_area_x + 10.0, chevron_y, ui.config.theme.modal_text_muted, chevron_sz);
 
-                // Draw file path text
-                let path_str = path.to_string_lossy().to_string();
-                let display_path = path_str.strip_prefix("./").unwrap_or(&path_str).to_string();
+                // Draw file path text: File Name (Normal) + Parent Path (Muted)
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let parent_dir = path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+                let parent_dir = parent_dir.strip_prefix("./").unwrap_or(&parent_dir).to_string();
+                let parent_dir = if parent_dir.is_empty() { String::new() } else { format!(" {}/", parent_dir) };
+
+                // Draw File Name (start at 30.0 to lay next to collapse chevron)
+                let name_x = text_area_x + 30.0;
+                let name_len = file_name.chars().count();
                 ui.push_str(
                     vertices,
                     indices,
                     atlas,
                     queue,
-                    &display_path,
-                    text_area_x + 10.0 + icon_sz + 6.0,
+                    file_name,
+                    name_x,
                     text_baseline,
                     ui.config.theme.modal_text_title,
                     ui.buffer_font_size,
                     ui.buffer_char_width,
                 );
+
+                // Draw Parent Path next to it
+                if !parent_dir.is_empty() {
+                    let parent_x = name_x + name_len as f32 * ui.buffer_char_width;
+                    ui.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        &parent_dir,
+                        parent_x,
+                        text_baseline,
+                        ui.config.theme.syntax_comment,
+                        ui.buffer_font_size,
+                        ui.buffer_char_width,
+                    );
+                }
+
+                // Show button if row is hovered, or if active selection belongs to this file
+                let selected_path = ui.global_search_results.get(ui.global_search_selected).map(|r| &r.0);
+                let is_file_selected = Some(path) == selected_path;
+                let show_open_btn = row_hover || is_file_selected;
+
+                if show_open_btn {
+                    let btn_text = "Open File Alt-Enter";
+                    let btn_chars = btn_text.chars().count();
+                    let btn_w = btn_chars as f32 * ui.ui_char_width + 16.0;
+                    let btn_h = item_height - 6.0;
+                    let btn_x = text_area_x + text_viewport_w - btn_w - 15.0;
+                    let btn_y = item_y + 3.0;
+
+                    let is_btn_hover = mouse_x >= btn_x && mouse_x < btn_x + btn_w && mouse_y >= btn_y && mouse_y < btn_y + btn_h;
+                    let btn_bg = if is_btn_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg };
+
+                    ui.push_quad(vertices, indices, btn_x, btn_y, btn_w, btn_h, white_uv, btn_bg);
+                    ui.push_quad(vertices, indices, btn_x, btn_y, btn_w, 1.0, white_uv, ui.config.theme.button_border);
+                    ui.push_quad(vertices, indices, btn_x, btn_y + btn_h - 1.0, btn_w, 1.0, white_uv, ui.config.theme.button_border);
+                    ui.push_quad(vertices, indices, btn_x, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
+                    ui.push_quad(vertices, indices, btn_x + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
+
+                    let btn_baseline = (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+                    ui.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        btn_text,
+                        btn_x + 8.0,
+                        btn_baseline,
+                        ui.config.theme.button_text,
+                        ui.ui_font_size,
+                        ui.ui_char_width,
+                    );
+                }
             }
-            SearchRenderItem::Match { line_idx, content, result_idx, .. } => {
-                let is_selected = *result_idx == ui.global_search_selected;
+            SearchRenderItem::CodeLine {
+                line_idx,
+                content,
+                result_idx,
+                is_first_in_range,
+                is_last_in_range,
+                ..
+            } => {
+                let is_selected = result_idx.map_or(false, |res_idx| res_idx == ui.global_search_selected);
 
                 let bg_color = if is_selected {
                     ui.config.theme.sidebar_hover_bg
@@ -164,10 +226,31 @@ pub fn draw_project_search(
                     );
                 }
 
-                // Draw line number
+                // Draw expand gutter buttons
+                if *is_first_in_range {
+                    let is_hover = mouse_x >= text_area_x && mouse_x < text_area_x + 22.0 && mouse_y >= item_y && mouse_y < item_y + item_height;
+                    let icon_color = if is_hover { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_muted };
+                    if is_hover {
+                        ui.push_quad(vertices, indices, text_area_x + 4.0, item_y + 2.0, 18.0, item_height - 4.0, white_uv, ui.config.theme.button_hover_bg);
+                    }
+                    // draw horizontal line at top
+                    ui.push_quad(vertices, indices, text_area_x + 6.0, item_y + 3.0, 14.0, 1.5, white_uv, icon_color);
+                    ui.push_icon(vertices, indices, atlas, queue, "chevron_up", text_area_x + 8.0, (item_y + 5.0).round(), icon_color, 10.0);
+                } else if *is_last_in_range {
+                    let is_hover = mouse_x >= text_area_x && mouse_x < text_area_x + 22.0 && mouse_y >= item_y && mouse_y < item_y + item_height;
+                    let icon_color = if is_hover { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_muted };
+                    if is_hover {
+                        ui.push_quad(vertices, indices, text_area_x + 4.0, item_y + 2.0, 18.0, item_height - 4.0, white_uv, ui.config.theme.button_hover_bg);
+                    }
+                    // draw horizontal line at bottom
+                    ui.push_quad(vertices, indices, text_area_x + 6.0, item_y + item_height - 4.5, 14.0, 1.5, white_uv, icon_color);
+                    ui.push_icon(vertices, indices, atlas, queue, "chevron_down", text_area_x + 8.0, (item_y + item_height - 15.0).round(), icon_color, 10.0);
+                }
+
+                // Draw line number (centered/padded)
                 let line_str = format!("{}", line_idx + 1);
                 let line_w = line_str.chars().count() as f32 * ui.buffer_char_width;
-                let line_x = text_area_x + 24.0 + (35.0 - line_w).max(0.0);
+                let line_x = text_area_x + 10.0 + (35.0 - line_w).max(0.0);
                 ui.push_str(
                     vertices,
                     indices,
@@ -176,27 +259,21 @@ pub fn draw_project_search(
                     &line_str,
                     line_x,
                     text_baseline,
-                    ui.config.theme.modal_text_muted,
+                    ui.config.theme.syntax_comment,
                     ui.buffer_font_size,
                     ui.buffer_char_width,
                 );
 
-                // Draw snippet
-                let snippet_x = text_area_x + 24.0 + 35.0 + 15.0; // Total indent = 74px
-                let max_snippet_w = text_area_x + text_viewport_w - snippet_x - 30.0;
-                let max_snippet_chars = (max_snippet_w / ui.buffer_char_width).floor().max(1.0) as usize;
-
-                let mut snippet = content.clone();
-                if snippet.chars().count() > max_snippet_chars {
-                    snippet = snippet.chars().take(max_snippet_chars.saturating_sub(3)).collect::<String>() + "...";
-                }
+                // Draw code content
+                let snippet_x = text_area_x + 60.0;
+                let display_content = content.replace('\t', "    ");
 
                 ui.push_str(
                     vertices,
                     indices,
                     atlas,
                     queue,
-                    &snippet,
+                    &display_content,
                     snippet_x,
                     text_baseline,
                     if is_selected { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_normal },
@@ -215,9 +292,9 @@ pub fn draw_project_search(
                     let mut builder = regex::RegexBuilder::new(&pattern);
                     builder.case_insensitive(!ui.global_search_case_sensitive);
                     if let Ok(re) = builder.build() {
-                        for m in re.find_iter(&snippet) {
-                            let start_char = snippet[..m.start()].chars().count();
-                            let end_char = snippet[..m.end()].chars().count();
+                        for m in re.find_iter(&display_content) {
+                            let start_char = display_content[..m.start()].chars().count();
+                            let end_char = display_content[..m.end()].chars().count();
                             
                             let highlight_x = snippet_x + start_char as f32 * ui.buffer_char_width;
                             let highlight_w = (end_char - start_char) as f32 * ui.buffer_char_width;
@@ -230,11 +307,28 @@ pub fn draw_project_search(
                                 highlight_w,
                                 item_height - 2.0,
                                 white_uv,
-                                [0.9, 0.7, 0.0, 0.35],
+                                if is_selected {
+                                    [0.2, 0.4, 0.8, 0.4] // Active match (blue highlight)
+                                } else {
+                                    [0.9, 0.7, 0.0, 0.35] // Muted match (yellow highlight)
+                                },
                             );
                         }
                     }
                 }
+            }
+            SearchRenderItem::Separator { .. } => {
+                // Draw a subtle horizontal separator line across the code block
+                ui.push_quad(
+                    vertices,
+                    indices,
+                    text_area_x + 50.0,
+                    (item_y + item_height / 2.0 - 0.5).round(),
+                    text_viewport_w - 70.0,
+                    1.0,
+                    white_uv,
+                    ui.config.theme.button_border,
+                );
             }
         }
     }
@@ -273,4 +367,83 @@ pub fn draw_project_search(
         );
     }
 }
+
+pub fn build_search_render_items(ui: &mut UiState) -> Vec<SearchRenderItem> {
+    let mut file_groups: Vec<(PathBuf, Vec<(usize, usize)>)> = Vec::new();
+    for (result_idx, (path, line_idx, _)) in ui.global_search_results.iter().enumerate() {
+        if let Some(pos) = file_groups.iter().position(|(p, _)| p == path) {
+            file_groups[pos].1.push((*line_idx, result_idx));
+        } else {
+            file_groups.push((path.clone(), vec![(*line_idx, result_idx)]));
+        }
+    }
+
+    let mut render_items = Vec::new();
+    for (path, mut matches) in file_groups {
+        render_items.push(SearchRenderItem::FileHeader { path: path.clone() });
+
+        if ui.collapsed_search_files.contains(&path) {
+            continue;
+        }
+
+        matches.sort_by_key(|m| m.0);
+
+        let file_lines = ui.project_search_file_cache.entry(path.clone()).or_insert_with(|| {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                content.lines().map(|s| s.to_string()).collect()
+            } else {
+                Vec::new()
+            }
+        });
+
+        let file_len = file_lines.len();
+        if file_len == 0 {
+            continue;
+        }
+
+        let mut ranges: Vec<(usize, usize, Vec<(usize, usize)>)> = Vec::new();
+        for (line_idx, res_idx) in matches {
+            let (extra_before, extra_after) = ui.global_search_expanded_margins
+                .get(&(path.clone(), line_idx))
+                .copied()
+                .unwrap_or((2, 2));
+
+            let start = line_idx.saturating_sub(extra_before);
+            let end = (line_idx + extra_after).min(file_len - 1);
+
+            if let Some(last) = ranges.last_mut() {
+                if start <= last.1 + 1 {
+                    last.1 = last.1.max(end);
+                    last.2.push((line_idx, res_idx));
+                    continue;
+                }
+            }
+            ranges.push((start, end, vec![(line_idx, res_idx)]));
+        }
+
+        for (r_idx, (start, end, range_matches)) in ranges.iter().enumerate() {
+            for i in *start..=*end {
+                let is_match = range_matches.iter().any(|m| m.0 == i);
+                let res_idx = range_matches.iter().find(|m| m.0 == i).map(|m| m.1);
+                let content = file_lines.get(i).cloned().unwrap_or_default();
+                render_items.push(SearchRenderItem::CodeLine {
+                    path: path.clone(),
+                    line_idx: i,
+                    content,
+                    is_match,
+                    result_idx: res_idx,
+                    is_first_in_range: i == *start,
+                    is_last_in_range: i == *end,
+                    start_line_of_range: *start,
+                    end_line_of_range: *end,
+                });
+            }
+            if r_idx + 1 < ranges.len() {
+                render_items.push(SearchRenderItem::Separator { path: path.clone() });
+            }
+        }
+    }
+    render_items
+}
+
 

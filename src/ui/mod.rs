@@ -147,7 +147,12 @@ pub struct UiState {
     pub global_search_regex: bool,
     pub global_search_focus_replace: bool,
     pub global_replace_query: String,
+    pub project_search_file_cache: std::collections::HashMap<std::path::PathBuf, Vec<String>>,
+    pub collapsed_search_files: std::collections::HashSet<std::path::PathBuf>,
+    pub last_searched_global_query: String,
+    pub global_search_expanded_margins: std::collections::HashMap<(std::path::PathBuf, usize), (usize, usize)>,
 }
+
 
 
 impl UiState {
@@ -296,6 +301,8 @@ impl UiState {
             diagnostics_click_targets: Vec::new(),
             diagnostics_file_cache: std::collections::HashMap::new(),
             collapsed_diagnostics: std::collections::HashSet::new(),
+            project_search_file_cache: std::collections::HashMap::new(),
+            collapsed_search_files: std::collections::HashSet::new(),
             diagnostics_changed: true,
             synced_revisions: std::collections::HashMap::new(),
             keymap: crate::editor::keymap::Keymap::load(),
@@ -319,7 +326,10 @@ impl UiState {
             global_search_regex: false,
             global_search_focus_replace: false,
             global_replace_query: String::new(),
+            last_searched_global_query: String::new(),
+            global_search_expanded_margins: std::collections::HashMap::new(),
         };
+
 
         state.rebuild_tree();
         state

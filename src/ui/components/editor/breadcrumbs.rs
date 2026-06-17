@@ -59,38 +59,54 @@ pub fn draw_breadcrumbs(
         let is_find_focused = !is_replace_focused;
         let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
 
-        let count_w = 70.0f32;
+        let count_w = if is_local { 70.0f32 } else { 75.0f32 };
         let btn_prev_w = 22.0f32;
         let btn_next_w = 22.0f32;
         let close_btn_w = 22.0f32;
 
+        let btn_rep_toggle_w = if is_local { 0.0f32 } else { 22.0f32 };
+        let btn_filter_w = if is_local { 0.0f32 } else { 22.0f32 };
+
+        let input_h = 24.0f32;
         let row_h = if show_replace { bar_h / 2.0 } else { bar_h };
-        let input_h = row_h - 6.0;
-        let input_y_1 = bar_y + 3.0;
-        let input_y_2 = bar_y + row_h + 3.0;
+        let input_y_1 = bar_y + (row_h - input_h) / 2.0;
+        let input_y_2 = bar_y + row_h + (row_h - input_h) / 2.0;
 
-        let l_baseline_1 = (bar_y + row_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
-        let l_baseline_2 = (bar_y + row_h + row_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+        let l_baseline_1 = (input_y_1 + input_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+        let l_baseline_2 = (input_y_2 + input_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
 
-        let close_x = bar_x + bar_w - 25.0;
-        let next_x = close_x - 10.0 - btn_next_w;
+        let close_x = bar_x + bar_w - 10.0 - close_btn_w;
+        let next_x = close_x - 8.0 - btn_next_w;
         let prev_x = next_x - 4.0 - btn_prev_w;
-        let count_x = prev_x - 10.0 - count_w;
+
+        let (rep_toggle_x, filter_x, count_x) = if is_local {
+            let count_x = prev_x - 8.0 - count_w;
+            (prev_x, prev_x, count_x)
+        } else {
+            let rep_toggle_x = prev_x - 8.0 - btn_rep_toggle_w;
+            let filter_x = rep_toggle_x - 4.0 - btn_filter_w;
+            let count_x = filter_x - 8.0 - count_w;
+            (rep_toggle_x, filter_x, count_x)
+        };
         
         let toggle_btn_w = 22.0f32;
         let toggle_btn_x = bar_x + 10.0;
         let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
-        let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
+        let input_find_w = 350.0f32.min(count_x - 10.0 - input_start_x).max(50.0);
 
         // --- ROW 1: FIND ---
-        // 0. Toggle Replace button (Chevron down/up)
+        // 0. Toggle Replace button / Collapse All button
         let toggle_hover = mouse_x >= toggle_btn_x && mouse_x < toggle_btn_x + toggle_btn_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
         if toggle_hover {
             ui.push_quad(vertices, indices, toggle_btn_x, input_y_1, toggle_btn_w, input_h, white_uv, ui.config.theme.button_hover_bg);
         }
         let toggle_icon_sz = 13.0f32;
         let toggle_icon_y = (input_y_1 + (input_h - toggle_icon_sz) / 2.0).round();
-        let toggle_icon_name = if show_replace { "chevron_up" } else { "chevron_down" };
+        let toggle_icon_name = if is_local {
+            if show_replace { "chevron_up" } else { "chevron_down" }
+        } else {
+            "list_collapse"
+        };
         ui.push_icon(
             vertices,
             indices,
@@ -183,37 +199,58 @@ pub fn draw_breadcrumbs(
                 if ui.is_searching_globally {
                     "Searching...".to_string()
                 } else {
-                    "0 results".to_string()
+                    "0/0".to_string()
                 }
             } else {
-                format!("{} res", ui.global_search_results.len())
+                format!("{}/{}", ui.global_search_selected + 1, ui.global_search_results.len())
             }
         };
         let count_text_len = count_str.chars().count() as f32;
         let count_text_x = count_x + ((count_w - count_text_len * ui.ui_char_width) / 2.0).round();
         ui.push_str(vertices, indices, atlas, queue, &count_str, count_text_x, l_baseline_1, ui.config.theme.modal_text_muted, ui.ui_font_size, ui.ui_char_width);
 
-        // 3. Prev Button (Chevron Up)
+        let button_icon_sz = 13.0f32;
+        let chevron_y = (input_y_1 + (input_h - button_icon_sz) / 2.0).round();
+
+        // 2.5 Optional Filter and Replace Toggle buttons for Project Search
+        if !is_local {
+            // Filter Button
+            let filter_hover = mouse_x >= filter_x && mouse_x < filter_x + btn_filter_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
+            ui.push_quad(vertices, indices, filter_x, input_y_1, btn_filter_w, input_h, white_uv, if filter_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
+            ui.push_quad(vertices, indices, filter_x, input_y_1, btn_filter_w, 1.0, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, filter_x, input_y_1 + input_h - 1.0, btn_filter_w, 1.0, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, filter_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, filter_x + btn_filter_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
+            ui.push_icon(vertices, indices, atlas, queue, "filter", filter_x + (btn_filter_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
+
+            // Replace Toggle Button
+            let rep_toggle_hover = mouse_x >= rep_toggle_x && mouse_x < rep_toggle_x + btn_rep_toggle_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
+            let rep_toggle_bg = if show_replace { ui.config.theme.selection_bg } else if rep_toggle_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg };
+            ui.push_quad(vertices, indices, rep_toggle_x, input_y_1, btn_rep_toggle_w, input_h, white_uv, rep_toggle_bg);
+            ui.push_quad(vertices, indices, rep_toggle_x, input_y_1, btn_rep_toggle_w, 1.0, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, rep_toggle_x, input_y_1 + input_h - 1.0, btn_rep_toggle_w, 1.0, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, rep_toggle_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
+            ui.push_quad(vertices, indices, rep_toggle_x + btn_rep_toggle_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
+            ui.push_icon(vertices, indices, atlas, queue, "replace", rep_toggle_x + (btn_rep_toggle_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
+        }
+
+        // 3. Prev Button (Chevron Left)
         let prev_hover = mouse_x >= prev_x && mouse_x < prev_x + btn_prev_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
         ui.push_quad(vertices, indices, prev_x, input_y_1, btn_prev_w, input_h, white_uv, if prev_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
         ui.push_quad(vertices, indices, prev_x, input_y_1, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
         ui.push_quad(vertices, indices, prev_x, input_y_1 + input_h - 1.0, btn_prev_w, 1.0, white_uv, ui.config.theme.button_border);
         ui.push_quad(vertices, indices, prev_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
         ui.push_quad(vertices, indices, prev_x + btn_prev_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        
-        let button_icon_sz = 13.0f32;
-        let chevron_y = (input_y_1 + (input_h - button_icon_sz) / 2.0).round();
-        ui.push_icon(vertices, indices, atlas, queue, "chevron_up", prev_x + (btn_prev_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
+        ui.push_icon(vertices, indices, atlas, queue, "chevron_left", prev_x + (btn_prev_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
 
-        // 4. Next Button (Chevron Down)
+        // 4. Next Button (Chevron Right)
         let next_hover = mouse_x >= next_x && mouse_x < next_x + btn_next_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
         ui.push_quad(vertices, indices, next_x, input_y_1, btn_next_w, input_h, white_uv, if next_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg });
         ui.push_quad(vertices, indices, next_x, input_y_1, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
         ui.push_quad(vertices, indices, next_x, input_y_1 + input_h - 1.0, btn_next_w, 1.0, white_uv, ui.config.theme.button_border);
         ui.push_quad(vertices, indices, next_x, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
         ui.push_quad(vertices, indices, next_x + btn_next_w - 1.0, input_y_1, 1.0, input_h, white_uv, ui.config.theme.button_border);
-        
-        ui.push_icon(vertices, indices, atlas, queue, "chevron_down", next_x + (btn_next_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
+        ui.push_icon(vertices, indices, atlas, queue, "chevron_right", next_x + (btn_next_w - button_icon_sz) / 2.0, chevron_y, ui.config.theme.button_text, button_icon_sz);
 
         // 5. Close Button (✕)
         let close_hover = mouse_x >= close_x && mouse_x < close_x + close_btn_w && mouse_y >= input_y_1 && mouse_y < input_y_1 + input_h;
