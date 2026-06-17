@@ -15,7 +15,7 @@ use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::{GpuContext, Vertex};
-use crate::ui::UiState;
+use crate::machkit::UiState;
 
 use self::state::{AppState, Tab};
 
@@ -313,7 +313,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     let atlas_ref = atlas.as_mut().unwrap();
                     let mut mut_window = window.clone();
                     for f in files {
-                        let open_action = crate::ui::UiAction::OpenFile(std::path::PathBuf::from(f));
+                        let open_action = crate::machkit::UiAction::OpenFile(std::path::PathBuf::from(f));
                         crate::app::handler::handle_action(
                             ui_ref,
                             &mut state,
@@ -675,17 +675,17 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         if ui_ref.diagnostics_changed {
                             ui_ref.diagnostics_changed = false;
                             if let Some(diag_tab_idx) = state.tabs.iter().position(|t| t.path.as_deref() == Some("diagnostics://project")) {
-                                let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui_ref);
+                                let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui_ref);
                                 let mut text_lines = Vec::new();
                                 for vl in &visual_lines {
                                     match vl {
-                                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, line, col } => {
+                                        crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { path, line, col } => {
                                             text_lines.push(format!("▶ {} (Line {}, Col {})", path, line + 1, col + 1));
                                         }
-                                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => {
+                                        crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => {
                                             text_lines.push(line_content.clone());
                                         }
-                                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => {
+                                        crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => {
                                             text_lines.push(format!("  └─ [{}] {}", match diag.severity { 1 => "Error", 2 => "Warning", 3 => "Info", _ => "Hint" }, diag.message));
                                         }
                                     }
