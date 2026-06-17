@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::renderer::atlas::FontAtlas;
 use crate::editor::cursor::Cursor;
 
-use super::types::{UiAction, MenuType, ModalType, FileNode, GitDiffHunk};
+use super::types::{MenuType, ModalType, FileNode, GitDiffHunk};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommandPaletteMode {
