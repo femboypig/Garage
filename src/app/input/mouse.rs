@@ -374,71 +374,7 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
             }
             // 2. Tabbar (only over actual tabs, not empty space to the right)
             else if mouse_y >= pane_top && mouse_y < pane_top + ui.tabbar_height {
-                // Calculate which pane and active tab widths
-                let mut in_tab_area = false;
-                if state.inactive_panes.is_empty() {
-                    // Single pane
-                    let start_x = ui.sidebar_width;
-                    let mut total_tabs_width = 0.0f32;
-                    let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
-                    let close_reserved = 8.0f32 + tab_close_icon_sz;
-                    for t in &state.tabs {
-                        let file_name = ui.get_tab_name(t.path.as_deref());
-                        let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
-                        let dot_reserved = 18.0f32;
-                        let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
-                        total_tabs_width += tab_w;
-                    }
-                    if mouse_x >= start_x && mouse_x < (start_x + total_tabs_width - state.tab_scroll_x).min(size.width as f32) {
-                        in_tab_area = true;
-                    }
-                } else {
-                    // Split panes (Left/Right or Top/Bottom)
-                    let (start_x_0, end_x_0, start_x_1, end_x_1) = if state.is_split_horizontal {
-                        (sidebar_original, size.width as f32, sidebar_original, size.width as f32)
-                    } else {
-                        let editor_area_width = size.width as f32 - sidebar_original;
-                        let pane_width = editor_area_width / 2.0;
-                        (sidebar_original, sidebar_original + pane_width, sidebar_original + pane_width, size.width as f32)
-                    };
-
-                    let scroll_x_0 = state.get_pane_scroll_x(0);
-                    let scroll_x_1 = state.get_pane_scroll_x(1);
-
-                    let tabs_0 = if state.active_pane_idx == 0 { &state.tabs } else { &state.inactive_panes[0].tabs };
-                    let tabs_1 = if state.active_pane_idx == 1 { &state.tabs } else { &state.inactive_panes[0].tabs };
-
-                    if hovered_pane_idx == 0 {
-                        let mut total_w_0 = 0.0f32;
-                        let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
-                        let close_reserved = 8.0f32 + tab_close_icon_sz;
-                        for t in tabs_0 {
-                            let file_name = ui.get_tab_name(t.path.as_deref());
-                            let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
-                            let dot_reserved = 18.0f32;
-                            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
-                            total_w_0 += tab_w;
-                        }
-                        if mouse_x >= start_x_0 && mouse_x < (start_x_0 + total_w_0 - scroll_x_0).min(end_x_0) {
-                            in_tab_area = true;
-                        }
-                    } else {
-                        let mut total_w_1 = 0.0f32;
-                        let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
-                        let close_reserved = 8.0f32 + tab_close_icon_sz;
-                        for t in tabs_1 {
-                            let file_name = ui.get_tab_name(t.path.as_deref());
-                            let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
-                            let dot_reserved = 18.0f32;
-                            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
-                            total_w_1 += tab_w;
-                        }
-                        if mouse_x >= start_x_1 && mouse_x < (start_x_1 + total_w_1 - scroll_x_1).min(end_x_1) {
-                            in_tab_area = true;
-                        }
-                    }
-                }
-                if in_tab_area {
+                if is_pointer_in_tabbar(ui, state, size, hovered_pane_idx, pane_top, mouse_x) {
                     is_pointer = true;
                 }
             }
@@ -468,158 +404,11 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
             }
             // 5. Active modal interactive areas
             else if let Some(modal) = ui.active_modal {
-                let modal_w = match modal {
-                    crate::machkit::ModalType::Settings => (45.0 * ui.ui_char_width).max(500.0).round(),
-                    crate::machkit::ModalType::About => 520.0,
-                    crate::machkit::ModalType::CommandPalette => (50.0 * ui.ui_char_width).max(500.0).round(),
-                    crate::machkit::ModalType::UnsavedChanges => 520.0,
-                    crate::machkit::ModalType::SidebarInput => 400.0,
-                    crate::machkit::ModalType::GlobalSearch => 650.0,
-                };
-                let modal_h = match modal {
-                    crate::machkit::ModalType::Settings => {
-                        let row_height = (ui.ui_line_height * 2.2).round();
-                        (row_height * 8.2).max(430.0).round()
-                    }
-                    crate::machkit::ModalType::About => 190.0,
-                    crate::machkit::ModalType::CommandPalette => {
-                        let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
-                        let filtered_len = ui.get_filtered_commands().len();
-                        let visible_items = filtered_len.min(10);
-                        let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
-                        (header_h + visible_items as f32 * item_height).round()
-                    }
-                    crate::machkit::ModalType::UnsavedChanges => 200.0,
-                    crate::machkit::ModalType::SidebarInput => 150.0,
-                    crate::machkit::ModalType::GlobalSearch => {
-                        let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
-                        let count = ui.global_search_results.len().min(10).max(1);
-                        let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
-                        (header_h + count as f32 * item_height).round()
-                    }
-                };
-                let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
-                let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
-                
-                let mx = mouse_x;
-                let my = mouse_y;
-                if mx >= modal_x && mx <= modal_x + modal_w && my >= modal_y && my <= modal_y + modal_h {
-                    match modal {
-                        crate::machkit::ModalType::CommandPalette | crate::machkit::ModalType::GlobalSearch => {
-                            let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
-                            if my >= modal_y + header_h {
-                                is_pointer = true;
-                            } else if my >= modal_y + 15.0 && my < modal_y + 15.0 + ui.ui_line_height + 8.0 {
-                                window.set_cursor_icon(winit::window::CursorIcon::Text);
-                                return;
-                            }
-                        }
-                        crate::machkit::ModalType::Settings => {
-                            let row_height = (ui.ui_line_height * 2.2).round();
-                            let control_x = modal_x + 24.0 * ui.ui_char_width;
-                            let btn_h = (ui.ui_line_height * 1.3).round().max(24.0);
-                            let btn_w = (ui.ui_char_width * 3.0).round().max(24.0);
-                            let backend_btn_w = (ui.ui_char_width * 10.0).round().max(80.0);
-                            let theme_btn_w = (ui.ui_char_width * 16.0).round().max(140.0);
-
-                            let row1_y = modal_y + row_height * 1.0;
-                            let btn1_y = row1_y + ((ui.ui_line_height - btn_h) / 2.0).round();
-                            let row2_y = modal_y + row_height * 2.0;
-                            let btn2_y = row2_y + ((ui.ui_line_height - btn_h) / 2.0).round();
-                            let row3_y = modal_y + row_height * 3.0;
-                            let btn3_y = row3_y + ((ui.ui_line_height - btn_h) / 2.0).round();
-                            let row4_y = modal_y + row_height * 4.0;
-                            let btn4_y = row4_y + ((ui.ui_line_height - btn_h) / 2.0).round();
-                            let row5_y = modal_y + row_height * 5.0;
-                            let btn5_y = row5_y + ((ui.ui_line_height - btn_h) / 2.0).round();
-                            let row6_y = modal_y + row_height * 6.0;
-                            let btn6_y = row6_y + ((ui.ui_line_height - btn_h) / 2.0).round();
-
-                            let inc_btn_x = control_x + btn_w + ui.ui_char_width;
-                            let opengl_btn_x = control_x + backend_btn_w + ui.ui_char_width;
-                            let disabled5_btn_x = control_x + backend_btn_w + ui.ui_char_width;
-                            let disabled6_btn_x = control_x + backend_btn_w + ui.ui_char_width;
-
-                            let close_btn_w = (12.0 * ui.ui_char_width).max(100.0).round();
-                            let close_btn_h = (ui.ui_line_height * 1.6).max(30.0).round();
-                            let close_btn_x = modal_x + ((modal_w - close_btn_w) / 2.0).round();
-                            let close_btn_y = modal_y + modal_h - close_btn_h - (ui.ui_line_height * 1.0).round();
-
-                            let on_row1 = (mx >= control_x && mx <= control_x + btn_w && my >= btn1_y && my <= btn1_y + btn_h)
-                                || (mx >= inc_btn_x && mx <= inc_btn_x + btn_w && my >= btn1_y && my <= btn1_y + btn_h);
-                            let on_row2 = (mx >= control_x && mx <= control_x + btn_w && my >= btn2_y && my <= btn2_y + btn_h)
-                                || (mx >= inc_btn_x && mx <= inc_btn_x + btn_w && my >= btn2_y && my <= btn2_y + btn_h);
-                            let on_row3 = (mx >= control_x && mx <= control_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h)
-                                || (mx >= opengl_btn_x && mx <= opengl_btn_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h);
-                            let on_row4 = mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h;
-                            let on_dropdown = ui.theme_dropdown_open && {
-                                let dropdown_y = btn4_y + btn_h;
-                                let item_height = (ui.ui_line_height * 1.5).round().max(24.0);
-                                let dropdown_h = 2.0 * item_height;
-                                mx >= control_x && mx <= control_x + theme_btn_w && my >= dropdown_y && my <= dropdown_y + dropdown_h
-                            };
-                            let on_row5 = (mx >= control_x && mx <= control_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h)
-                                || (mx >= disabled5_btn_x && mx <= disabled5_btn_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h);
-                            let on_row6 = (mx >= control_x && mx <= control_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h)
-                                || (mx >= disabled6_btn_x && mx <= disabled6_btn_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h);
-                            let on_close = mx >= close_btn_x && mx <= close_btn_x + close_btn_w && my >= close_btn_y && my <= close_btn_y + close_btn_h;
-
-                            if on_row1 || on_row2 || on_row3 || on_row4 || on_dropdown || on_row5 || on_row6 || on_close {
-                                is_pointer = true;
-                            }
-                        }
-                        crate::machkit::ModalType::About => {
-                            let close_btn_w = (12.0 * ui.ui_char_width).max(100.0).round();
-                            let close_btn_h = (ui.ui_line_height * 1.6).max(30.0).round();
-                            let close_btn_x = modal_x + ((modal_w - close_btn_w) / 2.0).round();
-                            let close_btn_y = modal_y + modal_h - close_btn_h - (ui.ui_line_height * 1.0).round();
-                            if mx >= close_btn_x && mx <= close_btn_x + close_btn_w && my >= close_btn_y && my <= close_btn_y + close_btn_h {
-                                is_pointer = true;
-                            }
-                        }
-                        crate::machkit::ModalType::UnsavedChanges => {
-                            let btn_w = 130.0f32;
-                            let btn_h = 34.0f32;
-                            let spacing = 15.0f32;
-                            let total_btn_block_w = 3.0 * btn_w + 2.0 * spacing;
-                            let start_btn_x = modal_x + ((modal_w - total_btn_block_w) / 2.0).round();
-                            let btn_y = modal_y + modal_h - btn_h - 20.0;
-                            
-                            let on_save = mx >= start_btn_x && mx <= start_btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
-                            let ds_x = start_btn_x + btn_w + spacing;
-                            let on_dont_save = mx >= ds_x && mx <= ds_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
-                            let c_x = start_btn_x + 2.0 * (btn_w + spacing);
-                            let on_cancel = mx >= c_x && mx <= c_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
-                            
-                            if on_save || on_dont_save || on_cancel {
-                                is_pointer = true;
-                            }
-                        }
-                        crate::machkit::ModalType::SidebarInput => {
-                            let input_x = modal_x + 20.0;
-                            let title_y = modal_y + 20.0;
-                            let input_y = title_y + ui.ui_line_height + 15.0;
-                            let input_w = modal_w - 40.0;
-                            let input_h = ui.ui_line_height + 8.0;
-
-                            let btn_w = 80.0f32;
-                            let btn_h = 24.0f32;
-                            let cancel_x = modal_x + modal_w - 20.0 - btn_w * 2.0 - 10.0;
-                            let confirm_x = modal_x + modal_w - 20.0 - btn_w;
-                            let btn_y = input_y + input_h + 15.0;
-
-                            let on_cancel = mx >= cancel_x && mx <= cancel_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
-                            let on_confirm = mx >= confirm_x && mx <= confirm_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
-
-                            if on_cancel || on_confirm {
-                                is_pointer = true;
-                            } else if mx >= input_x && mx <= input_x + input_w && my >= input_y && my <= input_y + input_h {
-                                window.set_cursor_icon(winit::window::CursorIcon::Text);
-                                return;
-                            }
-                        }
-                    }
+                if cursor_icon_for_modal(window, ui, size, modal, mouse_x, mouse_y) {
+                    return;
                 }
+                // is_pointer will be set inside if needed — recheck
+                is_pointer = check_modal_pointer(ui, size, modal, mouse_x, mouse_y);
             }
             
             if is_pointer {
@@ -630,6 +419,266 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
         }
     }
 }
+
+/// Returns true and sets the cursor if the modal requires a non-default/non-pointer cursor.
+fn cursor_icon_for_modal(
+    window: &Window,
+    ui: &UiState,
+    size: winit::dpi::PhysicalSize<u32>,
+    modal: crate::machkit::ModalType,
+    mx: f32,
+    my: f32,
+) -> bool {
+    let modal_w = compute_modal_w(ui, modal);
+    let modal_h = compute_modal_h(ui, modal);
+    let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
+    let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
+
+    if mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h {
+        return false;
+    }
+
+    match modal {
+        crate::machkit::ModalType::CommandPalette | crate::machkit::ModalType::GlobalSearch => {
+            let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
+            if my >= modal_y + 15.0 && my < modal_y + 15.0 + ui.ui_line_height + 8.0 {
+                window.set_cursor_icon(winit::window::CursorIcon::Text);
+                return true;
+            }
+            // list area: pointer, handled by check_modal_pointer
+            let _ = header_h;
+            false
+        }
+        crate::machkit::ModalType::SidebarInput => {
+            let input_x = modal_x + 20.0;
+            let title_y = modal_y + 20.0;
+            let input_y = title_y + ui.ui_line_height + 15.0;
+            let input_w = modal_w - 40.0;
+            let input_h = ui.ui_line_height + 8.0;
+            if mx >= input_x && mx <= input_x + input_w && my >= input_y && my <= input_y + input_h {
+                window.set_cursor_icon(winit::window::CursorIcon::Text);
+                return true;
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+/// Returns `true` if mouse is over a pointer-cursor area within the active modal.
+fn check_modal_pointer(
+    ui: &UiState,
+    size: winit::dpi::PhysicalSize<u32>,
+    modal: crate::machkit::ModalType,
+    mx: f32,
+    my: f32,
+) -> bool {
+    let modal_w = compute_modal_w(ui, modal);
+    let modal_h = compute_modal_h(ui, modal);
+    let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
+    let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
+
+    if mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h {
+        return false;
+    }
+
+    match modal {
+        crate::machkit::ModalType::CommandPalette | crate::machkit::ModalType::GlobalSearch => {
+            let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
+            my >= modal_y + header_h
+        }
+        crate::machkit::ModalType::Settings => check_settings_modal_pointer(ui, modal_x, modal_y, modal_w, modal_h, mx, my),
+        crate::machkit::ModalType::About => {
+            let close_btn_w = (12.0 * ui.ui_char_width).max(100.0).round();
+            let close_btn_h = (ui.ui_line_height * 1.6).max(30.0).round();
+            let close_btn_x = modal_x + ((modal_w - close_btn_w) / 2.0).round();
+            let close_btn_y = modal_y + modal_h - close_btn_h - (ui.ui_line_height * 1.0).round();
+            mx >= close_btn_x && mx <= close_btn_x + close_btn_w && my >= close_btn_y && my <= close_btn_y + close_btn_h
+        }
+        crate::machkit::ModalType::UnsavedChanges => {
+            let btn_w = 130.0f32;
+            let btn_h = 34.0f32;
+            let spacing = 15.0f32;
+            let total_btn_block_w = 3.0 * btn_w + 2.0 * spacing;
+            let start_btn_x = modal_x + ((modal_w - total_btn_block_w) / 2.0).round();
+            let btn_y = modal_y + modal_h - btn_h - 20.0;
+            let ds_x = start_btn_x + btn_w + spacing;
+            let c_x = start_btn_x + 2.0 * (btn_w + spacing);
+            (mx >= start_btn_x && mx <= start_btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h)
+                || (mx >= ds_x && mx <= ds_x + btn_w && my >= btn_y && my <= btn_y + btn_h)
+                || (mx >= c_x && mx <= c_x + btn_w && my >= btn_y && my <= btn_y + btn_h)
+        }
+        crate::machkit::ModalType::SidebarInput => {
+            let btn_w = 80.0f32;
+            let btn_h = 24.0f32;
+            let cancel_x = modal_x + modal_w - 20.0 - btn_w * 2.0 - 10.0;
+            let confirm_x = modal_x + modal_w - 20.0 - btn_w;
+            let title_y = modal_y + 20.0;
+            let input_y = title_y + ui.ui_line_height + 15.0;
+            let input_h = ui.ui_line_height + 8.0;
+            let btn_y = input_y + input_h + 15.0;
+            (mx >= cancel_x && mx <= cancel_x + btn_w && my >= btn_y && my <= btn_y + btn_h)
+                || (mx >= confirm_x && mx <= confirm_x + btn_w && my >= btn_y && my <= btn_y + btn_h)
+        }
+    }
+}
+
+/// Returns the modal width for a given modal type.
+fn compute_modal_w(ui: &UiState, modal: crate::machkit::ModalType) -> f32 {
+    match modal {
+        crate::machkit::ModalType::Settings => (45.0 * ui.ui_char_width).max(500.0).round(),
+        crate::machkit::ModalType::About => 520.0,
+        crate::machkit::ModalType::CommandPalette => (50.0 * ui.ui_char_width).max(500.0).round(),
+        crate::machkit::ModalType::UnsavedChanges => 520.0,
+        crate::machkit::ModalType::SidebarInput => 400.0,
+        crate::machkit::ModalType::GlobalSearch => 650.0,
+    }
+}
+
+/// Returns the modal height for a given modal type.
+fn compute_modal_h(ui: &UiState, modal: crate::machkit::ModalType) -> f32 {
+    match modal {
+        crate::machkit::ModalType::Settings => {
+            let row_height = (ui.ui_line_height * 2.2).round();
+            (row_height * 8.2).max(430.0).round()
+        }
+        crate::machkit::ModalType::About => 190.0,
+        crate::machkit::ModalType::CommandPalette => {
+            let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
+            let filtered_len = ui.get_filtered_commands().len();
+            let visible_items = filtered_len.min(10);
+            let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
+            (header_h + visible_items as f32 * item_height).round()
+        }
+        crate::machkit::ModalType::UnsavedChanges => 200.0,
+        crate::machkit::ModalType::SidebarInput => 150.0,
+        crate::machkit::ModalType::GlobalSearch => {
+            let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
+            let count = ui.global_search_results.len().min(10).max(1);
+            let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
+            (header_h + count as f32 * item_height).round()
+        }
+    }
+}
+
+/// Check Settings modal pointer areas.
+fn check_settings_modal_pointer(
+    ui: &UiState,
+    modal_x: f32,
+    modal_y: f32,
+    modal_w: f32,
+    modal_h: f32,
+    mx: f32,
+    my: f32,
+) -> bool {
+    let row_height = (ui.ui_line_height * 2.2).round();
+    let control_x = modal_x + 24.0 * ui.ui_char_width;
+    let btn_h = (ui.ui_line_height * 1.3).round().max(24.0);
+    let btn_w = (ui.ui_char_width * 3.0).round().max(24.0);
+    let backend_btn_w = (ui.ui_char_width * 10.0).round().max(80.0);
+    let theme_btn_w = (ui.ui_char_width * 16.0).round().max(140.0);
+
+    let inc_btn_x = control_x + btn_w + ui.ui_char_width;
+    let opengl_btn_x = control_x + backend_btn_w + ui.ui_char_width;
+    let disabled5_btn_x = control_x + backend_btn_w + ui.ui_char_width;
+    let disabled6_btn_x = control_x + backend_btn_w + ui.ui_char_width;
+
+    let close_btn_w = (12.0 * ui.ui_char_width).max(100.0).round();
+    let close_btn_h = (ui.ui_line_height * 1.6).max(30.0).round();
+    let close_btn_x = modal_x + ((modal_w - close_btn_w) / 2.0).round();
+    let close_btn_y = modal_y + modal_h - close_btn_h - (ui.ui_line_height * 1.0).round();
+
+    let rows: &[(f32, f32, f32, f32)] = &[
+        (row_height * 1.0, btn_w, control_x, inc_btn_x),
+        (row_height * 2.0, btn_w, control_x, inc_btn_x),
+    ];
+    for (base_y, _bw, ctrl_x, inc_x) in rows {
+        let btn_y = modal_y + base_y + ((ui.ui_line_height - btn_h) / 2.0).round();
+        if (mx >= *ctrl_x && mx <= ctrl_x + btn_w && my >= btn_y && my <= btn_y + btn_h)
+            || (mx >= *inc_x && mx <= inc_x + btn_w && my >= btn_y && my <= btn_y + btn_h)
+        {
+            return true;
+        }
+    }
+
+    let btn3_y = modal_y + row_height * 3.0 + ((ui.ui_line_height - btn_h) / 2.0).round();
+    let btn4_y = modal_y + row_height * 4.0 + ((ui.ui_line_height - btn_h) / 2.0).round();
+    let btn5_y = modal_y + row_height * 5.0 + ((ui.ui_line_height - btn_h) / 2.0).round();
+    let btn6_y = modal_y + row_height * 6.0 + ((ui.ui_line_height - btn_h) / 2.0).round();
+
+    let on_row3 = (mx >= control_x && mx <= control_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h)
+        || (mx >= opengl_btn_x && mx <= opengl_btn_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h);
+    let on_row4 = mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h;
+    let on_dropdown = ui.theme_dropdown_open && {
+        let dropdown_y = btn4_y + btn_h;
+        let item_height = (ui.ui_line_height * 1.5).round().max(24.0);
+        let dropdown_h = 2.0 * item_height;
+        mx >= control_x && mx <= control_x + theme_btn_w && my >= dropdown_y && my <= dropdown_y + dropdown_h
+    };
+    let on_row5 = (mx >= control_x && mx <= control_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h)
+        || (mx >= disabled5_btn_x && mx <= disabled5_btn_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h);
+    let on_row6 = (mx >= control_x && mx <= control_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h)
+        || (mx >= disabled6_btn_x && mx <= disabled6_btn_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h);
+    let on_close = mx >= close_btn_x && mx <= close_btn_x + close_btn_w && my >= close_btn_y && my <= close_btn_y + close_btn_h;
+
+    on_row3 || on_row4 || on_dropdown || on_row5 || on_row6 || on_close
+}
+
+/// Returns true if the mouse is over a pointer-cursor area in the tab bar.
+fn is_pointer_in_tabbar(
+    ui: &UiState,
+    state: &AppState,
+    size: winit::dpi::PhysicalSize<u32>,
+    hovered_pane_idx: usize,
+    pane_top: f32,
+    mouse_x: f32,
+) -> bool {
+    let sidebar_original = ui.sidebar_width;
+    if state.inactive_panes.is_empty() {
+        let start_x = ui.sidebar_width;
+        let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+        let close_reserved = 8.0f32 + tab_close_icon_sz;
+        let total_tabs_width: f32 = state.tabs.iter().map(|t| {
+            let file_name = ui.get_tab_name(t.path.as_deref());
+            let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+            (12.0 + 18.0 + name_w + close_reserved + 10.0_f32).max(110.0)
+        }).sum();
+        mouse_x >= start_x && mouse_x < (start_x + total_tabs_width - state.tab_scroll_x).min(size.width as f32)
+    } else {
+        let (start_x_0, end_x_0, start_x_1, end_x_1) = if state.is_split_horizontal {
+            (sidebar_original, size.width as f32, sidebar_original, size.width as f32)
+        } else {
+            let editor_area_width = size.width as f32 - sidebar_original;
+            let pane_width = editor_area_width / 2.0;
+            (sidebar_original, sidebar_original + pane_width, sidebar_original + pane_width, size.width as f32)
+        };
+
+        let scroll_x_0 = state.get_pane_scroll_x(0);
+        let scroll_x_1 = state.get_pane_scroll_x(1);
+        let tabs_0 = if state.active_pane_idx == 0 { &state.tabs } else { &state.inactive_panes[0].tabs };
+        let tabs_1 = if state.active_pane_idx == 1 { &state.tabs } else { &state.inactive_panes[0].tabs };
+
+        let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+        let close_reserved = 8.0f32 + tab_close_icon_sz;
+        let _ = pane_top;
+        if hovered_pane_idx == 0 {
+            let total_w: f32 = tabs_0.iter().map(|t| {
+                let file_name = ui.get_tab_name(t.path.as_deref());
+                let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+                (12.0 + 18.0 + name_w + close_reserved + 10.0_f32).max(110.0)
+            }).sum();
+            mouse_x >= start_x_0 && mouse_x < (start_x_0 + total_w - scroll_x_0).min(end_x_0)
+        } else {
+            let total_w: f32 = tabs_1.iter().map(|t| {
+                let file_name = ui.get_tab_name(t.path.as_deref());
+                let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+                (12.0 + 18.0 + name_w + close_reserved + 10.0_f32).max(110.0)
+            }).sum();
+            mouse_x >= start_x_1 && mouse_x < (start_x_1 + total_w - scroll_x_1).min(end_x_1)
+        }
+    }
+}
+
 
 pub fn handle_cursor_moved(
     ui: &mut UiState,
