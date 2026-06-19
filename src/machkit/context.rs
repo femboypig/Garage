@@ -89,15 +89,15 @@ impl<'a> UiContext<'a> {
             }
 
             let cp = c as u32;
-            let is_box_drawing = c >= '\u{2500}' && c <= '\u{257f}';
-            let is_powerline = c >= '\u{e0b0}' && c <= '\u{e0d4}';
+            let is_box_drawing = ('\u{2500}'..='\u{257f}').contains(&c);
+            let is_powerline = ('\u{e0b0}'..='\u{e0d4}').contains(&c);
 
-            let is_pua = (cp >= 0xE000 && cp <= 0xF8FF)
-                || (cp >= 0xF0000 && cp <= 0xFFFFF)
-                || (cp >= 0x100000 && cp <= 0x10FFFF);
-            let is_emoji = (cp >= 0x1F300 && cp <= 0x1F9FF)
-                || (cp >= 0x1F600 && cp <= 0x1F64F)
-                || (cp >= 0x2600 && cp <= 0x27BF);
+            let is_pua = (0xE000..=0xF8FF).contains(&cp)
+                || (0xF0000..=0xFFFFF).contains(&cp)
+                || (0x100000..=0x10FFFF).contains(&cp);
+            let is_emoji = (0x1F300..=0x1F9FF).contains(&cp)
+                || (0x1F600..=0x1F64F).contains(&cp)
+                || (0x2600..=0x27BF).contains(&cp);
             let is_special_icon = (is_pua || is_emoji) && !is_powerline;
 
             let (x, y, w, h) = if is_box_drawing || is_powerline {
@@ -146,7 +146,7 @@ impl<'a> UiContext<'a> {
             // Draw under-fill solid quad for powerline solid separators to prevent any horizontal gaps
             if is_powerline {
                 let sliver_w = 1.5;
-                if cp % 4 == 0 {
+                if cp.is_multiple_of(4) {
                     push_quad_raw(
                         self.vertices,
                         self.indices,

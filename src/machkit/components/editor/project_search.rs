@@ -270,7 +270,7 @@ pub fn draw_project_search(
                 ..
             } => {
                 let is_selected =
-                    result_idx.map_or(false, |res_idx| res_idx == ui.global_search_selected);
+                    result_idx.is_some_and(|res_idx| res_idx == ui.global_search_selected);
 
                 let bg_color = if is_selected {
                     ui.config.theme.sidebar_hover_bg
@@ -462,13 +462,12 @@ pub fn build_search_render_items(ui: &mut UiState) -> Vec<SearchRenderItem> {
             let start = line_idx.saturating_sub(extra_before);
             let end = (line_idx + extra_after).min(file_len - 1);
 
-            if let Some(last) = ranges.last_mut() {
-                if start <= last.1 + 1 {
+            if let Some(last) = ranges.last_mut()
+                && start <= last.1 + 1 {
                     last.1 = last.1.max(end);
                     last.2.push((line_idx, res_idx));
                     continue;
                 }
-            }
             ranges.push((start, end, vec![(line_idx, res_idx)]));
         }
 

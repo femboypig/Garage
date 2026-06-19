@@ -12,11 +12,11 @@ pub fn update_git_file_blame(
 ) {
     thread::spawn(move || {
         let output = Command::new("git")
-            .args(&["blame", "--porcelain", &file_path])
+            .args(["blame", "--porcelain", &file_path])
             .output();
 
-        if let Ok(out) = output {
-            if out.status.success() {
+        if let Ok(out) = output
+            && out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout);
 
                 struct CommitInfo {
@@ -42,12 +42,12 @@ pub fn update_git_file_blame(
                         let commit_hash = first_part.to_string();
                         if let Ok(result_line) = parts[2].parse::<usize>() {
                             line_commits.insert(result_line, commit_hash.clone());
-                            if !commits.contains_key(&commit_hash) {
+                            if let std::collections::hash_map::Entry::Vacant(e) = commits.entry(commit_hash) {
                                 let mut author = None;
                                 let mut author_time = None;
                                 let mut summary = None;
 
-                                while let Some(hdr_line) = lines.next() {
+                                for hdr_line in lines.by_ref() {
                                     if hdr_line.starts_with('\t') {
                                         break;
                                     }
@@ -68,14 +68,11 @@ pub fn update_git_file_blame(
                                 if let (Some(auth), Some(time), Some(sum)) =
                                     (author, author_time, summary)
                                 {
-                                    commits.insert(
-                                        commit_hash,
-                                        CommitInfo {
+                                    e.insert(CommitInfo {
                                             author: auth,
                                             time,
                                             summary: sum,
-                                        },
-                                    );
+                                        });
                                 }
                             }
                         }
@@ -130,6 +127,5 @@ pub fn update_git_file_blame(
                 let _ = tx.send((file_path, file_blame_map));
                 let _ = proxy.send_event(());
             }
-        }
     });
 }

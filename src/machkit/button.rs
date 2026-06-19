@@ -11,6 +11,12 @@ pub struct Button<'a> {
     hover_bg: Option<[f32; 4]>,
 }
 
+impl<'a> Default for Button<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> Button<'a> {
     pub fn new() -> Self {
         Self {

@@ -117,11 +117,10 @@ impl AppState {
             if let Some(mut stdin) = child.stdin.take() {
                 let _ = stdin.write_all(text.as_bytes());
             }
-            if let Ok(status) = child.wait() {
-                if status.success() {
+            if let Ok(status) = child.wait()
+                && status.success() {
                     return;
                 }
-            }
         }
         // Try xclip (X11)
         if let Ok(mut child) = std::process::Command::new("xclip")
@@ -134,11 +133,10 @@ impl AppState {
             if let Some(mut stdin) = child.stdin.take() {
                 let _ = stdin.write_all(text.as_bytes());
             }
-            if let Ok(status) = child.wait() {
-                if status.success() {
+            if let Ok(status) = child.wait()
+                && status.success() {
                     return;
                 }
-            }
         }
         // Try xsel (X11)
         if let Ok(mut child) = std::process::Command::new("xsel")
@@ -160,55 +158,42 @@ impl AppState {
         if let Ok(output) = std::process::Command::new("wl-paste")
             .arg("--no-newline")
             .output()
-        {
-            if output.status.success() {
-                if let Ok(text) = String::from_utf8(output.stdout) {
-                    if !text.is_empty() {
+            && output.status.success()
+                && let Ok(text) = String::from_utf8(output.stdout)
+                    && !text.is_empty() {
                         return text;
                     }
-                }
-            }
-        }
         // Try xclip (X11)
         if let Ok(output) = std::process::Command::new("xclip")
             .arg("-selection")
             .arg("clipboard")
             .arg("-o")
             .output()
-        {
-            if output.status.success() {
-                if let Ok(text) = String::from_utf8(output.stdout) {
-                    if !text.is_empty() {
+            && output.status.success()
+                && let Ok(text) = String::from_utf8(output.stdout)
+                    && !text.is_empty() {
                         return text;
                     }
-                }
-            }
-        }
         // Try xsel (X11)
         if let Ok(output) = std::process::Command::new("xsel")
             .arg("--clipboard")
             .arg("--output")
             .output()
-        {
-            if output.status.success() {
-                if let Ok(text) = String::from_utf8(output.stdout) {
-                    if !text.is_empty() {
+            && output.status.success()
+                && let Ok(text) = String::from_utf8(output.stdout)
+                    && !text.is_empty() {
                         return text;
                     }
-                }
-            }
-        }
         self.internal_clipboard.clone()
     }
 
     pub fn is_actually_dragging_tab(&self) -> bool {
-        if self.dragged_tab_idx.is_some() {
-            if let Some((sx, sy)) = self.drag_start_pos {
+        if self.dragged_tab_idx.is_some()
+            && let Some((sx, sy)) = self.drag_start_pos {
                 let dx = self.mouse_x - sx;
                 let dy = self.mouse_y - sy;
                 return (dx * dx + dy * dy).sqrt() >= 8.0;
             }
-        }
         false
     }
 

@@ -26,7 +26,7 @@ pub fn draw_editor_view(
     is_active_pane: bool,
 ) {
     let active_file_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
-    let is_diagnostics = active_file_path.map_or(false, |p| p.starts_with("diagnostics://"));
+    let is_diagnostics = active_file_path.is_some_and(|p| p.starts_with("diagnostics://"));
     let is_project_search = active_file_path == Some("search://project");
     let main_y = ui.titlebar_height;
 

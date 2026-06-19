@@ -286,7 +286,7 @@ impl vte::Perform for TerminalGrid {
 
                 let mut params_iter = params.iter();
                 while let Some(param) = params_iter.next() {
-                    let p = param.get(0).copied().unwrap_or(0);
+                    let p = param.first().copied().unwrap_or(0);
                     match p {
                         0 => {
                             // Reset
@@ -321,12 +321,12 @@ impl vte::Perform for TerminalGrid {
                             // We can skip or parse basic 256 colors if next params allow.
                             // For simplicity, support 256 colors basic mapping
                             if let Some(next_param) = params_iter.next() {
-                                let mode = next_param.get(0).copied().unwrap_or(0);
+                                let mode = next_param.first().copied().unwrap_or(0);
                                 if mode == 5 {
                                     // 256 color
                                     if let Some(color_idx_param) = params_iter.next() {
                                         let c_idx =
-                                            color_idx_param.get(0).copied().unwrap_or(0) as usize;
+                                            color_idx_param.first().copied().unwrap_or(0) as usize;
                                         if c_idx < 16 {
                                             self.current_fg = COLOR_PALETTE[c_idx];
                                         } else if c_idx >= 232 {
@@ -347,9 +347,9 @@ impl vte::Perform for TerminalGrid {
                                     if let (Some(r_p), Some(g_p), Some(b_p)) =
                                         (params_iter.next(), params_iter.next(), params_iter.next())
                                     {
-                                        let r = r_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
-                                        let g = g_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
-                                        let b = b_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
+                                        let r = r_p.first().copied().unwrap_or(0) as f32 / 255.0;
+                                        let g = g_p.first().copied().unwrap_or(0) as f32 / 255.0;
+                                        let b = b_p.first().copied().unwrap_or(0) as f32 / 255.0;
                                         self.current_fg = [r, g, b, 1.0];
                                     }
                                 }
@@ -367,11 +367,11 @@ impl vte::Perform for TerminalGrid {
                         48 => {
                             // Extended Background
                             if let Some(next_param) = params_iter.next() {
-                                let mode = next_param.get(0).copied().unwrap_or(0);
+                                let mode = next_param.first().copied().unwrap_or(0);
                                 if mode == 5 {
                                     if let Some(color_idx_param) = params_iter.next() {
                                         let c_idx =
-                                            color_idx_param.get(0).copied().unwrap_or(0) as usize;
+                                            color_idx_param.first().copied().unwrap_or(0) as usize;
                                         if c_idx < 16 {
                                             self.current_bg = COLOR_PALETTE[c_idx];
                                         } else if c_idx >= 232 {
@@ -385,16 +385,15 @@ impl vte::Perform for TerminalGrid {
                                             self.current_bg = [r, g, b, 1.0];
                                         }
                                     }
-                                } else if mode == 2 {
-                                    if let (Some(r_p), Some(g_p), Some(b_p)) =
+                                } else if mode == 2
+                                    && let (Some(r_p), Some(g_p), Some(b_p)) =
                                         (params_iter.next(), params_iter.next(), params_iter.next())
                                     {
-                                        let r = r_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
-                                        let g = g_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
-                                        let b = b_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
+                                        let r = r_p.first().copied().unwrap_or(0) as f32 / 255.0;
+                                        let g = g_p.first().copied().unwrap_or(0) as f32 / 255.0;
+                                        let b = b_p.first().copied().unwrap_or(0) as f32 / 255.0;
                                         self.current_bg = [r, g, b, 1.0];
                                     }
-                                }
                             }
                         }
                         49 => {
@@ -420,7 +419,7 @@ impl vte::Perform for TerminalGrid {
                 let mode = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(0);
                 if mode == 0 {
@@ -487,7 +486,7 @@ impl vte::Perform for TerminalGrid {
                 let mode = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(0);
                 let start_idx = self.cursor_y * self.cols;
@@ -519,8 +518,8 @@ impl vte::Perform for TerminalGrid {
             'H' | 'f' => {
                 // Cursor Position (CUP)
                 let mut iter = params.iter();
-                let row = iter.next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
-                let col = iter.next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+                let row = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as usize;
+                let col = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as usize;
                 self.cursor_y = (row.saturating_sub(1)).min(self.rows - 1);
                 self.cursor_x = (col.saturating_sub(1)).min(self.cols - 1);
             }
@@ -529,7 +528,7 @@ impl vte::Perform for TerminalGrid {
                 let count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 self.cursor_y = self.cursor_y.saturating_sub(count);
@@ -539,7 +538,7 @@ impl vte::Perform for TerminalGrid {
                 let count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 self.cursor_y = (self.cursor_y + count).min(self.rows - 1);
@@ -549,7 +548,7 @@ impl vte::Perform for TerminalGrid {
                 let count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 self.cursor_x = (self.cursor_x + count).min(self.cols - 1);
@@ -559,7 +558,7 @@ impl vte::Perform for TerminalGrid {
                 let count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 self.cursor_x = self.cursor_x.saturating_sub(count);
@@ -569,7 +568,7 @@ impl vte::Perform for TerminalGrid {
                 let col = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 self.cursor_x = (col.saturating_sub(1)).min(self.cols - 1);
@@ -579,7 +578,7 @@ impl vte::Perform for TerminalGrid {
                 let row = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 self.cursor_y = (row.saturating_sub(1)).min(self.rows - 1);
@@ -589,7 +588,7 @@ impl vte::Perform for TerminalGrid {
                 let count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 self.cursor_y = (self.cursor_y + count).min(self.rows - 1);
@@ -599,7 +598,7 @@ impl vte::Perform for TerminalGrid {
                 let count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 let start_idx = self.cursor_y * self.cols;
@@ -620,7 +619,7 @@ impl vte::Perform for TerminalGrid {
                 let count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 let start_idx = self.cursor_y * self.cols;
@@ -640,7 +639,7 @@ impl vte::Perform for TerminalGrid {
                 let count = params
                     .iter()
                     .next()
-                    .and_then(|p| p.get(0))
+                    .and_then(|p| p.first())
                     .copied()
                     .unwrap_or(1) as usize;
                 let start_idx = self.cursor_y * self.cols;
@@ -659,7 +658,7 @@ impl vte::Perform for TerminalGrid {
                 // SM (Set Mode)
                 let is_private = _intermediates.contains(&b'?');
                 for param in params.iter() {
-                    let p = param.get(0).copied().unwrap_or(0);
+                    let p = param.first().copied().unwrap_or(0);
                     if is_private {
                         match p {
                             1 => self.decckm = true,
@@ -679,7 +678,7 @@ impl vte::Perform for TerminalGrid {
                 // RM (Reset Mode)
                 let is_private = _intermediates.contains(&b'?');
                 for param in params.iter() {
-                    let p = param.get(0).copied().unwrap_or(0);
+                    let p = param.first().copied().unwrap_or(0);
                     if is_private {
                         match p {
                             1 => self.decckm = false,
@@ -715,16 +714,12 @@ impl vte::Perform for TerminalGrid {
                 if let Ok(title) = std::str::from_utf8(params[1]) {
                     self.title = title.to_string();
                 }
-            } else if action == b"7" {
-                if let Ok(url_str) = std::str::from_utf8(params[1]) {
+            } else if action == b"7"
+                && let Ok(url_str) = std::str::from_utf8(params[1]) {
                     // OSC 7: file://hostname/path — extract path component
                     let path_str = if let Some(path_part) = url_str.strip_prefix("file://") {
                         // Skip hostname part to get the path
-                        if let Some(slash_idx) = path_part.find('/') {
-                            Some(&path_part[slash_idx..])
-                        } else {
-                            None
-                        }
+                        path_part.find('/').map(|slash_idx| &path_part[slash_idx..])
                     } else {
                         // Treat as raw path
                         Some(url_str)
@@ -739,7 +734,6 @@ impl vte::Perform for TerminalGrid {
                         }
                     }
                 }
-            }
         }
     }
 
@@ -875,14 +869,14 @@ impl TerminalInstance {
         #[cfg(target_os = "linux")]
         {
             if let Some(pid) = self.child.process_id() {
-                if let Ok(stat_content) = std::fs::read_to_string(format!("/proc/{}/stat", pid)) {
-                    if let Some(last_paren) = stat_content.rfind(')') {
+                if let Ok(stat_content) = std::fs::read_to_string(format!("/proc/{}/stat", pid))
+                    && let Some(last_paren) = stat_content.rfind(')') {
                         let post_paren = &stat_content[last_paren + 1..];
                         let parts: Vec<&str> = post_paren.split_whitespace().collect();
-                        if parts.len() > 5 {
-                            if let Ok(tpgid) = parts[5].parse::<i32>() {
-                                if tpgid > 0 {
-                                    if let Ok(comm) =
+                        if parts.len() > 5
+                            && let Ok(tpgid) = parts[5].parse::<i32>()
+                                && tpgid > 0
+                                    && let Ok(comm) =
                                         std::fs::read_to_string(format!("/proc/{}/comm", tpgid))
                                     {
                                         let name = comm.trim().to_string();
@@ -890,11 +884,7 @@ impl TerminalInstance {
                                             return Some(name);
                                         }
                                     }
-                                }
-                            }
-                        }
                     }
-                }
                 if let Ok(comm) = std::fs::read_to_string(format!("/proc/{}/comm", pid)) {
                     let name = comm.trim().to_string();
                     if !name.is_empty() {

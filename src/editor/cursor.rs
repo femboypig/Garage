@@ -9,6 +9,12 @@ pub struct Cursor {
     pub selection_anchor: Option<(usize, usize)>, // (line, col)
 }
 
+impl Default for Cursor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Cursor {
     pub fn new() -> Self {
         Self {

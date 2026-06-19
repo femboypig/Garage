@@ -29,7 +29,7 @@ pub fn draw_scrollbars(
         let items_len =
             crate::machkit::components::editor::project_search::build_search_render_items(ui).len();
         (items_len, visible_lines)
-    } else if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
+    } else if active_file_path.is_some_and(|p| p.starts_with("diagnostics://")) {
         let mut count = 0;
         for (file_path, diags) in &ui.lsp_diagnostics_details {
             if diags.is_empty() {
@@ -98,7 +98,7 @@ pub fn draw_scrollbars(
         );
 
     // --- 2. Draw Horizontal Scrollbar ---
-    if active_file_path.map_or(false, |p| {
+    if active_file_path.is_some_and(|p| {
         p.starts_with("diagnostics://") || p == "search://project"
     }) {
         return;

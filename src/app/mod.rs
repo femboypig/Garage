@@ -71,8 +71,7 @@ pub fn run_editor(
     let surface = match instance.create_surface(window.clone()) {
         Ok(s) => s,
         Err(e) => {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(Box::new(std::io::Error::other(
                 format!("Failed to create surface: {:?}", e),
             )));
         }
@@ -203,15 +202,14 @@ pub fn run_editor(
         let initial_tab = {
             let mut buffer = Buffer::new();
             let save_path = if let Some(ref path) = file_path {
-                if !path.starts_with("diagnostics://") {
-                    if let Err(e) = buffer.load_file(path) {
+                if !path.starts_with("diagnostics://")
+                    && let Err(e) = buffer.load_file(path) {
                         log::warn!(
                             "Failed to load file '{}': {}. Starting with empty buffer.",
                             path,
                             e
                         );
                     }
-                }
                 if path.starts_with("diagnostics://") {
                     Some(path.clone())
                 } else {
@@ -304,11 +302,10 @@ pub fn run_editor(
 
     // Run the event loop reactively to save power/CPU/GPU cycles when idle
     event_loop.run(move |event, elwt| {
-        if watcher.is_none() {
-            if let Ok(w) = watcher_keepalive_rx.try_recv() {
+        if watcher.is_none()
+            && let Ok(w) = watcher_keepalive_rx.try_recv() {
                 watcher = w;
             }
-        }
         if !first_frame_rendered {
             elwt.set_control_flow(ControlFlow::Poll);
         } else {
@@ -415,8 +412,8 @@ pub fn run_editor(
 
                         // Sync active tab buffers to diagnostics file cache
                         for tab in &state.tabs {
-                            if let Some(ref path) = tab.path {
-                                if !path.starts_with("diagnostics://") {
+                            if let Some(ref path) = tab.path
+                                && !path.starts_with("diagnostics://") {
                                     let abs_path = crate::editor::get_absolute_path(path);
                                     let tab_revision = tab.buffer.revision;
                                     let mut needs_update = false;
@@ -434,7 +431,6 @@ pub fn run_editor(
                                         ui_ref.diagnostics_changed = true;
                                     }
                                 }
-                            }
                         }
 
                         // Rebuild and sync the diagnostics://project tab buffer itself to match visual diagnostic lines
@@ -653,8 +649,8 @@ pub fn run_editor(
                     let ui_ref = ui.as_mut().unwrap();
 
                     // Delay-based autosave check
-                    if let crate::editor::config::AutosaveSetting::AfterDelay { milliseconds } = ui_ref.config.autosave {
-                        if let Some(last_edit) = state.last_edit_time {
+                    if let crate::editor::config::AutosaveSetting::AfterDelay { milliseconds } = ui_ref.config.autosave
+                        && let Some(last_edit) = state.last_edit_time {
                             let delay = std::time::Duration::from_millis(milliseconds);
                             if last_edit.elapsed() >= delay {
                                 autosave::run_autosave_if_needed(ui_ref, &mut state, autosave::AutosaveTrigger::Delay);
@@ -665,7 +661,6 @@ pub fn run_editor(
                                 elwt.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(wake_time));
                             }
                         }
-                    }
 
                     // Periodic auto-save (every 2 seconds)
                     if last_autosave.elapsed() >= std::time::Duration::from_secs(2) {
@@ -730,11 +725,10 @@ pub fn run_editor(
                                                     }
                                                 }
                                             } else {
-                                                if !std::path::Path::new(&abs_str).exists() {
-                                                    if ui_ref.external_change_warnings.insert(tab_path.clone()) {
+                                                if !std::path::Path::new(&abs_str).exists()
+                                                    && ui_ref.external_change_warnings.insert(tab_path.clone()) {
                                                         watcher_updated = true;
                                                     }
-                                                }
                                             }
                                         }
                                     }
@@ -752,22 +746,19 @@ pub fn run_editor(
                             ui_ref.update_git_branch();
                         }
                         ui_ref.update_git_statuses();
-                        if state.active_tab_idx < state.tabs.len() {
-                            if let Some(ref file_path) = state.tabs[state.active_tab_idx].path {
+                        if state.active_tab_idx < state.tabs.len()
+                            && let Some(ref file_path) = state.tabs[state.active_tab_idx].path {
                                 ui_ref.update_git_diff(Some(file_path));
                             }
-                        }
                         ui_ref.last_branch_check = Some(std::time::Instant::now());
                         window.request_redraw();
                     }
 
-                    if state.active_tab_idx < state.tabs.len() {
-                        if let Some(ref file_path) = state.tabs[state.active_tab_idx].path {
-                            if !ui_ref.git_file_blames.contains_key(file_path) {
+                    if state.active_tab_idx < state.tabs.len()
+                        && let Some(ref file_path) = state.tabs[state.active_tab_idx].path
+                            && !ui_ref.git_file_blames.contains_key(file_path) {
                                 ui_ref.update_git_file_blame(Some(file_path));
                             }
-                        }
-                    }
 
                     // Drain Tree scan channel
                     let mut tree_updated = false;

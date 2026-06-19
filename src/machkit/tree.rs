@@ -42,19 +42,17 @@ fn scan_dir_recursive(
         .build();
 
     let mut entries_vec = Vec::new();
-    for result in walker {
-        if let Ok(entry) = result {
-            if entry.depth() == 0 {
-                continue;
-            }
-            let path = entry.path().to_path_buf();
-            if is_hidden(&path) {
-                continue;
-            }
-            let name = entry.file_name().to_string_lossy().to_string();
-            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-            entries_vec.push((path, name, is_dir));
+    for entry in walker.flatten() {
+        if entry.depth() == 0 {
+            continue;
         }
+        let path = entry.path().to_path_buf();
+        if is_hidden(&path) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        entries_vec.push((path, name, is_dir));
     }
 
     // Sort: directories first, then files alphabetically

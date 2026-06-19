@@ -80,7 +80,7 @@ pub fn draw_minimap(
         let mut current_color = None;
         let mut block_w = 0.0f32;
 
-        for (_char_idx, c) in line_text.chars().enumerate() {
+        for c in line_text.chars() {
             let char_w = if c == '\t' {
                 4.0 * minimap_char_w
             } else {

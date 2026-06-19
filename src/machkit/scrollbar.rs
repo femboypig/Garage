@@ -8,6 +8,12 @@ pub struct Scrollbar {
     hovered: bool,
 }
 
+impl Default for Scrollbar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scrollbar {
     pub fn new() -> Self {
         Self {
