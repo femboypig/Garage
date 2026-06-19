@@ -1,7 +1,7 @@
-use crate::machkit::{UiState, Vertex};
-use crate::renderer::atlas::FontAtlas;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 
 pub fn draw_scrollbars(
     ui: &mut UiState,
@@ -26,7 +26,8 @@ pub fn draw_scrollbars(
 ) {
     // --- 1. Draw Vertical Scrollbar ---
     let (virtual_len, visible_count) = if active_file_path == Some("search://project") {
-        let items_len = crate::machkit::components::editor::project_search::build_search_render_items(ui).len();
+        let items_len =
+            crate::machkit::components::editor::project_search::build_search_render_items(ui).len();
         (items_len, visible_lines)
     } else if active_file_path.map_or(false, |p| p.starts_with("diagnostics://")) {
         let mut count = 0;
@@ -34,7 +35,11 @@ pub fn draw_scrollbars(
             if diags.is_empty() {
                 continue;
             }
-            let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
+            let file_lines_len = ui
+                .diagnostics_file_cache
+                .get(file_path)
+                .map(|l| l.len())
+                .unwrap_or(0);
             for diag in diags {
                 let start_line = diag.line.saturating_sub(3);
                 let end_line = if file_lines_len > 0 {
@@ -54,7 +59,10 @@ pub fn draw_scrollbars(
     let max_line_len = ui.get_max_line_len(buffer, active_file_path, cursor.line);
     let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
 
-    let is_sb_hovered = ui.active_modal.is_none() && mouse_x >= sb_x && mouse_y >= editor_y && mouse_y < editor_y + editor_height;
+    let is_sb_hovered = ui.active_modal.is_none()
+        && mouse_x >= sb_x
+        && mouse_y >= editor_y
+        && mouse_y < editor_y + editor_height;
 
     let white_uv = atlas.white_pixel_uv();
     let mut ctx = crate::machkit::UiContext {
@@ -81,13 +89,21 @@ pub fn draw_scrollbars(
         .visible_count(visible_count)
         .scroll_pos(ui.scroll_y)
         .hovered(is_sb_hovered)
-        .draw(&mut ctx, sb_x, editor_y, scrollbar_width, total_editor_height);
+        .draw(
+            &mut ctx,
+            sb_x,
+            editor_y,
+            scrollbar_width,
+            total_editor_height,
+        );
 
     // --- 2. Draw Horizontal Scrollbar ---
-    if active_file_path.map_or(false, |p| p.starts_with("diagnostics://") || p == "search://project") {
+    if active_file_path.map_or(false, |p| {
+        p.starts_with("diagnostics://") || p == "search://project"
+    }) {
         return;
     }
-    
+
     let hs_y = editor_y + editor_height;
     let hs_h = 14.0f32;
     let is_hs_hovered = ui.active_modal.is_none()

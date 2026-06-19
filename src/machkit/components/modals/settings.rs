@@ -51,15 +51,13 @@ pub fn draw_settings(
     );
 
     // Helper closure to draw button container using machkit::Button
-    let draw_button = |
-        ctx: &mut crate::machkit::UiContext,
-        text: &str,
-        bx: f32,
-        by: f32,
-        bw: f32,
-        bh: f32,
-        is_selected: bool,
-    | {
+    let draw_button = |ctx: &mut crate::machkit::UiContext,
+                       text: &str,
+                       bx: f32,
+                       by: f32,
+                       bw: f32,
+                       bh: f32,
+                       is_selected: bool| {
         let bg_color = if is_selected {
             ctx.theme.cursor_color // brand color
         } else {
@@ -125,11 +123,27 @@ pub fn draw_settings(
         ctx.ui_font_size,
     );
     let is_vulkan = ui.config.backend == "Vulkan";
-    draw_button(&mut ctx, "Vulkan", control_x, btn3_y, backend_btn_w, btn_h, is_vulkan);
+    draw_button(
+        &mut ctx,
+        "Vulkan",
+        control_x,
+        btn3_y,
+        backend_btn_w,
+        btn_h,
+        is_vulkan,
+    );
 
     let is_opengl = ui.config.backend == "OpenGL";
     let opengl_btn_x = control_x + backend_btn_w + ctx.ui_char_width;
-    draw_button(&mut ctx, "OpenGL", opengl_btn_x, btn3_y, backend_btn_w, btn_h, is_opengl);
+    draw_button(
+        &mut ctx,
+        "OpenGL",
+        opengl_btn_x,
+        btn3_y,
+        backend_btn_w,
+        btn_h,
+        is_opengl,
+    );
 
     // 4. Theme Selection (Cycle Toggle Selector)
     let row4_y = modal_y + row_height * 4.0;
@@ -142,7 +156,15 @@ pub fn draw_settings(
         ctx.ui_font_size,
     );
     let display_theme = format!("{}  ▼", ui.config.theme.name);
-    draw_button(&mut ctx, &display_theme, control_x, btn4_y, theme_btn_w, btn_h, false);
+    draw_button(
+        &mut ctx,
+        &display_theme,
+        control_x,
+        btn4_y,
+        theme_btn_w,
+        btn_h,
+        false,
+    );
 
     // 5. Git Blame Selection
     let row5_y = modal_y + row_height * 5.0;
@@ -154,10 +176,26 @@ pub fn draw_settings(
         ctx.theme.modal_text_normal,
         ctx.ui_font_size,
     );
-    draw_button(&mut ctx, "Enabled", control_x, btn5_y, backend_btn_w, btn_h, ui.config.show_git_blame);
+    draw_button(
+        &mut ctx,
+        "Enabled",
+        control_x,
+        btn5_y,
+        backend_btn_w,
+        btn_h,
+        ui.config.show_git_blame,
+    );
 
     let blame_disabled_x = control_x + backend_btn_w + ctx.ui_char_width;
-    draw_button(&mut ctx, "Disabled", blame_disabled_x, btn5_y, backend_btn_w, btn_h, !ui.config.show_git_blame);
+    draw_button(
+        &mut ctx,
+        "Disabled",
+        blame_disabled_x,
+        btn5_y,
+        backend_btn_w,
+        btn_h,
+        !ui.config.show_git_blame,
+    );
 
     // 6. Git Branch Selection
     let row6_y = modal_y + row_height * 6.0;
@@ -169,10 +207,26 @@ pub fn draw_settings(
         ctx.theme.modal_text_normal,
         ctx.ui_font_size,
     );
-    draw_button(&mut ctx, "Enabled", control_x, btn6_y, backend_btn_w, btn_h, ui.config.show_git_branch);
+    draw_button(
+        &mut ctx,
+        "Enabled",
+        control_x,
+        btn6_y,
+        backend_btn_w,
+        btn_h,
+        ui.config.show_git_branch,
+    );
 
     let branch_disabled_x = control_x + backend_btn_w + ctx.ui_char_width;
-    draw_button(&mut ctx, "Disabled", branch_disabled_x, btn6_y, backend_btn_w, btn_h, !ui.config.show_git_branch);
+    draw_button(
+        &mut ctx,
+        "Disabled",
+        branch_disabled_x,
+        btn6_y,
+        backend_btn_w,
+        btn_h,
+        !ui.config.show_git_branch,
+    );
 
     // 7. Draw Active backend and GPU info
     let row7_y = modal_y + row_height * 7.0;
@@ -181,10 +235,13 @@ pub fn draw_settings(
         wgpu::Backend::Gl => "OpenGL",
         other => &format!("{:?}", other),
     };
-    let is_fallback = (ui.config.backend == "OpenGL" && current_backend != wgpu::Backend::Gl) ||
-                      (ui.config.backend == "Vulkan" && current_backend != wgpu::Backend::Vulkan);
+    let is_fallback = (ui.config.backend == "OpenGL" && current_backend != wgpu::Backend::Gl)
+        || (ui.config.backend == "Vulkan" && current_backend != wgpu::Backend::Vulkan);
     let active_info_str = if is_fallback {
-        format!("Active: {} (fallback) ({})", backend_str, ui.active_device_name)
+        format!(
+            "Active: {} (fallback) ({})",
+            backend_str, ui.active_device_name
+        )
     } else {
         format!("Active: {} ({})", backend_str, ui.active_device_name)
     };
@@ -203,20 +260,59 @@ pub fn draw_settings(
         let dropdown_h = 2.0 * item_height;
 
         // Draw Dropdown background
-        ctx.push_quad(control_x, dropdown_y, theme_btn_w, dropdown_h, ctx.theme.modal_bg);
+        ctx.push_quad(
+            control_x,
+            dropdown_y,
+            theme_btn_w,
+            dropdown_h,
+            ctx.theme.modal_bg,
+        );
         // Draw Dropdown borders
-        ctx.push_quad(control_x, dropdown_y, theme_btn_w, 1.0, ctx.theme.modal_border);
-        ctx.push_quad(control_x, dropdown_y + dropdown_h - 1.0, theme_btn_w, 1.0, ctx.theme.modal_border);
-        ctx.push_quad(control_x, dropdown_y, 1.0, dropdown_h, ctx.theme.modal_border);
-        ctx.push_quad(control_x + theme_btn_w - 1.0, dropdown_y, 1.0, dropdown_h, ctx.theme.modal_border);
+        ctx.push_quad(
+            control_x,
+            dropdown_y,
+            theme_btn_w,
+            1.0,
+            ctx.theme.modal_border,
+        );
+        ctx.push_quad(
+            control_x,
+            dropdown_y + dropdown_h - 1.0,
+            theme_btn_w,
+            1.0,
+            ctx.theme.modal_border,
+        );
+        ctx.push_quad(
+            control_x,
+            dropdown_y,
+            1.0,
+            dropdown_h,
+            ctx.theme.modal_border,
+        );
+        ctx.push_quad(
+            control_x + theme_btn_w - 1.0,
+            dropdown_y,
+            1.0,
+            dropdown_h,
+            ctx.theme.modal_border,
+        );
 
         let themes = ["Light Theme", "Dark Theme"];
         for (idx, t_name) in themes.iter().enumerate() {
             let item_y = dropdown_y + idx as f32 * item_height;
-            let is_item_hovered = mouse_x >= control_x && mouse_x <= control_x + theme_btn_w && mouse_y >= item_y && mouse_y < item_y + item_height;
+            let is_item_hovered = mouse_x >= control_x
+                && mouse_x <= control_x + theme_btn_w
+                && mouse_y >= item_y
+                && mouse_y < item_y + item_height;
 
             if is_item_hovered {
-                ctx.push_quad(control_x + 1.0, item_y + 1.0, theme_btn_w - 2.0, item_height - 2.0, ctx.theme.button_hover_bg);
+                ctx.push_quad(
+                    control_x + 1.0,
+                    item_y + 1.0,
+                    theme_btn_w - 2.0,
+                    item_height - 2.0,
+                    ctx.theme.button_hover_bg,
+                );
             }
 
             let text_y = (item_y + item_height / 2.0 + ctx.ui_font_ascent / 2.0 - 2.0).round();

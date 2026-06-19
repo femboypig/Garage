@@ -1,7 +1,7 @@
-use crate::machkit::{UiState, Vertex};
-use crate::renderer::atlas::FontAtlas;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 
 pub fn draw_gutter(
     ui: &UiState,
@@ -22,7 +22,7 @@ pub fn draw_gutter(
     active_path: Option<&str>,
 ) {
     let white_uv = atlas.white_pixel_uv();
-    
+
     // Draw Gutter background
     ui.push_quad(
         vertices,
@@ -45,7 +45,6 @@ pub fn draw_gutter(
         white_uv,
         ui.config.theme.gutter_border,
     );
-
 
     // Draw line numbers and Git diff indicators
     for line_idx in start_idx..end_idx {
@@ -100,9 +99,9 @@ pub fn draw_gutter(
 
         if let Some(status) = line_status {
             let color = match status {
-                "Added" => [0.18, 0.65, 0.43, 1.0],     // green
-                "Modified" => [0.86, 0.49, 0.18, 1.0],  // orange
-                "Deleted" => [0.90, 0.30, 0.30, 1.0],   // red
+                "Added" => [0.18, 0.65, 0.43, 1.0],    // green
+                "Modified" => [0.86, 0.49, 0.18, 1.0], // orange
+                "Deleted" => [0.90, 0.30, 0.30, 1.0],  // red
                 _ => [0.0, 0.0, 0.0, 0.0],
             };
             if status == "Deleted" {
@@ -129,6 +128,5 @@ pub fn draw_gutter(
                 );
             }
         }
-
     }
 }

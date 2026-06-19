@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use fontdue::{Font, FontSettings};
 use resvg::usvg::TreeParsing;
+use std::collections::HashMap;
 
 pub struct GlyphInfo {
     pub uv_min: [f32; 2],
@@ -24,11 +24,21 @@ fn find_nerd_fonts_recursive(dir: &std::path::Path, fonts: &mut Vec<fontdue::Fon
                 if let Some(ext) = path.extension() {
                     if ext == "ttf" || ext == "otf" {
                         let filename = path.file_name().unwrap_or_default().to_string_lossy();
-                        if filename.contains("Nerd") || filename.contains("NF") || filename.contains("Symbols") || filename.contains("Powerline") {
+                        if filename.contains("Nerd")
+                            || filename.contains("NF")
+                            || filename.contains("Symbols")
+                            || filename.contains("Powerline")
+                        {
                             // Avoid adding duplicates (e.g. if we already loaded it or one with the same name)
                             if let Ok(bytes) = std::fs::read(&path) {
-                                if let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
-                                    log::info!("Loaded Nerd Font from recursive search: {}", path.display());
+                                if let Ok(font) = fontdue::Font::from_bytes(
+                                    bytes,
+                                    fontdue::FontSettings::default(),
+                                ) {
+                                    log::info!(
+                                        "Loaded Nerd Font from recursive search: {}",
+                                        path.display()
+                                    );
                                     fonts.push(font);
                                     if fonts.len() >= 8 {
                                         return;
@@ -114,7 +124,7 @@ impl FontAtlas {
                 *lock = loaded;
             }
         });
-        
+
         let atlas_width = 1024;
         let atlas_height = 1024;
 
@@ -225,11 +235,19 @@ impl FontAtlas {
     /// Retrieve the UV coordinate of the solid white pixel.
     pub fn white_pixel_uv(&self) -> [f32; 2] {
         // Point to the center of the first pixel at (0,0)
-        [0.5 / self.atlas_width as f32, 0.5 / self.atlas_height as f32]
+        [
+            0.5 / self.atlas_width as f32,
+            0.5 / self.atlas_height as f32,
+        ]
     }
 
     /// Retrieve glyph details, rasterizing and uploading it to the GPU texture if not cached.
-    pub fn get_or_rasterize(&mut self, queue: &wgpu::Queue, c: char, size: f32) -> Option<&GlyphInfo> {
+    pub fn get_or_rasterize(
+        &mut self,
+        queue: &wgpu::Queue,
+        c: char,
+        size: f32,
+    ) -> Option<&GlyphInfo> {
         let current_fb_count = if let Ok(lock) = self.fallback_fonts.lock() {
             lock.len()
         } else {
@@ -265,7 +283,7 @@ impl FontAtlas {
                 self.font.rasterize(c, size)
             }
         };
-        
+
         // Handle empty glyphs (like spaces)
         if metrics.width == 0 || metrics.height == 0 {
             let info = GlyphInfo {
@@ -392,16 +410,32 @@ impl FontAtlas {
             "chevron_left" => include_str!("../../assets/icons/chevron_left.svg"),
             "chevron_right" => include_str!("../../assets/icons/chevron_right.svg"),
             "filter" => include_str!("../../assets/icons/filter.svg"),
-            "circle" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"7.0\" fill=\"black\"/></svg>",
+            "circle" => {
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"7.0\" fill=\"black\"/></svg>"
+            }
             "close" => include_str!("../../assets/icons/close.svg"),
             "list_collapse" => include_str!("../../assets/icons/list_collapse.svg"),
-            "minimize" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"none\" stroke=\"black\" stroke-width=\"1.5\" d=\"M3 8h10\"/></svg>",
-            "maximize" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"10\" height=\"10\" x=\"3\" y=\"3\" rx=\"1.5\" fill=\"none\" stroke=\"black\" stroke-width=\"1.5\"/></svg>",
-            "terminal" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"14\" height=\"11\" x=\"1\" y=\"2.5\" rx=\"2\" fill=\"none\" stroke=\"black\" stroke-width=\"1.5\"/><path fill=\"none\" stroke=\"black\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.5 5.5L7 7.5l-2.5 2M8.5 9.5h3\"/></svg>",
-            "plus" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"none\" stroke=\"black\" stroke-width=\"1.5\" stroke-linecap=\"round\" d=\"M8 3v10M3 8h10\"/></svg>",
-            "bug" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"black\" d=\"M8 1.5a2.5 2.5 0 0 0-2.5 2.5V5H4.25a.75.75 0 0 0 0 1.5H5v1.25H3.75a.75.75 0 0 0 0 1.5H5V11H4.25a.75.75 0 0 0 0 1.5h1.25v.75c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5v-.75h1.25a.75.75 0 0 0 0-1.5H11V9.25h1.25a.75.75 0 0 0 0-1.5H11V6.5h.75a.75.75 0 0 0 0-1.5H11V4a2.5 2.5 0 0 0-2.5-2.5zM7 5H6.5V4a1.5 1.5 0 0 1 3 0v1H9V5H7zm-1 2.75h4V9H6V7.75zm0 2.75h4v1.5H6V10.5z\"/></svg>",
-            "warning" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\"><path stroke=\"black\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" d=\"M13.84 11.6 9.037 3.199a1.2 1.2 0 0 0-2.089 0l-4.802 8.403a1.2 1.2 0 0 0 1.05 1.8h9.604a1.201 1.201 0 0 0 1.038-1.8ZM8 6v2.667M8 11.333h.007\"/></svg>",
-            "error" => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"7\" fill=\"none\" stroke=\"black\" stroke-width=\"1.5\"/><path fill=\"none\" stroke=\"black\" stroke-width=\"1.5\" d=\"M5.5 5.5l5 5M10.5 5.5l-5 5\"/></svg>",
+            "minimize" => {
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"none\" stroke=\"black\" stroke-width=\"1.5\" d=\"M3 8h10\"/></svg>"
+            }
+            "maximize" => {
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"10\" height=\"10\" x=\"3\" y=\"3\" rx=\"1.5\" fill=\"none\" stroke=\"black\" stroke-width=\"1.5\"/></svg>"
+            }
+            "terminal" => {
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><rect width=\"14\" height=\"11\" x=\"1\" y=\"2.5\" rx=\"2\" fill=\"none\" stroke=\"black\" stroke-width=\"1.5\"/><path fill=\"none\" stroke=\"black\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.5 5.5L7 7.5l-2.5 2M8.5 9.5h3\"/></svg>"
+            }
+            "plus" => {
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"none\" stroke=\"black\" stroke-width=\"1.5\" stroke-linecap=\"round\" d=\"M8 3v10M3 8h10\"/></svg>"
+            }
+            "bug" => {
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><path fill=\"black\" d=\"M8 1.5a2.5 2.5 0 0 0-2.5 2.5V5H4.25a.75.75 0 0 0 0 1.5H5v1.25H3.75a.75.75 0 0 0 0 1.5H5V11H4.25a.75.75 0 0 0 0 1.5h1.25v.75c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5v-.75h1.25a.75.75 0 0 0 0-1.5H11V9.25h1.25a.75.75 0 0 0 0-1.5H11V6.5h.75a.75.75 0 0 0 0-1.5H11V4a2.5 2.5 0 0 0-2.5-2.5zM7 5H6.5V4a1.5 1.5 0 0 1 3 0v1H9V5H7zm-1 2.75h4V9H6V7.75zm0 2.75h4v1.5H6V10.5z\"/></svg>"
+            }
+            "warning" => {
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\"><path stroke=\"black\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" d=\"M13.84 11.6 9.037 3.199a1.2 1.2 0 0 0-2.089 0l-4.802 8.403a1.2 1.2 0 0 0 1.05 1.8h9.604a1.201 1.201 0 0 0 1.038-1.8ZM8 6v2.667M8 11.333h.007\"/></svg>"
+            }
+            "error" => {
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"7\" fill=\"none\" stroke=\"black\" stroke-width=\"1.5\"/><path fill=\"none\" stroke=\"black\" stroke-width=\"1.5\" d=\"M5.5 5.5l5 5M10.5 5.5l-5 5\"/></svg>"
+            }
             _ => {
                 log::warn!("Unknown embedded icon name: '{}'", icon_name);
                 return None;

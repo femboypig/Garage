@@ -5,20 +5,21 @@ use std::path::Path;
 fn is_binary_file(bytes: &[u8]) -> bool {
     let check_len = bytes.len().min(8192);
     let slice = &bytes[..check_len];
-    
+
     // Check for UTF-16 or UTF-32 BOMs
     if slice.starts_with(&[0xfe, 0xff]) || slice.starts_with(&[0xff, 0xfe]) {
         return false; // UTF-16 text
     }
-    if slice.starts_with(&[0x00, 0x00, 0xfe, 0xff]) || slice.starts_with(&[0xff, 0xfe, 0x00, 0x00]) {
+    if slice.starts_with(&[0x00, 0x00, 0xfe, 0xff]) || slice.starts_with(&[0xff, 0xfe, 0x00, 0x00])
+    {
         return false; // UTF-32 text
     }
-    
+
     // If it's valid UTF-8, it's text
     if std::str::from_utf8(slice).is_ok() {
         return false;
     }
-    
+
     // Check percentage of control/non-printable characters (excluding whitespace/tabs/newlines)
     let mut control_count = 0;
     for &b in slice {
@@ -28,15 +29,14 @@ fn is_binary_file(bytes: &[u8]) -> bool {
             control_count += 1;
         }
     }
-    
+
     // If more than 5% of characters are non-printable control chars, it's binary
     if !slice.is_empty() && (control_count * 100 / slice.len()) > 5 {
         return true;
     }
-    
+
     false
 }
-
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
@@ -89,7 +89,11 @@ impl Buffer {
         let mut max_len = 0;
         let mut lines = Vec::with_capacity(line_count);
         let has_crlf = text.contains("\r\n");
-        let line_ending = if has_crlf { "CRLF".to_string() } else { "LF".to_string() };
+        let line_ending = if has_crlf {
+            "CRLF".to_string()
+        } else {
+            "LF".to_string()
+        };
         for s in text.lines() {
             let line = if s.contains('\t') {
                 s.replace('\t', "    ")
@@ -126,7 +130,9 @@ impl Buffer {
         std::io::Read::read_to_end(&mut file, &mut bytes)?;
 
         if is_binary_file(&bytes) {
-            let error_msg = "[Error: Binary file detected. Garage does not support editing binary files.]".to_string();
+            let error_msg =
+                "[Error: Binary file detected. Garage does not support editing binary files.]"
+                    .to_string();
             self.max_line_len = error_msg.chars().count();
             self.lines = vec![error_msg];
             self.undo_stack.clear();
@@ -139,7 +145,11 @@ impl Buffer {
 
         let text = String::from_utf8_lossy(&bytes);
         let has_crlf = bytes.windows(2).any(|w| w == b"\r\n");
-        self.line_ending = if has_crlf { "CRLF".to_string() } else { "LF".to_string() };
+        self.line_ending = if has_crlf {
+            "CRLF".to_string()
+        } else {
+            "LF".to_string()
+        };
         let line_count = bytes.iter().filter(|&&b| b == b'\n').count() + 1;
         let mut max_len = 0;
         let mut loaded_lines = Vec::with_capacity(line_count);
@@ -188,7 +198,11 @@ impl Buffer {
     /// Save the buffer contents to a file.
     pub fn save_file<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         let mut file = File::create(path)?;
-        let le_bytes: &[u8] = if self.line_ending == "CRLF" { b"\r\n" } else { b"\n" };
+        let le_bytes: &[u8] = if self.line_ending == "CRLF" {
+            b"\r\n"
+        } else {
+            b"\n"
+        };
         for (i, line) in self.lines.iter().enumerate() {
             file.write_all(line.as_bytes())?;
             if i < self.lines.len() - 1 {
@@ -256,7 +270,7 @@ impl Buffer {
     fn insert_raw(&mut self, line: usize, col: usize, text: &str) {
         self.revision = self.revision.wrapping_add(1);
         let cur_line = &mut self.lines[line];
-        
+
         // Clamp column to line boundaries
         let col = col.min(cur_line.chars().count());
         let byte_idx = cur_line
@@ -303,8 +317,15 @@ impl Buffer {
 
     /// Delete text from start coordinates to end coordinates.
     /// Returns the deleted text.
-    pub fn delete(&mut self, start_line: usize, start_col: usize, end_line: usize, end_col: usize) -> String {
-        let (s_line, s_col, e_line, e_col) = self.normalize_range(start_line, start_col, end_line, end_col);
+    pub fn delete(
+        &mut self,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+    ) -> String {
+        let (s_line, s_col, e_line, e_col) =
+            self.normalize_range(start_line, start_col, end_line, end_col);
 
         let deleted_text = self.get_range_text(s_line, s_col, e_line, e_col);
 
@@ -351,7 +372,11 @@ impl Buffer {
             let first_line_text = &self.lines[start_line];
             let last_line_text = &self.lines[end_line];
 
-            let new_first = format!("{}{}", &first_line_text[..start_byte], &last_line_text[end_byte..]);
+            let new_first = format!(
+                "{}{}",
+                &first_line_text[..start_byte],
+                &last_line_text[end_byte..]
+            );
             self.lines[start_line] = new_first;
 
             // Remove middle and end lines
@@ -507,13 +532,25 @@ impl Buffer {
         } else if start_line > end_line {
             (end_line, end_col, start_line, start_col)
         } else {
-            (start_line, start_col.min(end_col), start_line, start_col.max(end_col))
+            (
+                start_line,
+                start_col.min(end_col),
+                start_line,
+                start_col.max(end_col),
+            )
         }
     }
 
     /// Retrieve the text within a specific coordinate range.
-    pub fn get_range_text(&self, start_line: usize, start_col: usize, end_line: usize, end_col: usize) -> String {
-        let (s_line, s_col, e_line, e_col) = self.normalize_range(start_line, start_col, end_line, end_col);
+    pub fn get_range_text(
+        &self,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+    ) -> String {
+        let (s_line, s_col, e_line, e_col) =
+            self.normalize_range(start_line, start_col, end_line, end_col);
 
         if s_line >= self.lines.len() {
             return String::new();
@@ -544,7 +581,12 @@ impl Buffer {
     }
 
     fn recalculate_max_line_len(&mut self) {
-        self.max_line_len = self.lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+        self.max_line_len = self
+            .lines
+            .iter()
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(0);
     }
 }
 
@@ -571,11 +613,7 @@ mod tests {
         buf.insert(0, 0, "Hello\nWorld\nRust");
         assert_eq!(
             buf.lines(),
-            &[
-                "Hello".to_string(),
-                "World".to_string(),
-                "Rust".to_string()
-            ]
+            &["Hello".to_string(), "World".to_string(), "Rust".to_string()]
         );
     }
 

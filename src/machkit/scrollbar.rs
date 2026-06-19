@@ -72,8 +72,13 @@ impl Scrollbar {
         if self.is_vertical {
             let ratio = self.visible_count as f32 / self.virtual_len as f32;
             let thumb_h = (h * ratio).clamp(20.0f32.min(h), h);
-            let max_scroll_f = (self.virtual_len as isize - self.visible_count as isize).max(0) as f32;
-            let scroll_ratio = if max_scroll_f > 0.0 { self.scroll_pos as f32 / max_scroll_f } else { 0.0 };
+            let max_scroll_f =
+                (self.virtual_len as isize - self.visible_count as isize).max(0) as f32;
+            let scroll_ratio = if max_scroll_f > 0.0 {
+                self.scroll_pos as f32 / max_scroll_f
+            } else {
+                0.0
+            };
             let thumb_y = y + scroll_ratio * (h - thumb_h);
 
             // Draw Thumb
@@ -81,8 +86,13 @@ impl Scrollbar {
         } else {
             let ratio = self.visible_count as f32 / self.virtual_len as f32;
             let thumb_w = (w * ratio).clamp(20.0f32.min(w), w);
-            let max_scroll_f = (self.virtual_len as isize - self.visible_count as isize).max(0) as f32;
-            let scroll_ratio = if max_scroll_f > 0.0 { self.scroll_pos as f32 / max_scroll_f } else { 0.0 };
+            let max_scroll_f =
+                (self.virtual_len as isize - self.visible_count as isize).max(0) as f32;
+            let scroll_ratio = if max_scroll_f > 0.0 {
+                self.scroll_pos as f32 / max_scroll_f
+            } else {
+                0.0
+            };
             let thumb_x = x + scroll_ratio * (w - thumb_w);
 
             // Draw Thumb

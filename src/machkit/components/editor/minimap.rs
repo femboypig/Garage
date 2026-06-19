@@ -1,6 +1,6 @@
+use crate::editor::buffer::Buffer;
 use crate::machkit::{UiState, Vertex};
 use crate::renderer::atlas::FontAtlas;
-use crate::editor::buffer::Buffer;
 
 pub fn draw_minimap(
     ui: &UiState,
@@ -17,7 +17,7 @@ pub fn draw_minimap(
     _active_file_path: Option<&str>,
 ) {
     let white_uv = atlas.white_pixel_uv();
-    
+
     // Draw Minimap Track background
     ui.push_quad(
         vertices,
@@ -47,8 +47,12 @@ pub fn draw_minimap(
 
     let minimap_total_h = buffer.len() as f32 * minimap_line_height;
     let max_scroll_f = (buffer.len() as isize - visible_lines as isize).max(0) as f32;
-    let scroll_ratio = if max_scroll_f > 0.0 { ui.scroll_y as f32 / max_scroll_f } else { 0.0 };
-    
+    let scroll_ratio = if max_scroll_f > 0.0 {
+        ui.scroll_y as f32 / max_scroll_f
+    } else {
+        0.0
+    };
+
     let minimap_offset_y = if minimap_total_h > editor_height {
         scroll_ratio * (minimap_total_h - editor_height)
     } else {
@@ -56,27 +60,35 @@ pub fn draw_minimap(
     };
 
     // Determine visible lines in the minimap to optimize rendering
-    let start_line = ((minimap_offset_y - 2.0) / minimap_line_height).floor().max(0.0) as usize;
-    let end_line = ((editor_height + minimap_offset_y) / minimap_line_height).ceil().max(0.0) as usize;
+    let start_line = ((minimap_offset_y - 2.0) / minimap_line_height)
+        .floor()
+        .max(0.0) as usize;
+    let end_line = ((editor_height + minimap_offset_y) / minimap_line_height)
+        .ceil()
+        .max(0.0) as usize;
     let end_line = end_line.min(buffer.len());
 
     let default_color = ui.config.theme.syntax_default;
 
     for line_idx in start_line..end_line {
         let row_y = editor_y + line_idx as f32 * minimap_line_height - minimap_offset_y;
-        
+
         let line_text = &buffer.lines()[line_idx];
-        
+
         let mut current_col = 0.0f32;
         let mut start_x = 0.0f32;
         let mut current_color = None;
         let mut block_w = 0.0f32;
-        
+
         for (_char_idx, c) in line_text.chars().enumerate() {
-            let char_w = if c == '\t' { 4.0 * minimap_char_w } else { minimap_char_w };
+            let char_w = if c == '\t' {
+                4.0 * minimap_char_w
+            } else {
+                minimap_char_w
+            };
             let color = default_color;
             let is_whitespace = c == ' ' || c == '\t';
-            
+
             if is_whitespace {
                 if let Some(col) = current_color {
                     let draw_w = block_w.min(minimap_width - start_x);
@@ -148,7 +160,7 @@ pub fn draw_minimap(
     // Draw Viewport Indicator highlight overlay
     let highlight_y_start = ui.scroll_y as f32 * minimap_line_height - minimap_offset_y;
     let highlight_h = (visible_lines as f32 * minimap_line_height).min(editor_height);
-    
+
     let highlight_color = if ui.config.theme.editor_bg[0] > 0.5 {
         [0.0, 0.0, 0.0, 0.08] // Light theme -> dark highlight
     } else {

@@ -1,4 +1,4 @@
-use crate::machkit::{UiState, Vertex, SearchRenderItem};
+use crate::machkit::{SearchRenderItem, UiState, Vertex};
 use crate::renderer::atlas::FontAtlas;
 use std::path::PathBuf;
 
@@ -55,10 +55,16 @@ pub fn draw_project_search(
     }
 
     // Find render index of the selected match
-    let selected_render_idx = render_items.iter().position(|item| match item {
-        SearchRenderItem::CodeLine { result_idx: Some(res_idx), .. } => *res_idx == ui.global_search_selected,
-        _ => false,
-    }).unwrap_or(0);
+    let selected_render_idx = render_items
+        .iter()
+        .position(|item| match item {
+            SearchRenderItem::CodeLine {
+                result_idx: Some(res_idx),
+                ..
+            } => *res_idx == ui.global_search_selected,
+            _ => false,
+        })
+        .unwrap_or(0);
 
     // Scroll selection into view
     if max_visible_items > 0 {
@@ -78,7 +84,10 @@ pub fn draw_project_search(
         let item_y = list_y + (idx - ui.scroll_y) as f32 * item_height;
         let text_baseline = (item_y + ui.buffer_font_ascent).round();
 
-        let row_hover = mouse_x >= text_area_x && mouse_x < text_area_x + text_viewport_w && mouse_y >= item_y && mouse_y < item_y + item_height;
+        let row_hover = mouse_x >= text_area_x
+            && mouse_x < text_area_x + text_viewport_w
+            && mouse_y >= item_y
+            && mouse_y < item_y + item_height;
 
         match &render_items[idx] {
             SearchRenderItem::FileHeader { path } => {
@@ -91,21 +100,49 @@ pub fn draw_project_search(
                     text_viewport_w,
                     item_height,
                     white_uv,
-                    if row_hover { ui.config.theme.titlebar_hover_bg } else { ui.config.theme.tabbar_bg },
+                    if row_hover {
+                        ui.config.theme.titlebar_hover_bg
+                    } else {
+                        ui.config.theme.tabbar_bg
+                    },
                 );
 
                 // Draw collapse chevron (right if collapsed, down if expanded)
                 let is_collapsed = ui.collapsed_search_files.contains(path);
-                let chevron_icon = if is_collapsed { "chevron_right" } else { "chevron_down" };
+                let chevron_icon = if is_collapsed {
+                    "chevron_right"
+                } else {
+                    "chevron_down"
+                };
                 let chevron_sz = 14.0f32;
                 let chevron_y = (item_y + (item_height - chevron_sz) / 2.0).round();
-                ui.push_icon(vertices, indices, atlas, queue, chevron_icon, text_area_x + 10.0, chevron_y, ui.config.theme.modal_text_muted, chevron_sz);
+                ui.push_icon(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    chevron_icon,
+                    text_area_x + 10.0,
+                    chevron_y,
+                    ui.config.theme.modal_text_muted,
+                    chevron_sz,
+                );
 
                 // Draw file path text: File Name (Normal) + Parent Path (Muted)
                 let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                let parent_dir = path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-                let parent_dir = parent_dir.strip_prefix("./").unwrap_or(&parent_dir).to_string();
-                let parent_dir = if parent_dir.is_empty() { String::new() } else { format!(" {}/", parent_dir) };
+                let parent_dir = path
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let parent_dir = parent_dir
+                    .strip_prefix("./")
+                    .unwrap_or(&parent_dir)
+                    .to_string();
+                let parent_dir = if parent_dir.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {}/", parent_dir)
+                };
 
                 // Draw File Name (start at 30.0 to lay next to collapse chevron)
                 let name_x = text_area_x + 30.0;
@@ -141,7 +178,10 @@ pub fn draw_project_search(
                 }
 
                 // Show button if row is hovered, or if active selection belongs to this file
-                let selected_path = ui.global_search_results.get(ui.global_search_selected).map(|r| &r.0);
+                let selected_path = ui
+                    .global_search_results
+                    .get(ui.global_search_selected)
+                    .map(|r| &r.0);
                 let is_file_selected = Some(path) == selected_path;
                 let show_open_btn = row_hover || is_file_selected;
 
@@ -153,16 +193,62 @@ pub fn draw_project_search(
                     let btn_x = text_area_x + text_viewport_w - btn_w - 15.0;
                     let btn_y = item_y + 3.0;
 
-                    let is_btn_hover = mouse_x >= btn_x && mouse_x < btn_x + btn_w && mouse_y >= btn_y && mouse_y < btn_y + btn_h;
-                    let btn_bg = if is_btn_hover { ui.config.theme.button_hover_bg } else { ui.config.theme.button_bg };
+                    let is_btn_hover = mouse_x >= btn_x
+                        && mouse_x < btn_x + btn_w
+                        && mouse_y >= btn_y
+                        && mouse_y < btn_y + btn_h;
+                    let btn_bg = if is_btn_hover {
+                        ui.config.theme.button_hover_bg
+                    } else {
+                        ui.config.theme.button_bg
+                    };
 
-                    ui.push_quad(vertices, indices, btn_x, btn_y, btn_w, btn_h, white_uv, btn_bg);
-                    ui.push_quad(vertices, indices, btn_x, btn_y, btn_w, 1.0, white_uv, ui.config.theme.button_border);
-                    ui.push_quad(vertices, indices, btn_x, btn_y + btn_h - 1.0, btn_w, 1.0, white_uv, ui.config.theme.button_border);
-                    ui.push_quad(vertices, indices, btn_x, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
-                    ui.push_quad(vertices, indices, btn_x + btn_w - 1.0, btn_y, 1.0, btn_h, white_uv, ui.config.theme.button_border);
+                    ui.push_quad(
+                        vertices, indices, btn_x, btn_y, btn_w, btn_h, white_uv, btn_bg,
+                    );
+                    ui.push_quad(
+                        vertices,
+                        indices,
+                        btn_x,
+                        btn_y,
+                        btn_w,
+                        1.0,
+                        white_uv,
+                        ui.config.theme.button_border,
+                    );
+                    ui.push_quad(
+                        vertices,
+                        indices,
+                        btn_x,
+                        btn_y + btn_h - 1.0,
+                        btn_w,
+                        1.0,
+                        white_uv,
+                        ui.config.theme.button_border,
+                    );
+                    ui.push_quad(
+                        vertices,
+                        indices,
+                        btn_x,
+                        btn_y,
+                        1.0,
+                        btn_h,
+                        white_uv,
+                        ui.config.theme.button_border,
+                    );
+                    ui.push_quad(
+                        vertices,
+                        indices,
+                        btn_x + btn_w - 1.0,
+                        btn_y,
+                        1.0,
+                        btn_h,
+                        white_uv,
+                        ui.config.theme.button_border,
+                    );
 
-                    let btn_baseline = (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
+                    let btn_baseline =
+                        (btn_y + btn_h / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
                     ui.push_str(
                         vertices,
                         indices,
@@ -183,7 +269,8 @@ pub fn draw_project_search(
                 result_idx,
                 ..
             } => {
-                let is_selected = result_idx.map_or(false, |res_idx| res_idx == ui.global_search_selected);
+                let is_selected =
+                    result_idx.map_or(false, |res_idx| res_idx == ui.global_search_selected);
 
                 let bg_color = if is_selected {
                     ui.config.theme.sidebar_hover_bg
@@ -204,8 +291,6 @@ pub fn draw_project_search(
                         bg_color,
                     );
                 }
-
-
 
                 // Draw line number (centered/padded)
                 let line_str = format!("{}", line_idx + 1);
@@ -236,13 +321,18 @@ pub fn draw_project_search(
                     &display_content,
                     snippet_x,
                     text_baseline,
-                    if is_selected { ui.config.theme.modal_text_title } else { ui.config.theme.modal_text_normal },
+                    if is_selected {
+                        ui.config.theme.modal_text_title
+                    } else {
+                        ui.config.theme.modal_text_normal
+                    },
                     ui.buffer_font_size,
                     ui.buffer_char_width,
                 );
 
                 if is_selected && !ui.global_search_focused {
-                    let cursor_col_clamped = ui.global_search_col.min(display_content.chars().count());
+                    let cursor_col_clamped =
+                        ui.global_search_col.min(display_content.chars().count());
                     let cursor_x = snippet_x + cursor_col_clamped as f32 * ui.buffer_char_width;
                     let mut cursor_ctx = crate::machkit::UiContext {
                         vertices,
@@ -261,8 +351,12 @@ pub fn draw_project_search(
                         buffer_font_ascent: ui.buffer_font_ascent,
                         buffer_line_height: ui.buffer_line_height,
                     };
-                    crate::machkit::Cursor::new()
-                        .draw(&mut cursor_ctx, cursor_x, item_y + 2.0, item_height - 4.0);
+                    crate::machkit::Cursor::new().draw(
+                        &mut cursor_ctx,
+                        cursor_x,
+                        item_y + 2.0,
+                        item_height - 4.0,
+                    );
                 }
 
                 // Highlight matched query text
@@ -279,7 +373,7 @@ pub fn draw_project_search(
                         for m in re.find_iter(&display_content) {
                             let start_char = display_content[..m.start()].chars().count();
                             let end_char = display_content[..m.end()].chars().count();
-                            
+
                             let highlight_x = snippet_x + start_char as f32 * ui.buffer_char_width;
                             let highlight_w = (end_char - start_char) as f32 * ui.buffer_char_width;
 
@@ -316,7 +410,6 @@ pub fn draw_project_search(
             }
         }
     }
-
 }
 
 pub fn build_search_render_items(ui: &mut UiState) -> Vec<SearchRenderItem> {
@@ -342,13 +435,16 @@ pub fn build_search_render_items(ui: &mut UiState) -> Vec<SearchRenderItem> {
 
         matches.sort_by_key(|m| m.0);
 
-        let file_lines = ui.project_search_file_cache.entry(path.clone()).or_insert_with(|| {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                content.lines().map(|s| s.to_string()).collect()
-            } else {
-                Vec::new()
-            }
-        });
+        let file_lines = ui
+            .project_search_file_cache
+            .entry(path.clone())
+            .or_insert_with(|| {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    content.lines().map(|s| s.to_string()).collect()
+                } else {
+                    Vec::new()
+                }
+            });
 
         let file_len = file_lines.len();
         if file_len == 0 {
@@ -357,7 +453,8 @@ pub fn build_search_render_items(ui: &mut UiState) -> Vec<SearchRenderItem> {
 
         let mut ranges: Vec<(usize, usize, Vec<(usize, usize)>)> = Vec::new();
         for (line_idx, res_idx) in matches {
-            let (extra_before, extra_after) = ui.global_search_expanded_margins
+            let (extra_before, extra_after) = ui
+                .global_search_expanded_margins
                 .get(&(path.clone(), line_idx))
                 .copied()
                 .unwrap_or((2, 2));
@@ -400,5 +497,3 @@ pub fn build_search_render_items(ui: &mut UiState) -> Vec<SearchRenderItem> {
     ui.project_search_render_items = Some(render_items.clone());
     render_items
 }
-
-

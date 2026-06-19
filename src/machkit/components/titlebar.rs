@@ -1,6 +1,6 @@
+use crate::machkit::{MenuType, UiState};
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
-use crate::machkit::{UiState, MenuType};
 
 pub fn draw_titlebar(
     ui: &UiState,
@@ -51,11 +51,7 @@ pub fn draw_titlebar(
     for (i, (label, menu_type)) in menu_items_raw.iter().enumerate() {
         let label_len = label.chars().count() as f32;
         let text_w = label_len * ui.ui_char_width;
-        let (left_pad, right_pad) = if i == 0 {
-            (14.0, 10.0)
-        } else {
-            (10.0, 10.0)
-        };
+        let (left_pad, right_pad) = if i == 0 { (14.0, 10.0) } else { (10.0, 10.0) };
         let item_w = text_w + left_pad + right_pad;
         let x_min = current_x;
         let x_max = current_x + item_w;
@@ -64,7 +60,10 @@ pub fn draw_titlebar(
     }
 
     for (label, x_min, x_max, left_pad, menu_type) in &menu_positions {
-        let is_hovered = ui.active_modal.is_none() && mouse_y < ui.titlebar_height && mouse_x >= *x_min && mouse_x < *x_max;
+        let is_hovered = ui.active_modal.is_none()
+            && mouse_y < ui.titlebar_height
+            && mouse_x >= *x_min
+            && mouse_x < *x_max;
         let is_active = ui.active_menu == Some(*menu_type);
 
         if is_hovered || is_active {
@@ -79,7 +78,7 @@ pub fn draw_titlebar(
                 ui.config.theme.titlebar_hover_bg,
             );
         }
-        
+
         let label_color = if is_active || is_hovered {
             if ui.config.theme.name.contains("Dark") {
                 [1.0, 1.0, 1.0, 1.0]
@@ -105,8 +104,15 @@ pub fn draw_titlebar(
     }
 
     // Display current open file title in titlebar center
-    let file_name = ui.selected_file.as_ref()
-        .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
+    let file_name = ui
+        .selected_file
+        .as_ref()
+        .map(|p| {
+            p.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string()
+        })
         .unwrap_or_else(|| "Untitled".to_string());
     let title_text = format!("Garage - {}", file_name);
     let title_len = title_text.chars().count() as f32;
@@ -125,6 +131,4 @@ pub fn draw_titlebar(
             ui.ui_char_width,
         );
     }
-
-
 }

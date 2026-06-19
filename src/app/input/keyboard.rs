@@ -1,17 +1,17 @@
-use std::sync::Arc;
 use std::io::Write;
-use winit::window::Window;
-use winit::keyboard::{Key, PhysicalKey, NamedKey};
+use std::sync::Arc;
 use winit::event_loop::EventLoopWindowTarget;
+use winit::keyboard::{Key, NamedKey, PhysicalKey};
+use winit::window::Window;
 
-use crate::renderer::wgpu::GpuContext;
-use crate::machkit::{UiState, UiAction};
-use crate::renderer::atlas::FontAtlas;
-use crate::app::state::AppState;
 use crate::app::handler::handle_action;
+use crate::app::input::mouse::update_cursor_icon;
+use crate::app::state::AppState;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
-use crate::app::input::mouse::update_cursor_icon;
+use crate::machkit::{UiAction, UiState};
+use crate::renderer::atlas::FontAtlas;
+use crate::renderer::wgpu::GpuContext;
 
 pub fn handle_keyboard_input(
     ui: &mut UiState,
@@ -47,7 +47,9 @@ pub fn handle_keyboard_input(
             alt,
             &["Workspace"],
         ) {
-            if handle_workspace_action_for_terminal(ui, state, action, window, elwt, gpu, atlas, font_bytes) {
+            if handle_workspace_action_for_terminal(
+                ui, state, action, window, elwt, gpu, atlas, font_bytes,
+            ) {
                 return;
             }
         }
@@ -77,7 +79,20 @@ pub fn handle_keyboard_input(
 
     // Handle typing inside the Search Panel
     if ui.show_search_panel && ui.search_focused {
-        if handle_search_panel_input(ui, state, window, elwt, gpu, atlas, font_bytes, &logical_key, physical_key, ctrl, shift, alt) {
+        if handle_search_panel_input(
+            ui,
+            state,
+            window,
+            elwt,
+            gpu,
+            atlas,
+            font_bytes,
+            &logical_key,
+            physical_key,
+            ctrl,
+            shift,
+            alt,
+        ) {
             return;
         }
     }
@@ -89,12 +104,30 @@ pub fn handle_keyboard_input(
     }
 
     // 2. Delegate to command palette modal handler if command palette is active
-    if handle_command_palette_input(ui, state, window, elwt, gpu, atlas, font_bytes, &logical_key) {
+    if handle_command_palette_input(
+        ui,
+        state,
+        window,
+        elwt,
+        gpu,
+        atlas,
+        font_bytes,
+        &logical_key,
+    ) {
         return;
     }
 
     // 2b. Delegate to global search modal handler if global search is active
-    if handle_global_search_input(ui, state, window, elwt, gpu, atlas, font_bytes, &logical_key) {
+    if handle_global_search_input(
+        ui,
+        state,
+        window,
+        elwt,
+        gpu,
+        atlas,
+        font_bytes,
+        &logical_key,
+    ) {
         return;
     }
 
@@ -195,7 +228,16 @@ fn handle_workspace_action_for_terminal(
             true
         }
         crate::editor::actions::Action::GlobalSearch => {
-            handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from("search://project")), window, elwt, gpu, atlas, font_bytes);
+            handle_action(
+                ui,
+                state,
+                UiAction::OpenFile(std::path::PathBuf::from("search://project")),
+                window,
+                elwt,
+                gpu,
+                atlas,
+                font_bytes,
+            );
             window.request_redraw();
             true
         }
@@ -220,7 +262,15 @@ fn handle_search_panel_input(
     alt: bool,
 ) -> bool {
     // Check if there's an action mapped
-    if let Some(action) = crate::editor::keymap::map_key(&ui.keymap, logical_key, physical_key, ctrl, shift, alt, &["Editor", "Workspace"]) {
+    if let Some(action) = crate::editor::keymap::map_key(
+        &ui.keymap,
+        logical_key,
+        physical_key,
+        ctrl,
+        shift,
+        alt,
+        &["Editor", "Workspace"],
+    ) {
         if handle_search_panel_action(ui, state, action, window, elwt, gpu, atlas, font_bytes) {
             return true;
         }
@@ -335,12 +385,30 @@ fn handle_search_panel_action(
             true
         }
         crate::editor::actions::Action::GlobalSearch => {
-            handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from("search://project")), window, elwt, gpu, atlas, font_bytes);
+            handle_action(
+                ui,
+                state,
+                UiAction::OpenFile(std::path::PathBuf::from("search://project")),
+                window,
+                elwt,
+                gpu,
+                atlas,
+                font_bytes,
+            );
             window.request_redraw();
             true
         }
         crate::editor::actions::Action::SaveFile => {
-            handle_action(ui, state, UiAction::SaveFile, window, elwt, gpu, atlas, font_bytes);
+            handle_action(
+                ui,
+                state,
+                UiAction::SaveFile,
+                window,
+                elwt,
+                gpu,
+                atlas,
+                font_bytes,
+            );
             window.request_redraw();
             true
         }
@@ -349,7 +417,12 @@ fn handle_search_panel_action(
 }
 
 /// Navigate to next/previous search match when Enter is pressed in the search panel.
-fn handle_search_panel_enter(ui: &mut UiState, state: &mut AppState, shift: bool, window: &mut Arc<Window>) {
+fn handle_search_panel_enter(
+    ui: &mut UiState,
+    state: &mut AppState,
+    shift: bool,
+    window: &mut Arc<Window>,
+) {
     ui.perform_search(state);
     if !ui.search_matches.is_empty() {
         if shift {
@@ -410,7 +483,10 @@ fn handle_sidebar_input_confirm(ui: &mut UiState) {
                 let parent = if target.is_dir() {
                     target.clone()
                 } else {
-                    target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."))
+                    target
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."))
                 };
                 let new_path = parent.join(val);
                 let _ = std::fs::File::create(new_path);
@@ -419,7 +495,10 @@ fn handle_sidebar_input_confirm(ui: &mut UiState) {
                 let parent = if target.is_dir() {
                     target.clone()
                 } else {
-                    target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."))
+                    target
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."))
                 };
                 let new_path = parent.join(val);
                 let _ = std::fs::create_dir_all(new_path);
@@ -478,15 +557,13 @@ pub fn handle_terminal_input(
 ) -> bool {
     if state.terminal_focus && !state.dock_terminals.is_empty() {
         let active_term = &mut state.dock_terminals[state.active_terminal_idx];
-        
+
         let ctrl = state.modifiers.control_key();
         let shift = state.modifiers.shift_key();
         let alt = state.modifiers.alt_key();
-        
-        let modifier_code = 1 
-            + if shift { 1 } else { 0 } 
-            + if alt { 2 } else { 0 } 
-            + if ctrl { 4 } else { 0 };
+
+        let modifier_code =
+            1 + if shift { 1 } else { 0 } + if alt { 2 } else { 0 } + if ctrl { 4 } else { 0 };
 
         let bytes_to_write: Option<Vec<u8>> = match logical_key {
             Key::Character(text) => {
@@ -508,58 +585,100 @@ pub fn handle_terminal_input(
             }
             Key::Named(NamedKey::Enter) => Some(vec![b'\r']),
             Key::Named(NamedKey::Space) => {
-                if ctrl { Some(vec![0]) } else { Some(vec![b' ']) }
+                if ctrl {
+                    Some(vec![0])
+                } else {
+                    Some(vec![b' '])
+                }
             }
             Key::Named(NamedKey::Backspace) => {
-                if alt { Some(vec![27, 127]) }
-                else if ctrl { Some(vec![8]) }
-                else { Some(vec![127]) }
+                if alt {
+                    Some(vec![27, 127])
+                } else if ctrl {
+                    Some(vec![8])
+                } else {
+                    Some(vec![127])
+                }
             }
             Key::Named(NamedKey::Tab) => Some(vec![b'\t']),
             Key::Named(NamedKey::Escape) => Some(vec![27]),
             Key::Named(NamedKey::ArrowUp) => {
-                if modifier_code > 1 { Some(format!("\x1b[1;{}A", modifier_code).into_bytes()) }
-                else if active_term.grid.decckm { Some(b"\x1bOA".to_vec()) }
-                else { Some(b"\x1b[A".to_vec()) }
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}A", modifier_code).into_bytes())
+                } else if active_term.grid.decckm {
+                    Some(b"\x1bOA".to_vec())
+                } else {
+                    Some(b"\x1b[A".to_vec())
+                }
             }
             Key::Named(NamedKey::ArrowDown) => {
-                if modifier_code > 1 { Some(format!("\x1b[1;{}B", modifier_code).into_bytes()) }
-                else if active_term.grid.decckm { Some(b"\x1bOB".to_vec()) }
-                else { Some(b"\x1b[B".to_vec()) }
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}B", modifier_code).into_bytes())
+                } else if active_term.grid.decckm {
+                    Some(b"\x1bOB".to_vec())
+                } else {
+                    Some(b"\x1b[B".to_vec())
+                }
             }
             Key::Named(NamedKey::ArrowRight) => {
-                if modifier_code > 1 { Some(format!("\x1b[1;{}C", modifier_code).into_bytes()) }
-                else if active_term.grid.decckm { Some(b"\x1bOC".to_vec()) }
-                else { Some(b"\x1b[C".to_vec()) }
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}C", modifier_code).into_bytes())
+                } else if active_term.grid.decckm {
+                    Some(b"\x1bOC".to_vec())
+                } else {
+                    Some(b"\x1b[C".to_vec())
+                }
             }
             Key::Named(NamedKey::ArrowLeft) => {
-                if modifier_code > 1 { Some(format!("\x1b[1;{}D", modifier_code).into_bytes()) }
-                else if active_term.grid.decckm { Some(b"\x1bOD".to_vec()) }
-                else { Some(b"\x1b[D".to_vec()) }
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}D", modifier_code).into_bytes())
+                } else if active_term.grid.decckm {
+                    Some(b"\x1bOD".to_vec())
+                } else {
+                    Some(b"\x1b[D".to_vec())
+                }
             }
             Key::Named(NamedKey::Home) => {
-                if modifier_code > 1 { Some(format!("\x1b[1;{}H", modifier_code).into_bytes()) }
-                else { Some(b"\x1b[H".to_vec()) }
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}H", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[H".to_vec())
+                }
             }
             Key::Named(NamedKey::End) => {
-                if modifier_code > 1 { Some(format!("\x1b[1;{}F", modifier_code).into_bytes()) }
-                else { Some(b"\x1b[F".to_vec()) }
+                if modifier_code > 1 {
+                    Some(format!("\x1b[1;{}F", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[F".to_vec())
+                }
             }
             Key::Named(NamedKey::Delete) => {
-                if modifier_code > 1 { Some(format!("\x1b[3;{}~", modifier_code).into_bytes()) }
-                else { Some(b"\x1b[3~".to_vec()) }
+                if modifier_code > 1 {
+                    Some(format!("\x1b[3;{}~", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[3~".to_vec())
+                }
             }
             Key::Named(NamedKey::Insert) => {
-                if modifier_code > 1 { Some(format!("\x1b[2;{}~", modifier_code).into_bytes()) }
-                else { Some(b"\x1b[2~".to_vec()) }
+                if modifier_code > 1 {
+                    Some(format!("\x1b[2;{}~", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[2~".to_vec())
+                }
             }
             Key::Named(NamedKey::PageUp) => {
-                if modifier_code > 1 { Some(format!("\x1b[5;{}~", modifier_code).into_bytes()) }
-                else { Some(b"\x1b[5~".to_vec()) }
+                if modifier_code > 1 {
+                    Some(format!("\x1b[5;{}~", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[5~".to_vec())
+                }
             }
             Key::Named(NamedKey::PageDown) => {
-                if modifier_code > 1 { Some(format!("\x1b[6;{}~", modifier_code).into_bytes()) }
-                else { Some(b"\x1b[6~".to_vec()) }
+                if modifier_code > 1 {
+                    Some(format!("\x1b[6;{}~", modifier_code).into_bytes())
+                } else {
+                    Some(b"\x1b[6~".to_vec())
+                }
             }
             _ => None,
         };
@@ -603,7 +722,8 @@ pub fn handle_command_palette_input(
             Key::Named(NamedKey::ArrowUp) => {
                 let items_count = ui.get_filtered_commands().len();
                 if items_count > 0 {
-                    ui.command_palette_selected = (ui.command_palette_selected + items_count - 1) % items_count;
+                    ui.command_palette_selected =
+                        (ui.command_palette_selected + items_count - 1) % items_count;
                 }
                 window.request_redraw();
             }
@@ -612,13 +732,18 @@ pub fn handle_command_palette_input(
                 if ui.command_palette_selected < filtered.len() {
                     let cmd = filtered[ui.command_palette_selected];
                     ui.active_modal = None;
-                    
+
                     let action_res = {
-                         let active_tab = &mut state.tabs[state.active_tab_idx];
-                         let active_path = active_tab.path.as_deref();
-                         ui.execute_command(cmd, &mut active_tab.buffer, &mut active_tab.cursor, active_path)
-                     };
-                     handle_action(ui, state, action_res, window, elwt, gpu, atlas, font_bytes);
+                        let active_tab = &mut state.tabs[state.active_tab_idx];
+                        let active_path = active_tab.path.as_deref();
+                        ui.execute_command(
+                            cmd,
+                            &mut active_tab.buffer,
+                            &mut active_tab.cursor,
+                            active_path,
+                        )
+                    };
+                    handle_action(ui, state, action_res, window, elwt, gpu, atlas, font_bytes);
                 }
                 window.request_redraw();
             }
@@ -670,7 +795,8 @@ pub fn handle_global_search_input(
             Key::Named(NamedKey::ArrowUp) => {
                 let items_count = ui.global_search_results.len();
                 if items_count > 0 {
-                    ui.global_search_selected = (ui.global_search_selected + items_count - 1) % items_count;
+                    ui.global_search_selected =
+                        (ui.global_search_selected + items_count - 1) % items_count;
                 }
                 window.request_redraw();
             }
@@ -682,9 +808,19 @@ pub fn handle_global_search_input(
                 } else {
                     let results_len = ui.global_search_results.len();
                     if ui.global_search_selected < results_len {
-                        let (path, line_idx, _) = &ui.global_search_results[ui.global_search_selected];
+                        let (path, line_idx, _) =
+                            &ui.global_search_results[ui.global_search_selected];
                         ui.active_modal = None;
-                        handle_action(ui, state, UiAction::OpenFileAt(path.clone(), *line_idx), window, elwt, gpu, atlas, font_bytes);
+                        handle_action(
+                            ui,
+                            state,
+                            UiAction::OpenFileAt(path.clone(), *line_idx),
+                            window,
+                            elwt,
+                            gpu,
+                            atlas,
+                            font_bytes,
+                        );
                     }
                 }
                 window.request_redraw();
@@ -726,7 +862,15 @@ pub fn handle_diagnostics_keyboard(
     alt: bool,
 ) -> bool {
     if state.tabs[state.active_tab_idx].path.as_deref() == Some("diagnostics://project") {
-        if let Some(action) = crate::editor::keymap::map_key(&ui.keymap, logical_key, physical_key, ctrl, shift, alt, &["Editor", "Workspace"]) {
+        if let Some(action) = crate::editor::keymap::map_key(
+            &ui.keymap,
+            logical_key,
+            physical_key,
+            ctrl,
+            shift,
+            alt,
+            &["Editor", "Workspace"],
+        ) {
             let is_navigation_action = is_cursor_navigation_action(&action);
             let is_global_action = is_workspace_global_action(&action);
             let is_document_action = !is_navigation_action && !is_global_action;
@@ -738,7 +882,18 @@ pub fn handle_diagnostics_keyboard(
             }
 
             if is_document_action {
-                if handle_diagnostics_document_action(ui, state, window, elwt, gpu, atlas, font_bytes, logical_key, physical_key, &action) {
+                if handle_diagnostics_document_action(
+                    ui,
+                    state,
+                    window,
+                    elwt,
+                    gpu,
+                    atlas,
+                    font_bytes,
+                    logical_key,
+                    physical_key,
+                    &action,
+                ) {
                     return true;
                 }
             }
@@ -752,11 +907,11 @@ fn is_cursor_navigation_action(action: &crate::editor::actions::Action) -> bool 
     matches!(
         action,
         crate::editor::actions::Action::MoveUp { .. }
-        | crate::editor::actions::Action::MoveDown { .. }
-        | crate::editor::actions::Action::MoveLeft { .. }
-        | crate::editor::actions::Action::MoveRight { .. }
-        | crate::editor::actions::Action::MoveToLineStart { .. }
-        | crate::editor::actions::Action::MoveToLineEnd { .. }
+            | crate::editor::actions::Action::MoveDown { .. }
+            | crate::editor::actions::Action::MoveLeft { .. }
+            | crate::editor::actions::Action::MoveRight { .. }
+            | crate::editor::actions::Action::MoveToLineStart { .. }
+            | crate::editor::actions::Action::MoveToLineEnd { .. }
     )
 }
 
@@ -765,16 +920,17 @@ fn is_workspace_global_action(action: &crate::editor::actions::Action) -> bool {
     matches!(
         action,
         crate::editor::actions::Action::ZoomIn
-        | crate::editor::actions::Action::ZoomOut
-        | crate::editor::actions::Action::CommandPalette
-        | crate::editor::actions::Action::GlobalSearch
-        | crate::editor::actions::Action::Escape
+            | crate::editor::actions::Action::ZoomOut
+            | crate::editor::actions::Action::CommandPalette
+            | crate::editor::actions::Action::GlobalSearch
+            | crate::editor::actions::Action::Escape
     )
 }
 
 /// Gets the line length in the diagnostics virtual view for a given line index.
 fn diagnostics_visual_line_len(ui: &mut UiState, line_idx: usize) -> usize {
-    let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
+    let visual_lines =
+        crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
     visual_lines.get(line_idx).map_or(0, |vl| {
         use crate::machkit::components::editor::text_area::VisualDiagnosticLine;
         match vl {
@@ -786,7 +942,11 @@ fn diagnostics_visual_line_len(ui: &mut UiState, line_idx: usize) -> usize {
 }
 
 /// Handles cursor navigation within the diagnostics virtual view.
-fn handle_diagnostics_navigation(ui: &mut UiState, state: &mut AppState, action: &crate::editor::actions::Action) {
+fn handle_diagnostics_navigation(
+    ui: &mut UiState,
+    state: &mut AppState,
+    action: &crate::editor::actions::Action,
+) {
     use crate::machkit::components::editor::text_area::get_visual_diagnostic_lines;
     let active_tab = &mut state.tabs[state.active_tab_idx];
     active_tab.cursor.clear_selection();
@@ -874,18 +1034,28 @@ fn handle_diagnostics_document_action(
     let is_modifying_action = matches!(
         action,
         crate::editor::actions::Action::InsertChar(_)
-        | crate::editor::actions::Action::InsertNewLine
-        | crate::editor::actions::Action::InsertTab
-        | crate::editor::actions::Action::DeleteLeft
-        | crate::editor::actions::Action::DeleteRight
-        | crate::editor::actions::Action::Undo
-        | crate::editor::actions::Action::Redo
-        | crate::editor::actions::Action::Paste
-        | crate::editor::actions::Action::Cut
+            | crate::editor::actions::Action::InsertNewLine
+            | crate::editor::actions::Action::InsertTab
+            | crate::editor::actions::Action::DeleteLeft
+            | crate::editor::actions::Action::DeleteRight
+            | crate::editor::actions::Action::Undo
+            | crate::editor::actions::Action::Redo
+            | crate::editor::actions::Action::Paste
+            | crate::editor::actions::Action::Cut
     );
 
     if is_modifying_action {
-        handle_diagnostics_edit(ui, state, window, elwt, gpu, atlas, font_bytes, logical_key, physical_key);
+        handle_diagnostics_edit(
+            ui,
+            state,
+            window,
+            elwt,
+            gpu,
+            atlas,
+            font_bytes,
+            logical_key,
+            physical_key,
+        );
         return true;
     }
 
@@ -904,7 +1074,9 @@ fn handle_diagnostics_edit(
     logical_key: &Key,
     physical_key: PhysicalKey,
 ) {
-    use crate::machkit::components::editor::text_area::{get_visual_diagnostic_lines, VisualDiagnosticLine};
+    use crate::machkit::components::editor::text_area::{
+        VisualDiagnosticLine, get_visual_diagnostic_lines,
+    };
 
     let visual_lines = get_visual_diagnostic_lines(ui);
     let current_visual_line = {
@@ -921,7 +1093,8 @@ fn handle_diagnostics_edit(
     if let Some(path) = path_opt {
         let target_tab_idx = find_or_open_tab(state, &path);
 
-        let (target_line, target_col) = compute_target_position(state, &current_visual_line, target_tab_idx);
+        let (target_line, target_col) =
+            compute_target_position(state, &current_visual_line, target_tab_idx);
         state.tabs[target_tab_idx].cursor.line = target_line;
         state.tabs[target_tab_idx].cursor.col = target_col;
         state.tabs[target_tab_idx].cursor.intended_col = target_col;
@@ -930,7 +1103,17 @@ fn handle_diagnostics_edit(
         let original_active_tab_idx = state.active_tab_idx;
         state.active_tab_idx = target_tab_idx;
 
-        handle_keyboard_input(ui, state, window, elwt, gpu, atlas, font_bytes, logical_key.clone(), physical_key);
+        handle_keyboard_input(
+            ui,
+            state,
+            window,
+            elwt,
+            gpu,
+            atlas,
+            font_bytes,
+            logical_key.clone(),
+            physical_key,
+        );
 
         let new_line = state.tabs[target_tab_idx].cursor.line;
         let new_col = state.tabs[target_tab_idx].cursor.col;
@@ -943,7 +1126,11 @@ fn handle_diagnostics_edit(
 
         let visual_lines_new = get_visual_diagnostic_lines(ui);
         let active_tab = &mut state.tabs[state.active_tab_idx];
-        if let Some(VisualDiagnosticLine::Code { line_idx: orig_line_idx, .. }) = current_visual_line.as_ref() {
+        if let Some(VisualDiagnosticLine::Code {
+            line_idx: orig_line_idx,
+            ..
+        }) = current_visual_line.as_ref()
+        {
             if new_line == *orig_line_idx {
                 active_tab.cursor.col = new_col;
                 active_tab.cursor.intended_col = new_col;
@@ -961,7 +1148,11 @@ fn handle_diagnostics_edit(
 
 /// Finds an open tab for the given path or opens the file in a new tab.
 fn find_or_open_tab(state: &mut AppState, path: &str) -> usize {
-    if let Some(idx) = state.tabs.iter().position(|t| t.path.as_deref() == Some(path)) {
+    if let Some(idx) = state
+        .tabs
+        .iter()
+        .position(|t| t.path.as_deref() == Some(path))
+    {
         idx
     } else {
         let mut new_buf = Buffer::new();
@@ -983,17 +1174,30 @@ fn find_or_open_tab(state: &mut AppState, path: &str) -> usize {
 /// Computes the target (line, col) position in the real file from a diagnostics visual line.
 fn compute_target_position(
     state: &AppState,
-    current_visual_line: &Option<crate::machkit::components::editor::text_area::VisualDiagnosticLine>,
+    current_visual_line: &Option<
+        crate::machkit::components::editor::text_area::VisualDiagnosticLine,
+    >,
     target_tab_idx: usize,
 ) -> (usize, usize) {
     use crate::machkit::components::editor::text_area::VisualDiagnosticLine;
     match current_visual_line.as_ref().unwrap() {
-        VisualDiagnosticLine::Code { line_idx, line_content, .. } => {
+        VisualDiagnosticLine::Code {
+            line_idx,
+            line_content,
+            ..
+        } => {
             let line_idx = *line_idx;
-            let target_line = line_idx.min(state.tabs[target_tab_idx].buffer.len().saturating_sub(1));
-            let line_len = state.tabs[target_tab_idx].buffer.lines().get(target_line).map_or(0, |l| l.chars().count());
+            let target_line =
+                line_idx.min(state.tabs[target_tab_idx].buffer.len().saturating_sub(1));
+            let line_len = state.tabs[target_tab_idx]
+                .buffer
+                .lines()
+                .get(target_line)
+                .map_or(0, |l| l.chars().count());
             let active_cursor_col = state.tabs[state.active_tab_idx].cursor.col;
-            let target_col = active_cursor_col.min(line_content.chars().count()).min(line_len);
+            let target_col = active_cursor_col
+                .min(line_content.chars().count())
+                .min(line_len);
             (target_line, target_col)
         }
         VisualDiagnosticLine::Header { line, col, .. } => (*line, *col),
@@ -1017,8 +1221,18 @@ pub fn handle_editor_keyboard(
     active_path_start: Option<String>,
     old_revision: Option<usize>,
 ) {
-    if let Some(action) = crate::editor::keymap::map_key(&ui.keymap, logical_key, physical_key, ctrl, shift, alt, &["Editor", "Workspace"]) {
-        handle_editor_action(ui, state, window, elwt, gpu, atlas, font_bytes, action, shift);
+    if let Some(action) = crate::editor::keymap::map_key(
+        &ui.keymap,
+        logical_key,
+        physical_key,
+        ctrl,
+        shift,
+        alt,
+        &["Editor", "Workspace"],
+    ) {
+        handle_editor_action(
+            ui, state, window, elwt, gpu, atlas, font_bytes, action, shift,
+        );
     }
 
     if let (Some(start_path), Some(old_rev)) = (active_path_start, old_revision) {
@@ -1027,8 +1241,10 @@ pub fn handle_editor_keyboard(
             if active_tab.path.as_ref() == Some(&start_path) {
                 if old_rev != active_tab.buffer.revision {
                     let abs_path = crate::editor::get_absolute_path(&start_path);
-                    ui.diagnostics_file_cache.insert(abs_path.clone(), active_tab.buffer.lines().to_vec());
-                    ui.synced_revisions.insert(abs_path, active_tab.buffer.revision);
+                    ui.diagnostics_file_cache
+                        .insert(abs_path.clone(), active_tab.buffer.lines().to_vec());
+                    ui.synced_revisions
+                        .insert(abs_path, active_tab.buffer.revision);
                     ui.diagnostics_changed = true;
                 }
             }
@@ -1036,7 +1252,12 @@ pub fn handle_editor_keyboard(
     }
 
     let active_tab = &state.tabs[state.active_tab_idx];
-    ui.scroll_to_cursor(&active_tab.cursor, active_tab.buffer.len(), window.inner_size().width as f32, window.inner_size().height as f32);
+    ui.scroll_to_cursor(
+        &active_tab.cursor,
+        active_tab.buffer.len(),
+        window.inner_size().width as f32,
+        window.inner_size().height as f32,
+    );
     update_cursor_icon(window, ui, state);
     window.request_redraw();
 }
@@ -1070,10 +1291,28 @@ fn handle_editor_action(
             ui.command_palette_selected = 0;
         }
         Action::GlobalSearch => {
-            handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from("search://project")), window, elwt, gpu, atlas, font_bytes);
+            handle_action(
+                ui,
+                state,
+                UiAction::OpenFile(std::path::PathBuf::from("search://project")),
+                window,
+                elwt,
+                gpu,
+                atlas,
+                font_bytes,
+            );
         }
         Action::SaveFile => {
-            handle_action(ui, state, UiAction::SaveFile, window, elwt, gpu, atlas, font_bytes);
+            handle_action(
+                ui,
+                state,
+                UiAction::SaveFile,
+                window,
+                elwt,
+                gpu,
+                atlas,
+                font_bytes,
+            );
         }
         Action::Escape => {
             let active_tab = &mut state.tabs[state.active_tab_idx];
@@ -1089,8 +1328,12 @@ fn handle_editor_action(
         }
 
         // --- Cursor navigation ---
-        Action::MoveLeft { select, word } => handle_cursor_move_horizontal(state, select, word, false),
-        Action::MoveRight { select, word } => handle_cursor_move_horizontal(state, select, word, true),
+        Action::MoveLeft { select, word } => {
+            handle_cursor_move_horizontal(state, select, word, false)
+        }
+        Action::MoveRight { select, word } => {
+            handle_cursor_move_horizontal(state, select, word, true)
+        }
         Action::MoveUp { select } => handle_cursor_move_vertical(state, select, false),
         Action::MoveDown { select } => handle_cursor_move_vertical(state, select, true),
         Action::MoveToLineStart { select } => handle_cursor_to_line_boundary(state, select, false),
@@ -1108,12 +1351,32 @@ fn handle_editor_action(
         Action::Cut => handle_cut(state),
         Action::Paste => handle_paste(state),
         Action::Undo => {
-            handle_action(ui, state, UiAction::Undo, window, elwt, gpu, atlas, font_bytes);
-            state.tabs[state.active_tab_idx].cursor.intended_col = state.tabs[state.active_tab_idx].cursor.col;
+            handle_action(
+                ui,
+                state,
+                UiAction::Undo,
+                window,
+                elwt,
+                gpu,
+                atlas,
+                font_bytes,
+            );
+            state.tabs[state.active_tab_idx].cursor.intended_col =
+                state.tabs[state.active_tab_idx].cursor.col;
         }
         Action::Redo => {
-            handle_action(ui, state, UiAction::Redo, window, elwt, gpu, atlas, font_bytes);
-            state.tabs[state.active_tab_idx].cursor.intended_col = state.tabs[state.active_tab_idx].cursor.col;
+            handle_action(
+                ui,
+                state,
+                UiAction::Redo,
+                window,
+                elwt,
+                gpu,
+                atlas,
+                font_bytes,
+            );
+            state.tabs[state.active_tab_idx].cursor.intended_col =
+                state.tabs[state.active_tab_idx].cursor.col;
         }
 
         // --- Deletion ---
@@ -1128,8 +1391,6 @@ fn handle_editor_action(
         // --- Multi-cursor ---
         Action::AddCursorUp => handle_add_cursor_up(state),
         Action::AddCursorDown => handle_add_cursor_down(state),
-
-
     }
 }
 
@@ -1156,11 +1417,17 @@ fn handle_cursor_move_horizontal(state: &mut AppState, select: bool, word: bool,
     cursors.extend(active_tab.secondary_cursors.drain(..));
     for cursor in &mut cursors {
         if right {
-            if word { cursor.move_word_right(&active_tab.buffer, select); }
-            else { cursor.move_right(&active_tab.buffer, select); }
+            if word {
+                cursor.move_word_right(&active_tab.buffer, select);
+            } else {
+                cursor.move_right(&active_tab.buffer, select);
+            }
         } else {
-            if word { cursor.move_word_left(&active_tab.buffer, select); }
-            else { cursor.move_left(&active_tab.buffer, select); }
+            if word {
+                cursor.move_word_left(&active_tab.buffer, select);
+            } else {
+                cursor.move_left(&active_tab.buffer, select);
+            }
         }
     }
     cursors.sort_by_key(|c| (c.line, c.col));
@@ -1175,8 +1442,11 @@ fn handle_cursor_move_vertical(state: &mut AppState, select: bool, down: bool) {
     let mut cursors = vec![active_tab.cursor];
     cursors.extend(active_tab.secondary_cursors.drain(..));
     for cursor in &mut cursors {
-        if down { cursor.move_down(&active_tab.buffer, select); }
-        else { cursor.move_up(&active_tab.buffer, select); }
+        if down {
+            cursor.move_down(&active_tab.buffer, select);
+        } else {
+            cursor.move_up(&active_tab.buffer, select);
+        }
     }
     cursors.sort_by_key(|c| (c.line, c.col));
     cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
@@ -1190,8 +1460,11 @@ fn handle_cursor_to_line_boundary(state: &mut AppState, select: bool, end: bool)
     let mut cursors = vec![active_tab.cursor];
     cursors.extend(active_tab.secondary_cursors.drain(..));
     for cursor in &mut cursors {
-        if end { cursor.move_to_line_end(&active_tab.buffer, select); }
-        else { cursor.move_to_line_start(select); }
+        if end {
+            cursor.move_to_line_end(&active_tab.buffer, select);
+        } else {
+            cursor.move_to_line_start(select);
+        }
     }
     cursors.sort_by_key(|c| (c.line, c.col));
     cursors.dedup_by(|a, b| a.line == b.line && a.col == b.col);
@@ -1204,7 +1477,9 @@ fn handle_select_all(state: &mut AppState) {
     active_tab.buffer.commit_transaction();
     active_tab.cursor.selection_anchor = Some((0, 0));
     active_tab.cursor.line = active_tab.buffer.len() - 1;
-    active_tab.cursor.col = active_tab.buffer.lines()[active_tab.cursor.line].chars().count();
+    active_tab.cursor.col = active_tab.buffer.lines()[active_tab.cursor.line]
+        .chars()
+        .count();
     active_tab.cursor.intended_col = active_tab.cursor.col;
     active_tab.secondary_cursors.clear();
 }
@@ -1218,15 +1493,28 @@ fn handle_move_line_up(state: &mut AppState) {
         let line_text = active_tab.buffer.lines()[cursor_line].clone();
         if cursor_line == active_tab.buffer.len() - 1 {
             let prev_len = active_tab.buffer.lines()[cursor_line - 1].chars().count();
-            active_tab.buffer.delete(cursor_line - 1, prev_len, cursor_line, line_text.chars().count());
-            active_tab.buffer.insert(cursor_line - 1, 0, &format!("{}\n", line_text));
+            active_tab.buffer.delete(
+                cursor_line - 1,
+                prev_len,
+                cursor_line,
+                line_text.chars().count(),
+            );
+            active_tab
+                .buffer
+                .insert(cursor_line - 1, 0, &format!("{}\n", line_text));
         } else {
             active_tab.buffer.delete(cursor_line, 0, cursor_line + 1, 0);
-            active_tab.buffer.insert(cursor_line - 1, 0, &format!("{}\n", line_text));
+            active_tab
+                .buffer
+                .insert(cursor_line - 1, 0, &format!("{}\n", line_text));
         }
         active_tab.buffer.commit_transaction();
         active_tab.cursor.line -= 1;
-        active_tab.cursor.col = active_tab.cursor.col.min(active_tab.buffer.lines()[active_tab.cursor.line].chars().count());
+        active_tab.cursor.col = active_tab.cursor.col.min(
+            active_tab.buffer.lines()[active_tab.cursor.line]
+                .chars()
+                .count(),
+        );
         active_tab.cursor.intended_col = active_tab.cursor.col;
         active_tab.cursor.clear_selection();
     }
@@ -1242,15 +1530,28 @@ fn handle_move_line_down(state: &mut AppState) {
         let line_text = active_tab.buffer.lines()[target_line].clone();
         if target_line == active_tab.buffer.len() - 1 {
             let prev_len = active_tab.buffer.lines()[target_line - 1].chars().count();
-            active_tab.buffer.delete(target_line - 1, prev_len, target_line, line_text.chars().count());
-            active_tab.buffer.insert(target_line - 1, 0, &format!("{}\n", line_text));
+            active_tab.buffer.delete(
+                target_line - 1,
+                prev_len,
+                target_line,
+                line_text.chars().count(),
+            );
+            active_tab
+                .buffer
+                .insert(target_line - 1, 0, &format!("{}\n", line_text));
         } else {
             active_tab.buffer.delete(target_line, 0, target_line + 1, 0);
-            active_tab.buffer.insert(target_line - 1, 0, &format!("{}\n", line_text));
+            active_tab
+                .buffer
+                .insert(target_line - 1, 0, &format!("{}\n", line_text));
         }
         active_tab.buffer.commit_transaction();
         active_tab.cursor.line += 1;
-        active_tab.cursor.col = active_tab.cursor.col.min(active_tab.buffer.lines()[active_tab.cursor.line].chars().count());
+        active_tab.cursor.col = active_tab.cursor.col.min(
+            active_tab.buffer.lines()[active_tab.cursor.line]
+                .chars()
+                .count(),
+        );
         active_tab.cursor.intended_col = active_tab.cursor.col;
         active_tab.cursor.clear_selection();
     }
@@ -1263,13 +1564,23 @@ fn handle_duplicate_line(state: &mut AppState) {
     active_tab.buffer.start_transaction();
     let line_text = active_tab.buffer.lines()[cursor_line].clone();
     if cursor_line == active_tab.buffer.len() - 1 {
-        active_tab.buffer.insert(cursor_line, line_text.chars().count(), &format!("\n{}", line_text));
+        active_tab.buffer.insert(
+            cursor_line,
+            line_text.chars().count(),
+            &format!("\n{}", line_text),
+        );
     } else {
-        active_tab.buffer.insert(cursor_line + 1, 0, &format!("{}\n", line_text));
+        active_tab
+            .buffer
+            .insert(cursor_line + 1, 0, &format!("{}\n", line_text));
     }
     active_tab.buffer.commit_transaction();
     active_tab.cursor.line += 1;
-    active_tab.cursor.col = active_tab.cursor.col.min(active_tab.buffer.lines()[active_tab.cursor.line].chars().count());
+    active_tab.cursor.col = active_tab.cursor.col.min(
+        active_tab.buffer.lines()[active_tab.cursor.line]
+            .chars()
+            .count(),
+    );
     active_tab.cursor.intended_col = active_tab.cursor.col;
     active_tab.cursor.clear_selection();
 }
@@ -1289,11 +1600,20 @@ fn handle_delete_line(state: &mut AppState) {
     } else {
         let prev_line = cursor_line - 1;
         let prev_col = active_tab.buffer.lines()[prev_line].chars().count();
-        active_tab.buffer.delete(prev_line, prev_col, cursor_line, active_tab.buffer.lines()[cursor_line].chars().count());
+        active_tab.buffer.delete(
+            prev_line,
+            prev_col,
+            cursor_line,
+            active_tab.buffer.lines()[cursor_line].chars().count(),
+        );
     }
     active_tab.buffer.commit_transaction();
     active_tab.cursor.line = cursor_line.min(active_tab.buffer.len() - 1);
-    active_tab.cursor.col = active_tab.cursor.col.min(active_tab.buffer.lines()[active_tab.cursor.line].chars().count());
+    active_tab.cursor.col = active_tab.cursor.col.min(
+        active_tab.buffer.lines()[active_tab.cursor.line]
+            .chars()
+            .count(),
+    );
     active_tab.cursor.intended_col = active_tab.cursor.col;
     active_tab.cursor.clear_selection();
 }
@@ -1372,7 +1692,9 @@ fn handle_paste(state: &mut AppState) {
                 cursor.col = s_c;
                 cursor.clear_selection();
             }
-            active_tab.buffer.insert(cursor.line, cursor.col, &clipboard_text);
+            active_tab
+                .buffer
+                .insert(cursor.line, cursor.col, &clipboard_text);
             let parts = clipboard_text.split('\n').collect::<Vec<&str>>();
             if parts.len() == 1 {
                 cursor.col += clipboard_text.chars().count();
@@ -1413,7 +1735,12 @@ fn handle_delete_left(state: &mut AppState) {
             } else {
                 let mut prev_cursor = *cursor;
                 prev_cursor.move_left(&active_tab.buffer, false);
-                active_tab.buffer.delete(prev_cursor.line, prev_cursor.col, cursor.line, cursor.col);
+                active_tab.buffer.delete(
+                    prev_cursor.line,
+                    prev_cursor.col,
+                    cursor.line,
+                    cursor.col,
+                );
                 *cursor = prev_cursor;
             }
         }
@@ -1442,7 +1769,9 @@ fn try_delete_paired_char(active_tab: &mut crate::app::Tab, cursor: &mut Cursor)
         ('(', ')') | ('[', ']') | ('{', '}') | ('"', '"') | ('\'', '\'')
     );
     if is_paired {
-        active_tab.buffer.delete(cursor.line, cursor.col - 1, cursor.line, cursor.col + 1);
+        active_tab
+            .buffer
+            .delete(cursor.line, cursor.col - 1, cursor.line, cursor.col + 1);
         cursor.col -= 1;
         cursor.intended_col = cursor.col;
         true
@@ -1472,7 +1801,12 @@ fn handle_delete_right(state: &mut AppState) {
             if cursor.col < line_len || cursor.line < active_tab.buffer.len() - 1 {
                 let mut next_cursor = *cursor;
                 next_cursor.move_right(&active_tab.buffer, false);
-                active_tab.buffer.delete(cursor.line, cursor.col, next_cursor.line, next_cursor.col);
+                active_tab.buffer.delete(
+                    cursor.line,
+                    cursor.col,
+                    next_cursor.line,
+                    next_cursor.col,
+                );
             }
         }
     }
@@ -1544,7 +1878,10 @@ fn handle_insert_tab(state: &mut AppState) {
 fn handle_insert_char(state: &mut AppState, s: &str) {
     let active_tab = &mut state.tabs[state.active_tab_idx];
     let had_selection = active_tab.cursor.selection_range().is_some()
-        || active_tab.secondary_cursors.iter().any(|c| c.selection_range().is_some());
+        || active_tab
+            .secondary_cursors
+            .iter()
+            .any(|c| c.selection_range().is_some());
 
     active_tab.buffer.commit_transaction();
     active_tab.buffer.start_transaction();
@@ -1562,7 +1899,10 @@ fn handle_insert_char(state: &mut AppState, s: &str) {
     active_tab.cursor = cursors[0];
     active_tab.secondary_cursors = cursors[1..].to_vec();
 
-    let is_boundary = s.chars().any(|c| c.is_whitespace() || c.is_ascii_punctuation()) || had_selection;
+    let is_boundary = s
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_ascii_punctuation())
+        || had_selection;
     if is_boundary {
         active_tab.buffer.commit_transaction();
     }
@@ -1597,7 +1937,11 @@ fn insert_char_at_cursor(active_tab: &mut crate::app::Tab, cursor: &mut Cursor, 
 fn single_char(s: &str) -> Option<char> {
     let mut chars = s.chars();
     let c = chars.next()?;
-    if chars.next().is_none() { Some(c) } else { None }
+    if chars.next().is_none() {
+        Some(c)
+    } else {
+        None
+    }
 }
 
 fn matching_close(c: char) -> Option<char> {
@@ -1641,7 +1985,9 @@ fn try_wrap_selection(active_tab: &mut crate::app::Tab, cursor: &mut Cursor, c: 
     };
     active_tab.buffer.insert(s_l, s_c, &c.to_string());
     let adjusted_e_c = if s_l == e_l { e_c + 1 } else { e_c };
-    active_tab.buffer.insert(e_l, adjusted_e_c, &close.to_string());
+    active_tab
+        .buffer
+        .insert(e_l, adjusted_e_c, &close.to_string());
     if cursor.selection_anchor.unwrap().0 == s_l && cursor.selection_anchor.unwrap().1 == s_c {
         cursor.selection_anchor = Some((s_l, s_c + 1));
         cursor.line = e_l;
@@ -1669,7 +2015,8 @@ fn try_insert_paired(active_tab: &mut crate::app::Tab, cursor: &mut Cursor, c: c
         '"' | '\'' => {
             let line_chars: Vec<char> = active_tab.buffer.lines()[cursor.line].chars().collect();
             let preceded_by_alpha = cursor.col > 0 && line_chars[cursor.col - 1].is_alphanumeric();
-            let followed_by_alpha = cursor.col < line_chars.len() && line_chars[cursor.col].is_alphanumeric();
+            let followed_by_alpha =
+                cursor.col < line_chars.len() && line_chars[cursor.col].is_alphanumeric();
             !preceded_by_alpha && !followed_by_alpha
         }
         _ => false,
@@ -1702,7 +2049,10 @@ fn handle_add_cursor_up(state: &mut AppState) {
                 intended_col: min_cursor.intended_col,
                 selection_anchor: None,
             };
-            if !cursors.iter().any(|c| c.line == target_line && c.col == target_col) {
+            if !cursors
+                .iter()
+                .any(|c| c.line == target_line && c.col == target_col)
+            {
                 active_tab.secondary_cursors.push(new_cursor);
             }
         }
@@ -1726,7 +2076,10 @@ fn handle_add_cursor_down(state: &mut AppState) {
                 intended_col: max_cursor.intended_col,
                 selection_anchor: None,
             };
-            if !cursors.iter().any(|c| c.line == target_line && c.col == target_col) {
+            if !cursors
+                .iter()
+                .any(|c| c.line == target_line && c.col == target_col)
+            {
                 active_tab.secondary_cursors.push(new_cursor);
             }
         }
@@ -1775,7 +2128,7 @@ fn sync_file_changes(
 
     // 2. Update all open tabs/buffers matching this path in active and inactive panes
     let abs_target_path = crate::editor::get_absolute_path(&path.to_string_lossy());
-    
+
     // Check active tabs
     for tab in &mut state.tabs {
         if let Some(ref tab_path) = tab.path {
@@ -1856,16 +2209,45 @@ pub fn handle_project_search_keyboard(
         return false;
     }
 
-    if let Some(action) = crate::editor::keymap::map_key(&ui.keymap, logical_key, physical_key, ctrl, shift, alt, &["Editor", "Workspace"]) {
+    if let Some(action) = crate::editor::keymap::map_key(
+        &ui.keymap,
+        logical_key,
+        physical_key,
+        ctrl,
+        shift,
+        alt,
+        &["Editor", "Workspace"],
+    ) {
         if is_workspace_global_action(&action) {
             return false;
         }
     }
 
     if ui.global_search_focused {
-        handle_project_search_focused_input(ui, state, window, elwt, gpu, atlas, font_bytes, logical_key, alt);
+        handle_project_search_focused_input(
+            ui,
+            state,
+            window,
+            elwt,
+            gpu,
+            atlas,
+            font_bytes,
+            logical_key,
+            alt,
+        );
     } else {
-        handle_project_search_result_input(ui, state, window, elwt, gpu, atlas, font_bytes, logical_key, ctrl, alt);
+        handle_project_search_result_input(
+            ui,
+            state,
+            window,
+            elwt,
+            gpu,
+            atlas,
+            font_bytes,
+            logical_key,
+            ctrl,
+            alt,
+        );
     }
     true
 }
@@ -1892,7 +2274,8 @@ fn handle_project_search_focused_input(
         Key::Named(NamedKey::ArrowUp) => {
             let items_count = ui.global_search_results.len();
             if items_count > 0 {
-                ui.global_search_selected = (ui.global_search_selected + items_count - 1) % items_count;
+                ui.global_search_selected =
+                    (ui.global_search_selected + items_count - 1) % items_count;
             }
             window.request_redraw();
         }
@@ -1901,7 +2284,16 @@ fn handle_project_search_focused_input(
                 let results_len = ui.global_search_results.len();
                 if ui.global_search_selected < results_len {
                     let (path, line_idx, _) = &ui.global_search_results[ui.global_search_selected];
-                    handle_action(ui, state, UiAction::OpenFileAt(path.clone(), *line_idx), window, elwt, gpu, atlas, font_bytes);
+                    handle_action(
+                        ui,
+                        state,
+                        UiAction::OpenFileAt(path.clone(), *line_idx),
+                        window,
+                        elwt,
+                        gpu,
+                        atlas,
+                        font_bytes,
+                    );
                 }
             } else {
                 let q = ui.global_search_query.clone();
@@ -1961,7 +2353,8 @@ fn handle_project_search_result_input(
     if ui.global_search_selected >= results_len {
         return;
     }
-    let (path, line_idx, current_content) = ui.global_search_results[ui.global_search_selected].clone();
+    let (path, line_idx, current_content) =
+        ui.global_search_results[ui.global_search_selected].clone();
 
     match logical_key {
         Key::Named(NamedKey::ArrowLeft) => {
@@ -1993,14 +2386,24 @@ fn handle_project_search_result_input(
         Key::Named(NamedKey::ArrowUp) => {
             let items_count = ui.global_search_results.len();
             if items_count > 0 {
-                ui.global_search_selected = (ui.global_search_selected + items_count - 1) % items_count;
+                ui.global_search_selected =
+                    (ui.global_search_selected + items_count - 1) % items_count;
                 let new_content = &ui.global_search_results[ui.global_search_selected].2;
                 ui.global_search_col = ui.global_search_col.min(new_content.chars().count());
             }
             window.request_redraw();
         }
         Key::Named(NamedKey::Enter) => {
-            handle_action(ui, state, UiAction::OpenFileAt(path.clone(), line_idx), window, elwt, gpu, atlas, font_bytes);
+            handle_action(
+                ui,
+                state,
+                UiAction::OpenFileAt(path.clone(), line_idx),
+                window,
+                elwt,
+                gpu,
+                atlas,
+                font_bytes,
+            );
             window.request_redraw();
         }
         Key::Named(NamedKey::Backspace) => {
@@ -2027,7 +2430,8 @@ fn handle_project_search_result_input(
                 let mut inserted_count = 0;
                 for c in text.chars() {
                     if !c.is_control() {
-                        temp_content = insert_char_at(&temp_content, ui.global_search_col + inserted_count, c);
+                        temp_content =
+                            insert_char_at(&temp_content, ui.global_search_col + inserted_count, c);
                         inserted_count += 1;
                     }
                 }

@@ -8,7 +8,7 @@ pub fn update_git_branch(tx: Sender<String>, proxy: EventLoopProxy<()>) {
         let output = Command::new("git")
             .args(&["rev-parse", "--abbrev-ref", "HEAD"])
             .output();
-        
+
         if let Ok(out) = output {
             if out.status.success() {
                 let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();

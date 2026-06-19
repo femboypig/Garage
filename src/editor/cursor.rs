@@ -1,5 +1,5 @@
 use crate::editor::buffer::Buffer;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cursor {
@@ -62,7 +62,10 @@ impl Cursor {
             self.col -= 1;
         } else if self.line > 0 {
             self.line -= 1;
-            self.col = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
+            self.col = buffer
+                .lines()
+                .get(self.line)
+                .map_or(0, |l| l.chars().count());
         }
 
         self.intended_col = self.col;
@@ -76,7 +79,10 @@ impl Cursor {
             self.line = buffer.len().saturating_sub(1);
         }
 
-        let line_len = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
+        let line_len = buffer
+            .lines()
+            .get(self.line)
+            .map_or(0, |l| l.chars().count());
         if self.col < line_len {
             self.col += 1;
         } else if self.line < buffer.len() - 1 {
@@ -97,7 +103,10 @@ impl Cursor {
 
         if self.line > 0 {
             self.line -= 1;
-            let line_len = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
+            let line_len = buffer
+                .lines()
+                .get(self.line)
+                .map_or(0, |l| l.chars().count());
             self.col = self.intended_col.min(line_len);
         } else {
             self.col = 0;
@@ -115,10 +124,16 @@ impl Cursor {
 
         if self.line < buffer.len() - 1 {
             self.line += 1;
-            let line_len = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
+            let line_len = buffer
+                .lines()
+                .get(self.line)
+                .map_or(0, |l| l.chars().count());
             self.col = self.intended_col.min(line_len);
         } else {
-            let line_len = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
+            let line_len = buffer
+                .lines()
+                .get(self.line)
+                .map_or(0, |l| l.chars().count());
             self.col = line_len;
             self.intended_col = line_len;
         }
@@ -137,7 +152,10 @@ impl Cursor {
         if self.line >= buffer.len() {
             self.line = buffer.len().saturating_sub(1);
         }
-        let line_len = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
+        let line_len = buffer
+            .lines()
+            .get(self.line)
+            .map_or(0, |l| l.chars().count());
         self.col = line_len;
         self.intended_col = line_len;
     }
@@ -153,13 +171,19 @@ impl Cursor {
         if self.col == 0 {
             if self.line > 0 {
                 self.line -= 1;
-                self.col = buffer.lines().get(self.line).map_or(0, |l| l.chars().count());
+                self.col = buffer
+                    .lines()
+                    .get(self.line)
+                    .map_or(0, |l| l.chars().count());
             } else {
                 return;
             }
         }
 
-        let line_chars: Vec<char> = buffer.lines().get(self.line).map_or(Vec::new(), |l| l.chars().collect());
+        let line_chars: Vec<char> = buffer
+            .lines()
+            .get(self.line)
+            .map_or(Vec::new(), |l| l.chars().collect());
         let mut idx = self.col;
 
         // Skip leading whitespace leftwards
@@ -169,7 +193,11 @@ impl Cursor {
 
         if idx > 0 && idx - 1 < line_chars.len() {
             let start_is_alphanumeric = line_chars[idx - 1].is_alphanumeric();
-            while idx > 0 && idx - 1 < line_chars.len() && line_chars[idx - 1].is_alphanumeric() == start_is_alphanumeric && !line_chars[idx - 1].is_whitespace() {
+            while idx > 0
+                && idx - 1 < line_chars.len()
+                && line_chars[idx - 1].is_alphanumeric() == start_is_alphanumeric
+                && !line_chars[idx - 1].is_whitespace()
+            {
                 idx -= 1;
             }
         }
@@ -186,7 +214,10 @@ impl Cursor {
             self.line = buffer.len().saturating_sub(1);
         }
 
-        let line_chars: Vec<char> = buffer.lines().get(self.line).map_or(Vec::new(), |l| l.chars().collect());
+        let line_chars: Vec<char> = buffer
+            .lines()
+            .get(self.line)
+            .map_or(Vec::new(), |l| l.chars().collect());
         let line_len = line_chars.len();
 
         if self.col >= line_len {
@@ -206,7 +237,10 @@ impl Cursor {
 
         if idx < line_len {
             let start_is_alphanumeric = line_chars[idx].is_alphanumeric();
-            while idx < line_len && line_chars[idx].is_alphanumeric() == start_is_alphanumeric && !line_chars[idx].is_whitespace() {
+            while idx < line_len
+                && line_chars[idx].is_alphanumeric() == start_is_alphanumeric
+                && !line_chars[idx].is_whitespace()
+            {
                 idx += 1;
             }
         }

@@ -1,9 +1,9 @@
-use serde::{Serialize, Deserialize};
-use std::fs;
-use std::path::PathBuf;
 use crate::app::state::{AppState, Tab};
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TabSession {
@@ -22,7 +22,10 @@ pub struct SessionState {
 
 pub fn get_autosave_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".config").join("garage").join("autosave")
+    PathBuf::from(home)
+        .join(".config")
+        .join("garage")
+        .join("autosave")
 }
 
 pub fn get_autosave_path(path: Option<&str>, tab_idx: usize) -> PathBuf {
@@ -33,9 +36,7 @@ pub fn get_autosave_path(path: Option<&str>, tab_idx: usize) -> PathBuf {
             let hex_name: String = abs_path.bytes().map(|b| format!("{:02x}", b)).collect();
             dir.join(hex_name)
         }
-        None => {
-            dir.join(format!("untitled_{}", tab_idx))
-        }
+        None => dir.join(format!("untitled_{}", tab_idx)),
     }
 }
 
@@ -50,7 +51,7 @@ pub fn save_session_and_dirty_buffers(state: &AppState) {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let config_dir = PathBuf::from(home).join(".config").join("garage");
     let session_path = config_dir.join("session.json");
-    
+
     // Ensure directories exist
     let autosave_dir = get_autosave_dir();
     if autosave_dir.exists() {
@@ -106,7 +107,10 @@ pub fn save_session_and_dirty_buffers(state: &AppState) {
 
 pub fn load_session_and_restore_buffers() -> Option<(Vec<Tab>, usize)> {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let session_path = PathBuf::from(home).join(".config").join("garage").join("session.json");
+    let session_path = PathBuf::from(home)
+        .join(".config")
+        .join("garage")
+        .join("session.json");
     if !session_path.exists() {
         return None;
     }

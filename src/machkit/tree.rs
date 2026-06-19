@@ -1,6 +1,6 @@
-use std::path::Path;
-use super::ui_state::UiState;
 use super::types::FileNode;
+use super::ui_state::UiState;
+use std::path::Path;
 
 impl UiState {
     /// Re-scan the directory to populate the project tree asynchronously
@@ -28,7 +28,12 @@ fn is_hidden(path: &Path) -> bool {
     })
 }
 
-fn scan_dir_recursive(dir: &Path, depth: usize, expanded_dirs: &std::collections::HashSet<std::path::PathBuf>, visible_nodes: &mut Vec<FileNode>) {
+fn scan_dir_recursive(
+    dir: &Path,
+    depth: usize,
+    expanded_dirs: &std::collections::HashSet<std::path::PathBuf>,
+    visible_nodes: &mut Vec<FileNode>,
+) {
     let walker = ignore::WalkBuilder::new(dir)
         .max_depth(Some(1))
         .hidden(true)
@@ -74,4 +79,3 @@ fn scan_dir_recursive(dir: &Path, depth: usize, expanded_dirs: &std::collections
         }
     }
 }
-

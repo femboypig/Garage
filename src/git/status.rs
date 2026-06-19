@@ -10,7 +10,7 @@ pub fn update_git_statuses(tx: Sender<HashMap<PathBuf, String>>, proxy: EventLoo
         let output = Command::new("git")
             .args(&["status", "--porcelain"])
             .output();
-        
+
         if let Ok(out) = output {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout);

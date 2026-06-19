@@ -66,7 +66,8 @@ impl<'a> Button<'a> {
     }
 
     pub fn draw(self, ctx: &mut UiContext, x: f32, y: f32, w: f32, h: f32) -> bool {
-        let hover = ctx.mouse_x >= x && ctx.mouse_x < x + w && ctx.mouse_y >= y && ctx.mouse_y < y + h;
+        let hover =
+            ctx.mouse_x >= x && ctx.mouse_x < x + w && ctx.mouse_y >= y && ctx.mouse_y < y + h;
 
         // Determine background color
         let bg = if self.active {
@@ -91,7 +92,7 @@ impl<'a> Button<'a> {
 
         // Draw icon/text content
         let t_color = self.text_color.unwrap_or(ctx.theme.button_text);
-        
+
         let mut content_w = 0.0;
         if let Some(txt) = self.text {
             let text_len = txt.chars().count() as f32 * ctx.ui_char_width;

@@ -1,5 +1,5 @@
+use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
-use std::sync::{OnceLock, Mutex};
 
 static START_TIME: OnceLock<Instant> = OnceLock::new();
 static STEPS: Mutex<Vec<(&'static str, Instant)>> = Mutex::new(Vec::new());
@@ -33,7 +33,10 @@ pub fn report_startup_complete() {
                 println!("  - {}: {:.2?} absolute", name, elapsed);
             }
             let first_frame_elapsed = Instant::now().duration_since(*start);
-            println!("  - First Frame Rendered: {:.2?} absolute", first_frame_elapsed);
+            println!(
+                "  - First Frame Rendered: {:.2?} absolute",
+                first_frame_elapsed
+            );
         }
     }
 }

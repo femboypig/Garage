@@ -49,13 +49,13 @@ pub struct GpuContext {
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     pub render_pipeline: wgpu::RenderPipeline,
-    
+
     pub backend: wgpu::Backend,
     pub device_name: String,
     globals_buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
-    
+
     vertex_buffer: Option<wgpu::Buffer>,
     vertex_buffer_capacity: usize,
     index_buffer: Option<wgpu::Buffer>,
@@ -82,35 +82,44 @@ impl GpuContext {
             return None;
         }
 
-        let mut adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::LowPower,
-            compatible_surface: Some(surface),
-            force_fallback_adapter: false,
-        }).await;
-
-        if adapter.is_none() && forced_backend.is_none() {
-            adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
+        let mut adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::LowPower,
                 compatible_surface: Some(surface),
                 force_fallback_adapter: false,
-            }).await;
+            })
+            .await;
+
+        if adapter.is_none() && forced_backend.is_none() {
+            adapter = instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::LowPower,
+                    compatible_surface: Some(surface),
+                    force_fallback_adapter: false,
+                })
+                .await;
         }
 
         let adapter = adapter?;
         let required_limits = wgpu::Limits::default();
 
-        let (device, queue) = adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::empty(),
-                required_limits,
-                label: None,
-                memory_hints: Default::default(),
-            },
-            None,
-        ).await.ok()?;
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    required_features: wgpu::Features::empty(),
+                    required_limits,
+                    label: None,
+                    memory_hints: Default::default(),
+                },
+                None,
+            )
+            .await
+            .ok()?;
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps.formats.iter()
+        let surface_format = surface_caps
+            .formats
+            .iter()
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
@@ -150,11 +159,12 @@ impl GpuContext {
             ],
         });
 
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         // Precompile pipeline with the exact format needed by the surface
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -212,7 +222,11 @@ impl GpuContext {
 
         if let Some(pre) = pre_init {
             let adapter_info = pre.adapter.get_info();
-            log::warn!("Selected Graphics Backend (Pre-initialized): {:?}, Device: {}", adapter_info.backend, adapter_info.name);
+            log::warn!(
+                "Selected Graphics Backend (Pre-initialized): {:?}, Device: {}",
+                adapter_info.backend,
+                adapter_info.name
+            );
 
             let surface_caps = surface.get_capabilities(&pre.adapter);
             let present_mode = wgpu::PresentMode::Fifo;
@@ -239,7 +253,8 @@ impl GpuContext {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            pre.queue.write_buffer(&globals_buffer, 0, bytemuck::bytes_of(&globals));
+            pre.queue
+                .write_buffer(&globals_buffer, 0, bytemuck::bytes_of(&globals));
 
             // Create Dummy texture and sampler
             let dummy_texture = pre.device.create_texture(&wgpu::TextureDescriptor {
@@ -256,7 +271,9 @@ impl GpuContext {
                 usage: wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
-            let dummy_sampler = pre.device.create_sampler(&wgpu::SamplerDescriptor::default());
+            let dummy_sampler = pre
+                .device
+                .create_sampler(&wgpu::SamplerDescriptor::default());
 
             let atlas_view = dummy_texture.create_view(&wgpu::TextureViewDescriptor::default());
             let bind_group = pre.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -317,7 +334,12 @@ impl GpuContext {
             backends: wgpu::Backends,
             flags: wgpu::InstanceFlags,
             instance: Option<&Arc<wgpu::Instance>>,
-        ) -> Option<(wgpu::Surface<'static>, wgpu::Device, wgpu::Queue, wgpu::Adapter)> {
+        ) -> Option<(
+            wgpu::Surface<'static>,
+            wgpu::Device,
+            wgpu::Queue,
+            wgpu::Adapter,
+        )> {
             let instance: Arc<wgpu::Instance> = match instance {
                 Some(inst) => (*inst).clone(),
                 None => Arc::new(wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -330,30 +352,44 @@ impl GpuContext {
             let surface = match instance.create_surface(window.clone()) {
                 Ok(s) => s,
                 Err(e) => {
-                    log::warn!("try_create (backend={:?}): create_surface failed: {:?}", backends, e);
+                    log::warn!(
+                        "try_create (backend={:?}): create_surface failed: {:?}",
+                        backends,
+                        e
+                    );
                     return None;
                 }
             };
 
-            let mut adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::LowPower,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            }).await;
+            let mut adapter = instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::LowPower,
+                    compatible_surface: Some(&surface),
+                    force_fallback_adapter: false,
+                })
+                .await;
 
             if adapter.is_none() {
-                log::warn!("try_create (backend={:?}): request_adapter with compatible_surface returned None, retrying without compatible_surface...", backends);
-                adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::LowPower,
-                    compatible_surface: None,
-                    force_fallback_adapter: false,
-                }).await;
+                log::warn!(
+                    "try_create (backend={:?}): request_adapter with compatible_surface returned None, retrying without compatible_surface...",
+                    backends
+                );
+                adapter = instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        power_preference: wgpu::PowerPreference::LowPower,
+                        compatible_surface: None,
+                        force_fallback_adapter: false,
+                    })
+                    .await;
             }
 
             let adapter = match adapter {
                 Some(a) => a,
                 None => {
-                    log::warn!("try_create (backend={:?}): request_adapter returned None", backends);
+                    log::warn!(
+                        "try_create (backend={:?}): request_adapter returned None",
+                        backends
+                    );
                     return None;
                 }
             };
@@ -364,21 +400,30 @@ impl GpuContext {
                 wgpu::Limits::default()
             };
 
-            log::warn!("try_create (backend={:?}): requesting device with limits...", backends);
-            let device_result = adapter.request_device(
-                &wgpu::DeviceDescriptor {
-                    required_features: wgpu::Features::empty(),
-                    required_limits,
-                    label: None,
-                    memory_hints: Default::default(),
-                },
-                None,
-            ).await;
+            log::warn!(
+                "try_create (backend={:?}): requesting device with limits...",
+                backends
+            );
+            let device_result = adapter
+                .request_device(
+                    &wgpu::DeviceDescriptor {
+                        required_features: wgpu::Features::empty(),
+                        required_limits,
+                        label: None,
+                        memory_hints: Default::default(),
+                    },
+                    None,
+                )
+                .await;
 
             let (device, queue) = match device_result {
                 Ok(res) => res,
                 Err(e) => {
-                    log::warn!("try_create (backend={:?}): request_device failed: {:?}", backends, e);
+                    log::warn!(
+                        "try_create (backend={:?}): request_device failed: {:?}",
+                        backends,
+                        e
+                    );
                     return None;
                 }
             };
@@ -427,7 +472,12 @@ impl GpuContext {
             window: &Arc<Window>,
             flags: wgpu::InstanceFlags,
             instance: Option<&Arc<wgpu::Instance>>,
-        ) -> Option<(wgpu::Surface<'static>, wgpu::Device, wgpu::Queue, wgpu::Adapter)> {
+        ) -> Option<(
+            wgpu::Surface<'static>,
+            wgpu::Device,
+            wgpu::Queue,
+            wgpu::Adapter,
+        )> {
             // Save current environment variables
             let orig_wgpu_backend = std::env::var("WGPU_GL_BACKEND").ok();
             let orig_libgl_software = std::env::var("LIBGL_ALWAYS_SOFTWARE").ok();
@@ -443,42 +493,78 @@ impl GpuContext {
 
             // 1. Try default OpenGL settings (usually EGL hardware)
             if let Some(res) = try_create(window, wgpu::Backends::GL, flags, instance).await {
-                restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
+                restore_env(
+                    orig_wgpu_backend,
+                    orig_libgl_software,
+                    orig_gles_override,
+                    orig_gl_override,
+                    orig_driver_override,
+                );
                 return Some(res);
             }
 
             // 2. Try forcing GLX hardware
             log::warn!("OpenGL with default EGL failed. Retrying OpenGL with GLX backend...");
-            unsafe { std::env::set_var("WGPU_GL_BACKEND", "glx"); }
+            unsafe {
+                std::env::set_var("WGPU_GL_BACKEND", "glx");
+            }
             if let Some(res) = try_create(window, wgpu::Backends::GL, flags, instance).await {
-                restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
+                restore_env(
+                    orig_wgpu_backend,
+                    orig_libgl_software,
+                    orig_gles_override,
+                    orig_gl_override,
+                    orig_driver_override,
+                );
                 return Some(res);
             }
 
             // 3. Try software rendering (EGL llvmpipe)
-            log::warn!("OpenGL hardware failed. Retrying with EGL software rendering (llvmpipe)...");
+            log::warn!(
+                "OpenGL hardware failed. Retrying with EGL software rendering (llvmpipe)..."
+            );
             unsafe {
                 std::env::set_var("WGPU_GL_BACKEND", "egl");
                 std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
             }
             if let Some(res) = try_create(window, wgpu::Backends::GL, flags, instance).await {
-                restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
+                restore_env(
+                    orig_wgpu_backend,
+                    orig_libgl_software,
+                    orig_gles_override,
+                    orig_gl_override,
+                    orig_driver_override,
+                );
                 return Some(res);
             }
 
             // 4. Try software rendering (GLX llvmpipe)
-            log::warn!("OpenGL software EGL failed. Retrying with GLX software rendering (llvmpipe)...");
+            log::warn!(
+                "OpenGL software EGL failed. Retrying with GLX software rendering (llvmpipe)..."
+            );
             unsafe {
                 std::env::set_var("WGPU_GL_BACKEND", "glx");
                 std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
             }
             if let Some(res) = try_create(window, wgpu::Backends::GL, flags, instance).await {
-                restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
+                restore_env(
+                    orig_wgpu_backend,
+                    orig_libgl_software,
+                    orig_gles_override,
+                    orig_gl_override,
+                    orig_driver_override,
+                );
                 return Some(res);
             }
 
             // Clean up and restore env on failure
-            restore_env(orig_wgpu_backend, orig_libgl_software, orig_gles_override, orig_gl_override, orig_driver_override);
+            restore_env(
+                orig_wgpu_backend,
+                orig_libgl_software,
+                orig_gles_override,
+                orig_gl_override,
+                orig_driver_override,
+            );
             None
         }
 
@@ -488,62 +574,69 @@ impl GpuContext {
         if let Some(backend) = forced_backend {
             if backend == wgpu::Backends::GL {
                 log::warn!("Trying forced OpenGL/GL backend...");
-                let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
+                let flags = wgpu::InstanceFlags::default()
+                    & !wgpu::InstanceFlags::VALIDATION
+                    & !wgpu::InstanceFlags::DEBUG;
                 creation_result = try_create_gl(&window, flags, instance_ref).await;
             } else if backend == wgpu::Backends::VULKAN {
                 log::warn!("Trying forced Vulkan backend (allowing non-compliant)...");
-                let flags = (wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
-                    & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
-                creation_result = try_create(
-                    &window,
-                    wgpu::Backends::VULKAN,
-                    flags,
-                    instance_ref,
-                ).await;
+                let flags = (wgpu::InstanceFlags::default()
+                    | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
+                    & !wgpu::InstanceFlags::VALIDATION
+                    & !wgpu::InstanceFlags::DEBUG;
+                creation_result =
+                    try_create(&window, wgpu::Backends::VULKAN, flags, instance_ref).await;
             }
         }
 
         if creation_result.is_none() {
             let preferred_is_gl = forced_backend == Some(wgpu::Backends::GL);
             if preferred_is_gl {
-                log::warn!("Forced OpenGL failed. Trying Vulkan fallback (allowing non-compliant)...");
-                let flags = (wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
-                    & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
-                creation_result = try_create(
-                    &window,
-                    wgpu::Backends::VULKAN,
-                    flags,
-                    instance_ref,
-                ).await;
+                log::warn!(
+                    "Forced OpenGL failed. Trying Vulkan fallback (allowing non-compliant)..."
+                );
+                let flags = (wgpu::InstanceFlags::default()
+                    | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
+                    & !wgpu::InstanceFlags::VALIDATION
+                    & !wgpu::InstanceFlags::DEBUG;
+                creation_result =
+                    try_create(&window, wgpu::Backends::VULKAN, flags, instance_ref).await;
             } else {
                 log::warn!("Forced Vulkan failed. Trying OpenGL/GL fallback...");
-                let flags = wgpu::InstanceFlags::default() & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
+                let flags = wgpu::InstanceFlags::default()
+                    & !wgpu::InstanceFlags::VALIDATION
+                    & !wgpu::InstanceFlags::DEBUG;
                 creation_result = try_create_gl(&window, flags, instance_ref).await;
             }
         }
 
         if creation_result.is_none() {
-            log::warn!("Primary fallbacks failed. Trying any available backend with non-compliant adapter support...");
-            let flags = (wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
-                & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
-            creation_result = try_create(
-                &window,
-                wgpu::Backends::all(),
-                flags,
-                instance_ref,
-            ).await;
+            log::warn!(
+                "Primary fallbacks failed. Trying any available backend with non-compliant adapter support..."
+            );
+            let flags = (wgpu::InstanceFlags::default()
+                | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
+                & !wgpu::InstanceFlags::VALIDATION
+                & !wgpu::InstanceFlags::DEBUG;
+            creation_result = try_create(&window, wgpu::Backends::all(), flags, instance_ref).await;
         }
 
         let (surface, device, queue, adapter) = creation_result.expect(
-            "Failed to find an appropriate adapter using Vulkan, GL, or any other backend."
+            "Failed to find an appropriate adapter using Vulkan, GL, or any other backend.",
         );
 
         let adapter_info = adapter.get_info();
-        log::warn!("Selected Graphics Backend: {:?}, Device: {}", adapter_info.backend, adapter_info.name);
+        log::warn!(
+            "Selected Graphics Backend: {:?}, Device: {}",
+            adapter_info.backend,
+            adapter_info.name
+        );
 
         let surface_caps = surface.get_capabilities(&adapter);
         // Find an sRGB surface format
-        let surface_format = surface_caps.formats.iter()
+        let surface_format = surface_caps
+            .formats
+            .iter()
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
@@ -648,14 +741,14 @@ impl GpuContext {
             ],
         });
 
-
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -715,7 +808,11 @@ impl GpuContext {
     }
 
     /// Update the Bind Group with a new texture view (useful if texture atlas changes).
-    pub fn update_bind_group(&mut self, atlas_texture: &wgpu::Texture, atlas_sampler: &wgpu::Sampler) {
+    pub fn update_bind_group(
+        &mut self,
+        atlas_texture: &wgpu::Texture,
+        atlas_sampler: &wgpu::Sampler,
+    ) {
         let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Main Bind Group (Updated)"),
@@ -748,18 +845,27 @@ impl GpuContext {
             let globals = Globals {
                 screen_size: [new_size.width as f32, new_size.height as f32],
             };
-            self.queue.write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
+            self.queue
+                .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
         }
     }
 
     /// Upload and render the given vertices and indices.
-    pub fn render(&mut self, vertices: &[Vertex], indices: &[u16]) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(
+        &mut self,
+        vertices: &[Vertex],
+        indices: &[u16],
+    ) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
 
         // Update vertex buffer, resizing if necessary
         if !vertices.is_empty() {
@@ -772,7 +878,11 @@ impl GpuContext {
                     mapped_at_creation: false,
                 }));
             }
-            self.queue.write_buffer(self.vertex_buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(vertices));
+            self.queue.write_buffer(
+                self.vertex_buffer.as_ref().unwrap(),
+                0,
+                bytemuck::cast_slice(vertices),
+            );
         }
 
         // Update index buffer, resizing if necessary
@@ -786,7 +896,11 @@ impl GpuContext {
                     mapped_at_creation: false,
                 }));
             }
-            self.queue.write_buffer(self.index_buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(indices));
+            self.queue.write_buffer(
+                self.index_buffer.as_ref().unwrap(),
+                0,
+                bytemuck::cast_slice(indices),
+            );
         }
 
         {
@@ -814,7 +928,10 @@ impl GpuContext {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_bind_group(0, &self.bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.as_ref().unwrap().slice(..));
-                render_pass.set_index_buffer(self.index_buffer.as_ref().unwrap().slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.set_index_buffer(
+                    self.index_buffer.as_ref().unwrap().slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
                 render_pass.draw_indexed(0..indices.len() as u32, 0, 0..1);
             }
         }

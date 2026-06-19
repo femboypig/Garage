@@ -1,18 +1,18 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Theme {
     pub name: String,
-    
+
     // Titlebar
     pub titlebar_bg: [f32; 4],
     pub titlebar_border: [f32; 4],
     pub titlebar_text: [f32; 4],
     pub titlebar_hover_bg: [f32; 4],
     pub titlebar_brand_text: [f32; 4],
-    
+
     // Sidebar
     pub sidebar_bg: [f32; 4],
     pub sidebar_border: [f32; 4],
@@ -20,19 +20,19 @@ pub struct Theme {
     pub sidebar_text_file: [f32; 4],
     pub sidebar_selected_bg: [f32; 4],
     pub sidebar_hover_bg: [f32; 4],
-    
+
     // Tab bar
     pub tabbar_bg: [f32; 4],
     pub tabbar_border: [f32; 4],
     pub tab_active_bg: [f32; 4],
     pub tab_inactive_bg: [f32; 4],
     pub tab_text: [f32; 4],
-    
+
     // Breadcrumbs
     pub breadcrumb_bg: [f32; 4],
     pub breadcrumb_border: [f32; 4],
     pub breadcrumb_text: [f32; 4],
-    
+
     // Editor Area
     pub editor_bg: [f32; 4],
     pub gutter_bg: [f32; 4],
@@ -42,7 +42,7 @@ pub struct Theme {
     pub line_number_inactive: [f32; 4],
     pub selection_bg: [f32; 4],
     pub cursor_color: [f32; 4],
-    
+
     // Syntax Highlight Colors
     pub syntax_default: [f32; 4],
     pub syntax_keyword: [f32; 4],
@@ -58,18 +58,18 @@ pub struct Theme {
     pub syntax_property: [f32; 4],
     pub syntax_macro: [f32; 4],
     pub syntax_operator: [f32; 4],
-    
+
     // Scrollbar
     pub scrollbar_track: [f32; 4],
     pub scrollbar_border: [f32; 4],
     pub scrollbar_thumb: [f32; 4],
     pub scrollbar_thumb_hover: [f32; 4],
-    
+
     // Statusbar
     pub statusbar_bg: [f32; 4],
     pub statusbar_border: [f32; 4],
     pub statusbar_text: [f32; 4],
-    
+
     // Dropdowns & Modals
     pub modal_bg: [f32; 4],
     pub modal_border: [f32; 4],
@@ -157,7 +157,10 @@ impl Default for AppConfig {
 impl AppConfig {
     pub fn config_path() -> PathBuf {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home).join(".config").join("garage").join("config.json")
+        PathBuf::from(home)
+            .join(".config")
+            .join("garage")
+            .join("config.json")
     }
 
     pub fn load() -> Self {
@@ -169,7 +172,7 @@ impl AppConfig {
                 }
             }
         }
-        
+
         // Return default if file doesn't exist or is corrupted
         let default_config = Self::default();
         let _ = default_config.save(); // Save default configuration
@@ -181,9 +184,8 @@ impl AppConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let content = serde_json::to_string_pretty(self).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
-        })?;
+        let content = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
         fs::write(path, content)?;
         Ok(())
     }

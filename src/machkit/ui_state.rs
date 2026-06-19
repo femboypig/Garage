@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use crate::renderer::atlas::FontAtlas;
 use crate::editor::cursor::Cursor;
+use crate::renderer::atlas::FontAtlas;
 
-use super::types::{MenuType, ModalType, FileNode, GitDiffHunk, SearchRenderItem};
+use super::types::{FileNode, GitDiffHunk, MenuType, ModalType, SearchRenderItem};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommandPaletteMode {
@@ -28,7 +28,7 @@ pub struct UiState {
 
     pub scroll_y: usize,
     pub scroll_x: usize,
-    
+
     // Layout Sizes
     pub titlebar_height: f32,
     pub status_height: f32,
@@ -36,12 +36,12 @@ pub struct UiState {
     pub target_sidebar_width: f32,
     pub tabbar_height: f32,
     pub breadcrumb_height: f32,
-    
+
     // Project Tree State
     pub expanded_dirs: HashSet<PathBuf>,
     pub visible_nodes: Vec<FileNode>,
     pub selected_file: Option<PathBuf>,
-    
+
     // Menu & Modal State
     pub active_menu: Option<MenuType>,
     pub active_modal: Option<ModalType>,
@@ -59,16 +59,21 @@ pub struct UiState {
 
     pub git_branch_rx: Option<std::sync::mpsc::Receiver<String>>,
     pub git_branch_tx: std::sync::mpsc::Sender<String>,
-    
-    pub git_file_blames: std::collections::HashMap<String, std::collections::HashMap<usize, String>>,
-    pub git_blame_file_rx: Option<std::sync::mpsc::Receiver<(String, std::collections::HashMap<usize, String>)>>,
-    pub git_blame_file_tx: std::sync::mpsc::Sender<(String, std::collections::HashMap<usize, String>)>,
+
+    pub git_file_blames:
+        std::collections::HashMap<String, std::collections::HashMap<usize, String>>,
+    pub git_blame_file_rx:
+        Option<std::sync::mpsc::Receiver<(String, std::collections::HashMap<usize, String>)>>,
+    pub git_blame_file_tx:
+        std::sync::mpsc::Sender<(String, std::collections::HashMap<usize, String>)>,
 
     pub lsp_diagnostics: std::collections::HashMap<String, (usize, usize)>,
-    pub lsp_diagnostics_details: std::collections::HashMap<String, Vec<crate::editor::DiagnosticDetail>>,
+    pub lsp_diagnostics_details:
+        std::collections::HashMap<String, Vec<crate::editor::DiagnosticDetail>>,
 
     pub git_statuses: std::collections::HashMap<PathBuf, String>,
-    pub git_status_rx: Option<std::sync::mpsc::Receiver<std::collections::HashMap<PathBuf, String>>>,
+    pub git_status_rx:
+        Option<std::sync::mpsc::Receiver<std::collections::HashMap<PathBuf, String>>>,
     pub git_status_tx: std::sync::mpsc::Sender<std::collections::HashMap<PathBuf, String>>,
 
     pub git_diffs: std::collections::HashMap<String, Vec<GitDiffHunk>>,
@@ -88,8 +93,16 @@ pub struct UiState {
     pub global_search_results: Vec<(std::path::PathBuf, usize, String)>,
     pub global_search_selected: usize,
     pub global_search_scroll: usize,
-    pub global_search_rx: Option<std::sync::mpsc::Receiver<(Vec<(std::path::PathBuf, usize, String)>, std::collections::HashMap<std::path::PathBuf, Vec<String>>)>>,
-    pub global_search_tx: std::sync::mpsc::Sender<(Vec<(std::path::PathBuf, usize, String)>, std::collections::HashMap<std::path::PathBuf, Vec<String>>)>,
+    pub global_search_rx: Option<
+        std::sync::mpsc::Receiver<(
+            Vec<(std::path::PathBuf, usize, String)>,
+            std::collections::HashMap<std::path::PathBuf, Vec<String>>,
+        )>,
+    >,
+    pub global_search_tx: std::sync::mpsc::Sender<(
+        Vec<(std::path::PathBuf, usize, String)>,
+        std::collections::HashMap<std::path::PathBuf, Vec<String>>,
+    )>,
     pub is_searching_globally: bool,
     pub command_palette_selected: usize,
     pub command_palette_scroll: usize,
@@ -144,7 +157,8 @@ pub struct UiState {
     pub project_search_render_items: Option<Vec<SearchRenderItem>>,
     pub collapsed_search_files: std::collections::HashSet<std::path::PathBuf>,
     pub last_searched_global_query: String,
-    pub global_search_expanded_margins: std::collections::HashMap<(std::path::PathBuf, usize), (usize, usize)>,
+    pub global_search_expanded_margins:
+        std::collections::HashMap<(std::path::PathBuf, usize), (usize, usize)>,
     pub search_focused: bool,
     pub global_search_focused: bool,
     pub global_search_col: usize,
@@ -152,8 +166,6 @@ pub struct UiState {
     pub current_fps: f32,
     pub experimental: bool,
 }
-
-
 
 impl UiState {
     pub fn new(
@@ -169,20 +181,25 @@ impl UiState {
         // UI Metrics
         let ui_metrics = atlas.font.metrics('m', ui_font_size);
         let ui_char_width = ui_metrics.advance_width.round().max(8.0);
-        let ui_font_metrics = atlas.font.horizontal_line_metrics(ui_font_size)
-            .unwrap_or(fontdue::LineMetrics {
-                ascent: ui_font_size * 0.8,
-                descent: -ui_font_size * 0.2,
-                line_gap: ui_font_size * 0.2,
-                new_line_size: ui_font_size * 1.2,
-            });
+        let ui_font_metrics =
+            atlas
+                .font
+                .horizontal_line_metrics(ui_font_size)
+                .unwrap_or(fontdue::LineMetrics {
+                    ascent: ui_font_size * 0.8,
+                    descent: -ui_font_size * 0.2,
+                    line_gap: ui_font_size * 0.2,
+                    new_line_size: ui_font_size * 1.2,
+                });
         let ui_line_height = ui_font_metrics.new_line_size.round();
         let ui_font_ascent = ui_font_metrics.ascent.round();
 
         // Buffer Metrics
         let buf_metrics = atlas.font.metrics('m', buffer_font_size);
         let buffer_char_width = buf_metrics.advance_width.round().max(8.0);
-        let buf_font_metrics = atlas.font.horizontal_line_metrics(buffer_font_size)
+        let buf_font_metrics = atlas
+            .font
+            .horizontal_line_metrics(buffer_font_size)
             .unwrap_or(fontdue::LineMetrics {
                 ascent: buffer_font_size * 0.8,
                 descent: -buffer_font_size * 0.2,
@@ -211,7 +228,9 @@ impl UiState {
 
         let mut languages = std::collections::HashMap::new();
         if let Ok(content) = std::fs::read_to_string("assets/languages.json") {
-            if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, String>>(&content) {
+            if let Ok(map) =
+                serde_json::from_str::<std::collections::HashMap<String, String>>(&content)
+            {
                 languages = map;
             }
         }
@@ -338,7 +357,6 @@ impl UiState {
             experimental,
         };
 
-
         state.rebuild_tree();
         state
     }
@@ -347,13 +365,14 @@ impl UiState {
         self.buffer_font_size = new_size;
         let buf_metrics = font.metrics('m', new_size);
         self.buffer_char_width = buf_metrics.advance_width.round().max(8.0);
-        let buf_font_metrics = font.horizontal_line_metrics(new_size)
-            .unwrap_or(fontdue::LineMetrics {
-                ascent: new_size * 0.8,
-                descent: -new_size * 0.2,
-                line_gap: new_size * 0.2,
-                new_line_size: new_size * 1.2,
-            });
+        let buf_font_metrics =
+            font.horizontal_line_metrics(new_size)
+                .unwrap_or(fontdue::LineMetrics {
+                    ascent: new_size * 0.8,
+                    descent: -new_size * 0.2,
+                    line_gap: new_size * 0.2,
+                    new_line_size: new_size * 1.2,
+                });
         self.buffer_line_height = buf_font_metrics.new_line_size.round();
         self.buffer_font_ascent = buf_font_metrics.ascent.round();
     }
@@ -363,30 +382,30 @@ impl UiState {
             self.active_search_match_idx = 0;
             return;
         }
-        
+
         if state.active_tab_idx >= state.tabs.len() {
             self.active_search_match_idx = 0;
             return;
         }
-        
+
         let buffer = &state.tabs[state.active_tab_idx].buffer;
         let query = &self.search_query;
-        
+
         let pattern = if self.search_regex {
             query.clone()
         } else {
             regex::escape(query)
         };
-        
+
         let pattern = if self.search_whole_word {
             format!(r"\b{}\b", pattern)
         } else {
             pattern
         };
-        
+
         let mut builder = regex::RegexBuilder::new(&pattern);
         builder.case_insensitive(!self.search_case_sensitive);
-        
+
         if let Ok(re) = builder.build() {
             for (line_idx, line) in buffer.lines().iter().enumerate() {
                 for m in re.find_iter(line) {
@@ -395,9 +414,11 @@ impl UiState {
                 }
             }
         }
-        
+
         if !self.search_matches.is_empty() {
-            self.active_search_match_idx = self.active_search_match_idx.min(self.search_matches.len() - 1);
+            self.active_search_match_idx = self
+                .active_search_match_idx
+                .min(self.search_matches.len() - 1);
         } else {
             self.active_search_match_idx = 0;
         }
@@ -407,13 +428,14 @@ impl UiState {
         self.ui_font_size = new_size;
         let ui_metrics = font.metrics('m', new_size);
         self.ui_char_width = ui_metrics.advance_width.round().max(8.0);
-        let ui_font_metrics = font.horizontal_line_metrics(new_size)
-            .unwrap_or(fontdue::LineMetrics {
-                ascent: new_size * 0.8,
-                descent: -new_size * 0.2,
-                line_gap: new_size * 0.2,
-                new_line_size: new_size * 1.2,
-            });
+        let ui_font_metrics =
+            font.horizontal_line_metrics(new_size)
+                .unwrap_or(fontdue::LineMetrics {
+                    ascent: new_size * 0.8,
+                    descent: -new_size * 0.2,
+                    line_gap: new_size * 0.2,
+                    new_line_size: new_size * 1.2,
+                });
         self.ui_line_height = ui_font_metrics.new_line_size.round();
         self.ui_font_ascent = ui_font_metrics.ascent.round();
         self.titlebar_height = (self.ui_line_height * 1.45).round().max(25.0);
@@ -465,11 +487,17 @@ impl UiState {
         }
     }
 
-    pub fn scroll_to_tab(&self, active_idx: usize, tab_paths: &[Option<String>], visible_width: f32, current_scroll_x: f32) -> f32 {
+    pub fn scroll_to_tab(
+        &self,
+        active_idx: usize,
+        tab_paths: &[Option<String>],
+        visible_width: f32,
+        current_scroll_x: f32,
+    ) -> f32 {
         if tab_paths.is_empty() || active_idx >= tab_paths.len() {
             return current_scroll_x;
         }
-        
+
         let tab_close_icon_sz = (self.ui_font_size * 0.8).round().max(10.0);
         let close_reserved = 8.0f32 + tab_close_icon_sz;
         let dot_reserved = 18.0f32;
@@ -483,7 +511,7 @@ impl UiState {
             let file_name = self.get_tab_name(path_opt.as_deref());
             let name_w = file_name.chars().count() as f32 * self.ui_char_width;
             let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
-            
+
             if idx == active_idx {
                 target_tab_x = total_tabs_width;
                 target_tab_w = tab_w;
@@ -504,8 +532,19 @@ impl UiState {
         new_scroll_x.clamp(0.0, max_scroll_x)
     }
 
-    pub fn scroll_to_cursor(&mut self, cursor: &Cursor, buffer_len: usize, width: f32, height: f32) {
-        let editor_height = height - self.titlebar_height - self.status_height - self.tabbar_height - self.breadcrumb_height - 14.0;
+    pub fn scroll_to_cursor(
+        &mut self,
+        cursor: &Cursor,
+        buffer_len: usize,
+        width: f32,
+        height: f32,
+    ) {
+        let editor_height = height
+            - self.titlebar_height
+            - self.status_height
+            - self.tabbar_height
+            - self.breadcrumb_height
+            - 14.0;
         let visible_lines = (editor_height / self.buffer_line_height).floor() as usize;
         if visible_lines > 0 {
             if cursor.line < self.scroll_y {

@@ -1,8 +1,8 @@
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::terminal::TerminalInstance;
-use winit::keyboard::ModifiersState;
 use std::time::Instant;
+use winit::keyboard::ModifiersState;
 
 #[derive(Clone)]
 pub struct Tab {
@@ -89,15 +89,15 @@ impl AppState {
         if self.inactive_panes.is_empty() {
             return;
         }
-        
+
         let current_active_pane = Pane {
             tabs: std::mem::take(&mut self.tabs),
             active_tab_idx: self.active_tab_idx,
             tab_scroll_x: self.tab_scroll_x,
         };
-        
+
         let target_pane = std::mem::replace(&mut self.inactive_panes[0], current_active_pane);
-        
+
         self.tabs = target_pane.tabs;
         self.active_tab_idx = target_pane.active_tab_idx;
         self.tab_scroll_x = target_pane.tab_scroll_x;
@@ -106,7 +106,7 @@ impl AppState {
 
     pub fn copy_to_clipboard(&mut self, text: String) {
         self.internal_clipboard = text.clone();
-        
+
         // Linux system clipboard commands
         // Try wl-copy first (Wayland)
         if let Ok(mut child) = std::process::Command::new("wl-copy")
@@ -230,4 +230,3 @@ impl AppState {
         }
     }
 }
-

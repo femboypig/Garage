@@ -1,13 +1,13 @@
-pub mod dropdown;
-pub mod command_palette;
-pub mod unsaved_changes;
 pub mod about;
-pub mod settings;
+pub mod command_palette;
+pub mod dropdown;
 pub mod global_search;
+pub mod settings;
+pub mod unsaved_changes;
 
+use crate::machkit::{ModalType, UiState};
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
-use crate::machkit::{UiState, ModalType};
 
 pub fn draw_modals(
     ui: &mut UiState,
@@ -131,60 +131,25 @@ pub fn draw_modals(
         match modal {
             ModalType::CommandPalette => {
                 command_palette::draw_command_palette(
-                    ui,
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    modal_x,
-                    modal_y,
-                    modal_w,
-                    modal_h,
+                    ui, vertices, indices, atlas, queue, modal_x, modal_y, modal_w, modal_h,
                     white_uv,
                 );
             }
             ModalType::GlobalSearch => {
                 global_search::draw_global_search(
-                    ui,
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    modal_x,
-                    modal_y,
-                    modal_w,
-                    modal_h,
+                    ui, vertices, indices, atlas, queue, modal_x, modal_y, modal_w, modal_h,
                     white_uv,
                 );
             }
             ModalType::UnsavedChanges => {
                 unsaved_changes::draw_unsaved_changes(
-                    ui,
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    mouse_x,
-                    mouse_y,
-                    modal_x,
-                    modal_y,
-                    modal_w,
-                    modal_h,
-                    white_uv,
-                    tab_paths,
+                    ui, vertices, indices, atlas, queue, mouse_x, mouse_y, modal_x, modal_y,
+                    modal_w, modal_h, white_uv, tab_paths,
                 );
             }
             ModalType::About => {
                 about::draw_about(
-                    ui,
-                    vertices,
-                    indices,
-                    atlas,
-                    queue,
-                    modal_x,
-                    modal_y,
-                    modal_w,
-                    modal_h,
+                    ui, vertices, indices, atlas, queue, modal_x, modal_y, modal_w, modal_h,
                     white_uv,
                 );
             }
@@ -230,32 +195,38 @@ pub fn draw_modals(
                     "rename" => "Rename",
                     _ => "Input",
                 };
-                
+
                 let title_y = modal_y + 20.0;
-                ctx.push_str(title, modal_x + 20.0, title_y + ctx.ui_font_ascent, ctx.theme.modal_text_title, ctx.ui_font_size);
-                
+                ctx.push_str(
+                    title,
+                    modal_x + 20.0,
+                    title_y + ctx.ui_font_ascent,
+                    ctx.theme.modal_text_title,
+                    ctx.ui_font_size,
+                );
+
                 let input_x = modal_x + 20.0;
                 let input_y = title_y + ctx.ui_line_height + 15.0;
                 let input_w = modal_w - 40.0;
                 let input_h = ctx.ui_line_height + 8.0;
-                
+
                 crate::machkit::Input::new()
                     .value(&ui.sidebar_input_value)
                     .focused(true)
                     .draw(&mut ctx, input_x, input_y, input_w, input_h);
-                
+
                 let btn_w = 80.0f32;
                 let btn_h = 24.0f32;
                 let cancel_x = modal_x + modal_w - 20.0 - btn_w * 2.0 - 10.0;
                 let confirm_x = modal_x + modal_w - 20.0 - btn_w;
                 let btn_y = input_y + input_h + 15.0;
-                
+
                 crate::machkit::Button::new()
                     .text("Cancel")
                     .border(true)
                     .bg_color(ctx.theme.button_bg)
                     .draw(&mut ctx, cancel_x, btn_y, btn_w, btn_h);
-                
+
                 crate::machkit::Button::new()
                     .text("OK")
                     .border(true)
@@ -264,7 +235,10 @@ pub fn draw_modals(
             }
         }
 
-        if modal != ModalType::CommandPalette && modal != ModalType::UnsavedChanges && modal != ModalType::SidebarInput {
+        if modal != ModalType::CommandPalette
+            && modal != ModalType::UnsavedChanges
+            && modal != ModalType::SidebarInput
+        {
             let mut ctx = crate::machkit::UiContext {
                 vertices,
                 indices,

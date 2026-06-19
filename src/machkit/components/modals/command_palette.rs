@@ -17,7 +17,7 @@ pub fn draw_command_palette(
     let prefix = "> ";
     let mut input_text = prefix.to_string();
     input_text.push_str(&ui.command_palette_query);
-    
+
     let text_color = ui.config.theme.modal_text_normal;
     ui.push_str(
         vertices,
@@ -65,7 +65,7 @@ pub fn draw_command_palette(
     let max_visible_items = ((modal_y + modal_h - list_y) / item_height).floor() as usize;
 
     let filtered = ui.get_filtered_commands();
-    
+
     // Automatically scroll selection into view
     if max_visible_items > 0 {
         if ui.command_palette_selected < ui.command_palette_scroll {
@@ -180,15 +180,7 @@ pub fn draw_command_palette(
             let icon_x = modal_x + 20.0;
             let icon_y = (item_y + (item_height - icon_sz) / 2.0).round();
             ui.push_icon(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                icon_key,
-                icon_x,
-                icon_y,
-                icon_color,
-                icon_sz,
+                vertices, indices, atlas, queue, icon_key, icon_x, icon_y, icon_color, icon_sz,
             );
             icon_sz + 8.0
         } else {
@@ -213,13 +205,19 @@ pub fn draw_command_palette(
         let desc_color = ui.config.theme.modal_text_muted;
         let desc_len = desc.chars().count() as f32;
         let desc_w = desc_len * ui.ui_char_width;
-        let right_margin = if filtered.len() > max_visible_items { 25.0 } else { 20.0 };
+        let right_margin = if filtered.len() > max_visible_items {
+            25.0
+        } else {
+            20.0
+        };
         let desc_x = modal_x + modal_w - right_margin - desc_w;
-        
+
         let name_len = display_name.chars().count() as f32;
         let name_w = name_len * ui.ui_char_width;
-        
-        if ui.command_palette_mode == crate::machkit::CommandPaletteMode::Commands && desc_x > modal_x + name_w + 40.0 {
+
+        if ui.command_palette_mode == crate::machkit::CommandPaletteMode::Commands
+            && desc_x > modal_x + name_w + 40.0
+        {
             ui.push_str(
                 vertices,
                 indices,
@@ -240,7 +238,7 @@ pub fn draw_command_palette(
         let track_x = modal_x + modal_w - 8.0;
         let track_w = 4.0f32;
         let track_h = max_visible_items as f32 * item_height;
-        
+
         // Scrollbar track
         ui.push_quad(
             vertices,
@@ -252,12 +250,12 @@ pub fn draw_command_palette(
             white_uv,
             ui.config.theme.scrollbar_track,
         );
-        
+
         let ratio = max_visible_items as f32 / filtered.len() as f32;
         let thumb_h = (track_h * ratio).clamp(15.0_f32.min(track_h), track_h);
         let scroll_ratio = ui.command_palette_scroll as f32 / max_scroll as f32;
         let thumb_y = list_y + scroll_ratio * (track_h - thumb_h);
-        
+
         // Scrollbar thumb
         ui.push_quad(
             vertices,

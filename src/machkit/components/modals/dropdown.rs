@@ -1,4 +1,4 @@
-use crate::machkit::{UiState, Vertex, MenuType};
+use crate::machkit::{MenuType, UiState, Vertex};
 use crate::renderer::atlas::FontAtlas;
 
 pub fn draw_dropdown(
@@ -24,7 +24,7 @@ pub fn draw_dropdown(
         MenuType::Selection => vec!["Select All", "Clear Selection"],
         MenuType::View => vec!["Toggle Sidebar", "Command Palette (Ctrl+Shift+P)"],
     };
-    
+
     // Calculate dynamic menu_x matching the header position
     let menu_items_raw = [
         ("Garage", MenuType::Garage),
@@ -38,11 +38,7 @@ pub fn draw_dropdown(
     for (i, (label, m_type)) in menu_items_raw.iter().enumerate() {
         let label_len = label.chars().count() as f32;
         let text_w = label_len * ui.ui_char_width;
-        let (left_pad, right_pad) = if i == 0 {
-            (14.0, 10.0)
-        } else {
-            (10.0, 10.0)
-        };
+        let (left_pad, right_pad) = if i == 0 { (14.0, 10.0) } else { (10.0, 10.0) };
         let item_w = text_w + left_pad + right_pad;
         if m_type == &menu {
             menu_x = current_x;
@@ -71,7 +67,10 @@ pub fn draw_dropdown(
     // Draw Item Hovers and text
     for (idx, label) in items.iter().enumerate() {
         let row_y = ui.titlebar_height + idx as f32 * item_height;
-        let is_hovered = mouse_x >= menu_x && mouse_x < menu_x + dropdown_w && mouse_y >= row_y && mouse_y < row_y + item_height;
+        let is_hovered = mouse_x >= menu_x
+            && mouse_x < menu_x + dropdown_w
+            && mouse_y >= row_y
+            && mouse_y < row_y + item_height;
 
         if is_hovered {
             ui.push_quad(

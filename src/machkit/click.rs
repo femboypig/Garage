@@ -1,7 +1,7 @@
+use super::types::{MenuType, ModalType, UiAction};
+use super::ui_state::{CommandPaletteMode, UiState};
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
-use super::ui_state::{UiState, CommandPaletteMode};
-use super::types::{UiAction, MenuType, ModalType};
 
 impl UiState {
     /// Handle click coordinates to determine if a menu, tree, or scroll item was clicked
@@ -22,7 +22,18 @@ impl UiState {
     ) -> UiAction {
         // 1. Delegate to modal click handler if a modal is open
         if let Some(modal) = self.active_modal {
-            return self.handle_modal_click(mx, my, width, height, buffer, cursor, tab_paths, tab_modified, modal, active_tab_idx);
+            return self.handle_modal_click(
+                mx,
+                my,
+                width,
+                height,
+                buffer,
+                cursor,
+                tab_paths,
+                tab_modified,
+                modal,
+                active_tab_idx,
+            );
         }
 
         // 2. Delegate to menu click handler (titlebar menu, dropdown menu)
@@ -31,7 +42,19 @@ impl UiState {
         }
 
         // 3. Delegate to workspace clicks (tabs, sidebar file tree, terminal dock, status bar)
-        self.handle_workspace_click(mx, my, width, pane_right_edge, height, tab_paths, tab_modified, terminals, active_tab_idx, cursor, tab_scroll_x)
+        self.handle_workspace_click(
+            mx,
+            my,
+            width,
+            pane_right_edge,
+            height,
+            tab_paths,
+            tab_modified,
+            terminals,
+            active_tab_idx,
+            cursor,
+            tab_scroll_x,
+        )
     }
 
     pub fn handle_menu_click(
@@ -44,7 +67,6 @@ impl UiState {
     ) -> Option<UiAction> {
         // 1. Check Titlebar Menu Clicks (Contiguous adjacent layout)
         if my < self.titlebar_height {
-
             let menu_items_raw = [
                 ("Garage", MenuType::Garage),
                 ("File", MenuType::File),
@@ -56,16 +78,16 @@ impl UiState {
             for (i, (label, menu_type)) in menu_items_raw.iter().enumerate() {
                 let label_len = label.chars().count() as f32;
                 let text_w = label_len * self.ui_char_width;
-                let (left_pad, right_pad) = if i == 0 {
-                    (14.0, 10.0)
-                } else {
-                    (10.0, 10.0)
-                };
+                let (left_pad, right_pad) = if i == 0 { (14.0, 10.0) } else { (10.0, 10.0) };
                 let item_w = text_w + left_pad + right_pad;
                 let x_min = current_x;
                 let x_max = current_x + item_w;
                 if mx >= x_min && mx < x_max {
-                    self.active_menu = if self.active_menu == Some(*menu_type) { None } else { Some(*menu_type) };
+                    self.active_menu = if self.active_menu == Some(*menu_type) {
+                        None
+                    } else {
+                        Some(*menu_type)
+                    };
                     return Some(UiAction::None);
                 }
                 current_x = x_max;
@@ -88,7 +110,7 @@ impl UiState {
                 MenuType::Selection => vec!["Select All", "Clear Selection"],
                 MenuType::View => vec!["Toggle Sidebar", "Command Palette (Ctrl+Shift+P)"],
             };
-            
+
             // Calculate dynamic menu_x matching the contiguous header position
             let menu_items_raw = [
                 ("Garage", MenuType::Garage),
@@ -102,11 +124,7 @@ impl UiState {
             for (i, (label, m_type)) in menu_items_raw.iter().enumerate() {
                 let label_len = label.chars().count() as f32;
                 let text_w = label_len * self.ui_char_width;
-                let (left_pad, right_pad) = if i == 0 {
-                    (14.0, 10.0)
-                } else {
-                    (10.0, 10.0)
-                };
+                let (left_pad, right_pad) = if i == 0 { (14.0, 10.0) } else { (10.0, 10.0) };
                 let item_w = text_w + left_pad + right_pad;
                 if m_type == &menu {
                     menu_x = current_x;
@@ -120,7 +138,11 @@ impl UiState {
             let max_chars = items.iter().map(|s| s.chars().count()).max().unwrap_or(10) as f32;
             let dropdown_w = (max_chars * self.ui_char_width + 30.0).round();
 
-            let menu_action = if mx >= menu_x && mx < menu_x + dropdown_w && my >= self.titlebar_height && my < self.titlebar_height + dropdown_h {
+            let menu_action = if mx >= menu_x
+                && mx < menu_x + dropdown_w
+                && my >= self.titlebar_height
+                && my < self.titlebar_height + dropdown_h
+            {
                 let idx = ((my - self.titlebar_height) / item_height).floor() as usize;
                 match menu {
                     MenuType::Garage => match idx {
@@ -209,7 +231,11 @@ impl UiState {
             let item_height = (self.ui_line_height * 1.5).round().max(24.0);
             let dropdown_h = 2.0 * item_height;
 
-            if mx >= control_x && mx <= control_x + theme_btn_w && my >= dropdown_y && my <= dropdown_y + dropdown_h {
+            if mx >= control_x
+                && mx <= control_x + theme_btn_w
+                && my >= dropdown_y
+                && my <= dropdown_y + dropdown_h
+            {
                 let idx = ((my - dropdown_y) / item_height).floor() as usize;
                 let themes = ["Light Theme", "Dark Theme"];
                 if idx < 2 {
@@ -219,7 +245,11 @@ impl UiState {
             }
 
             // Check if clicked the theme button itself to close it
-            if mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h {
+            if mx >= control_x
+                && mx <= control_x + theme_btn_w
+                && my >= btn4_y
+                && my <= btn4_y + btn_h
+            {
                 self.theme_dropdown_open = false;
                 return Some(UiAction::None);
             }
@@ -251,35 +281,60 @@ impl UiState {
         }
 
         // Row 3: Backend Selection
-        if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h {
+        if mx >= control_x
+            && mx <= control_x + backend_btn_w
+            && my >= btn3_y
+            && my <= btn3_y + btn_h
+        {
             return Some(UiAction::ChangeBackend(wgpu::Backend::Vulkan));
         }
         let opengl_btn_x = control_x + backend_btn_w + self.ui_char_width;
-        if mx >= opengl_btn_x && mx <= opengl_btn_x + backend_btn_w && my >= btn3_y && my <= btn3_y + btn_h {
+        if mx >= opengl_btn_x
+            && mx <= opengl_btn_x + backend_btn_w
+            && my >= btn3_y
+            && my <= btn3_y + btn_h
+        {
             return Some(UiAction::ChangeBackend(wgpu::Backend::Gl));
         }
 
         // Row 4: Theme Selector Button Click
-        if mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h {
+        if mx >= control_x && mx <= control_x + theme_btn_w && my >= btn4_y && my <= btn4_y + btn_h
+        {
             self.theme_dropdown_open = true;
             return Some(UiAction::None);
         }
 
         // Row 5: Git Blame Selection
-        if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h {
+        if mx >= control_x
+            && mx <= control_x + backend_btn_w
+            && my >= btn5_y
+            && my <= btn5_y + btn_h
+        {
             return Some(UiAction::ChangeGitBlame(true));
         }
         let disabled5_btn_x = control_x + backend_btn_w + self.ui_char_width;
-        if mx >= disabled5_btn_x && mx <= disabled5_btn_x + backend_btn_w && my >= btn5_y && my <= btn5_y + btn_h {
+        if mx >= disabled5_btn_x
+            && mx <= disabled5_btn_x + backend_btn_w
+            && my >= btn5_y
+            && my <= btn5_y + btn_h
+        {
             return Some(UiAction::ChangeGitBlame(false));
         }
 
         // Row 6: Git Branch Selection
-        if mx >= control_x && mx <= control_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h {
+        if mx >= control_x
+            && mx <= control_x + backend_btn_w
+            && my >= btn6_y
+            && my <= btn6_y + btn_h
+        {
             return Some(UiAction::ChangeGitBranch(true));
         }
         let disabled6_btn_x = control_x + backend_btn_w + self.ui_char_width;
-        if mx >= disabled6_btn_x && mx <= disabled6_btn_x + backend_btn_w && my >= btn6_y && my <= btn6_y + btn_h {
+        if mx >= disabled6_btn_x
+            && mx <= disabled6_btn_x + backend_btn_w
+            && my >= btn6_y
+            && my <= btn6_y + btn_h
+        {
             return Some(UiAction::ChangeGitBranch(false));
         }
 
@@ -305,7 +360,7 @@ impl UiState {
         let item_height = (self.ui_line_height * 1.6).round().max(26.0);
         let filtered = self.get_filtered_commands();
         let max_visible_items = ((modal_y + modal_h - list_y) / item_height).round() as usize;
-        
+
         // Scrollbar click detection
         if filtered.len() > max_visible_items {
             let track_x = modal_x + modal_w - 12.0;
@@ -319,7 +374,11 @@ impl UiState {
             }
         }
 
-        let list_w = if filtered.len() > max_visible_items { modal_w - 12.0 } else { modal_w };
+        let list_w = if filtered.len() > max_visible_items {
+            modal_w - 12.0
+        } else {
+            modal_w
+        };
         if mx >= modal_x && mx <= modal_x + list_w && my >= list_y && my <= modal_y + modal_h {
             let idx = ((my - list_y) / item_height).floor() as usize + self.command_palette_scroll;
             if idx < filtered.len() {
@@ -361,7 +420,11 @@ impl UiState {
             }
         }
 
-        let list_w = if results_len > max_visible_items { modal_w - 12.0 } else { modal_w };
+        let list_w = if results_len > max_visible_items {
+            modal_w - 12.0
+        } else {
+            modal_w
+        };
         if mx >= modal_x && mx <= modal_x + list_w && my >= list_y && my <= modal_y + modal_h {
             let idx = ((my - list_y) / item_height).floor() as usize + self.global_search_scroll;
             if idx < results_len {
@@ -401,7 +464,8 @@ impl UiState {
 
             // Check Don't Save button
             let dont_save_x = start_btn_x + btn_w + spacing;
-            if mx >= dont_save_x && mx <= dont_save_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
+            if mx >= dont_save_x && mx <= dont_save_x + btn_w && my >= btn_y && my <= btn_y + btn_h
+            {
                 self.active_modal = None;
                 self.tab_to_close = None;
                 return Some(UiAction::ForceCloseTab(tab_idx));
@@ -470,7 +534,8 @@ impl UiState {
         let modal_x = ((width - modal_w) / 2.0).round();
         let modal_y = ((height - modal_h) / 2.0).round();
 
-        let clicked_outside = mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h;
+        let clicked_outside =
+            mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h;
 
         // Delegate to helpers
         if modal == ModalType::Settings {
@@ -479,19 +544,34 @@ impl UiState {
             }
         } else if modal == ModalType::CommandPalette {
             if let Some(action) = self.handle_command_palette_modal_click(
-                mx, my, modal_x, modal_y, modal_w, modal_h, buffer, cursor, tab_paths, active_tab_idx
+                mx,
+                my,
+                modal_x,
+                modal_y,
+                modal_w,
+                modal_h,
+                buffer,
+                cursor,
+                tab_paths,
+                active_tab_idx,
             ) {
                 return action;
             }
         } else if modal == ModalType::GlobalSearch {
-            if let Some(action) = self.handle_global_search_modal_click(
-                mx, my, modal_x, modal_y, modal_w, modal_h
-            ) {
+            if let Some(action) =
+                self.handle_global_search_modal_click(mx, my, modal_x, modal_y, modal_w, modal_h)
+            {
                 return action;
             }
         } else if modal == ModalType::UnsavedChanges {
             if let Some(action) = self.handle_unsaved_changes_modal_click(
-                mx, my, modal_x, modal_y, modal_w, modal_h, clicked_outside
+                mx,
+                my,
+                modal_x,
+                modal_y,
+                modal_w,
+                modal_h,
+                clicked_outside,
             ) {
                 return action;
             }
@@ -503,7 +583,13 @@ impl UiState {
         let btn_x = modal_x + ((modal_w - btn_w) / 2.0).round();
         let btn_y = modal_y + modal_h - btn_h - (self.ui_line_height * 1.0).round();
 
-        let inside_close_btn = modal != ModalType::CommandPalette && modal != ModalType::GlobalSearch && modal != ModalType::UnsavedChanges && mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+        let inside_close_btn = modal != ModalType::CommandPalette
+            && modal != ModalType::GlobalSearch
+            && modal != ModalType::UnsavedChanges
+            && mx >= btn_x
+            && mx <= btn_x + btn_w
+            && my >= btn_y
+            && my <= btn_y + btn_h;
 
         if (inside_close_btn || clicked_outside) && modal != ModalType::UnsavedChanges {
             self.active_modal = None;
@@ -561,10 +647,15 @@ impl UiState {
                     if mx >= clip_left && mx < clip_right {
                         // Check if clicked the close button
                         let close_x = draw_x + tab_w - 10.0 - tab_close_icon_sz;
-                        let close_y = (main_y + self.tabbar_height / 2.0 - tab_close_icon_sz / 2.0).round();
-                        
+                        let close_y =
+                            (main_y + self.tabbar_height / 2.0 - tab_close_icon_sz / 2.0).round();
+
                         // Allow some padding around the close icon for easier clicking
-                        if mx >= close_x - 3.0 && mx < close_x + tab_close_icon_sz + 3.0 && my >= close_y - 3.0 && my <= close_y + tab_close_icon_sz + 3.0 {
+                        if mx >= close_x - 3.0
+                            && mx < close_x + tab_close_icon_sz + 3.0
+                            && my >= close_y - 3.0
+                            && my <= close_y + tab_close_icon_sz + 3.0
+                        {
                             self.active_menu = None;
                             return UiAction::CloseTab(idx);
                         } else {
@@ -582,7 +673,12 @@ impl UiState {
 
         // 4. Check Sidebar Clicks
         let activity_bar_width = 0.0;
-        if self.sidebar_width > 0.0 && mx >= activity_bar_width && mx < activity_bar_width + self.sidebar_width && my > main_y && my < height - self.status_height {
+        if self.sidebar_width > 0.0
+            && mx >= activity_bar_width
+            && mx < activity_bar_width + self.sidebar_width
+            && my > main_y
+            && my < height - self.status_height
+        {
             let tree_y = my - main_y;
             let row_idx = (tree_y / self.ui_line_height).floor() as usize;
             let r = row_idx + self.sidebar_scroll;
@@ -610,26 +706,31 @@ impl UiState {
         // 5. Check Dock Tab Clicks
         let mut dock_start_y = height - self.status_height;
         if self.show_dock {
-            dock_start_y = (height - self.status_height - self.dock_height).max(main_y + self.tabbar_height + self.breadcrumb_height + 50.0);
+            dock_start_y = (height - self.status_height - self.dock_height)
+                .max(main_y + self.tabbar_height + self.breadcrumb_height + 50.0);
         }
         let dock_tabbar_h = 28.0f32;
         if self.show_dock && my >= dock_start_y && my < dock_start_y + dock_tabbar_h {
             let mut cur_x = self.sidebar_width;
             let tab_y = dock_start_y + 1.0;
             let tab_h = dock_tabbar_h - 1.0;
-            
+
             for idx in 0..terminals.len() {
                 let term_name = terminals[idx].get_display_name(idx);
                 let term_name_w = term_name.chars().count() as f32 * self.ui_char_width * 0.9;
                 let icon_sz = 12.0f32;
                 let close_sz = 10.0f32;
                 let tab_w = 12.0 + icon_sz + 6.0 + term_name_w + 8.0 + close_sz + 10.0;
-                
+
                 if mx >= cur_x && mx < cur_x + tab_w {
                     // Check if clicked close button of the dock tab
                     let close_x = cur_x + tab_w - 8.0 - close_sz;
                     let close_y = (tab_y + (tab_h - close_sz) / 2.0).round();
-                    if mx >= close_x - 3.0 && mx < close_x + close_sz + 3.0 && my >= close_y - 3.0 && my <= close_y + close_sz + 3.0 {
+                    if mx >= close_x - 3.0
+                        && mx < close_x + close_sz + 3.0
+                        && my >= close_y - 3.0
+                        && my <= close_y + close_sz + 3.0
+                    {
                         return UiAction::CloseTerminal(idx);
                     } else {
                         return UiAction::SelectTerminal(idx);
@@ -637,13 +738,13 @@ impl UiState {
                 }
                 cur_x += tab_w;
             }
-            
+
             // Check '+' button to add new terminal
             let add_btn_w = 28.0f32;
             if mx >= cur_x && mx < cur_x + add_btn_w {
                 return UiAction::NewTerminal;
             }
-            
+
             // Check close dock button
             let close_dock_w = 28.0f32;
             let close_dock_x = width - 10.0 - close_dock_w;
@@ -693,7 +794,9 @@ impl UiState {
             }
 
             // Check right-hand status bar component clicks (Language & Encoding)
-            let raw_ext = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
+            let raw_ext = tab_paths
+                .get(active_tab_idx)
+                .and_then(|p| p.as_ref())
                 .and_then(|p| std::path::Path::new(p).extension())
                 .and_then(|ext| ext.to_str())
                 .unwrap_or("");
@@ -704,7 +807,9 @@ impl UiState {
                 }
             }
 
-            let language = self.languages.get(&extension)
+            let language = self
+                .languages
+                .get(&extension)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| {
                     if extension.is_empty() {
@@ -722,12 +827,16 @@ impl UiState {
                     }
                 });
 
-            let encoding = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
+            let encoding = tab_paths
+                .get(active_tab_idx)
+                .and_then(|p| p.as_ref())
                 .and_then(|path| self.forced_encodings.get(path))
                 .map(|s| s.as_str())
                 .unwrap_or("UTF-8");
 
-            let line_ending = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
+            let line_ending = tab_paths
+                .get(active_tab_idx)
+                .and_then(|p| p.as_ref())
                 .and_then(|path| self.forced_line_endings.get(path))
                 .map(|s| s.as_str())
                 .unwrap_or("LF");
@@ -735,7 +844,7 @@ impl UiState {
             let cursor_str = format!("Ln {}, Col {}", cursor.line + 1, cursor.col + 1);
 
             let mut cur_right_x = term_btn_x - 10.0;
-            
+
             // First component: Cursor position
             let cursor_w = cursor_str.chars().count() as f32 * self.ui_char_width;
             cur_right_x -= cursor_w + 16.0;
