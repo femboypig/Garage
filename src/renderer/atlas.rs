@@ -108,6 +108,7 @@ impl FontAtlas {
         let fallback_fonts = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let fallback_clone = fallback_fonts.clone();
         std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(2000));
             let loaded = load_fallback_nerd_fonts();
             if let Ok(mut lock) = fallback_clone.lock() {
                 *lock = loaded;

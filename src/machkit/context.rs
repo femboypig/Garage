@@ -167,10 +167,8 @@ impl<'a> UiContext<'a> {
             });
 
             self.indices.extend_from_slice(&[start, start + 1, start + 2, start + 2, start + 3, start]);
-            w
-        } else {
-            char_width
         }
+        char_width
     }
 
     pub fn push_icon(&mut self, icon_path: &str, x: f32, y: f32, color: [f32; 4], size: f32) -> f32 {

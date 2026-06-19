@@ -242,7 +242,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
     // Run the event loop reactively to save power/CPU/GPU cycles when idle
     event_loop.run(move |event, elwt| {
-        elwt.set_control_flow(ControlFlow::Wait);
+        if !first_frame_rendered {
+            elwt.set_control_flow(ControlFlow::Poll);
+        } else {
+            elwt.set_control_flow(ControlFlow::Wait);
+        }
 
         match event {
             Event::NewEvents(winit::event::StartCause::Init) => {
@@ -760,7 +764,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 let scheduled_wakeup = false;
 
                 if !scheduled_wakeup {
-                    if state.terminal_focus && gpu.is_some() {
+                    if !first_frame_rendered {
+                        elwt.set_control_flow(ControlFlow::Poll);
+                    } else if state.terminal_focus && gpu.is_some() {
                         elwt.set_control_flow(ControlFlow::WaitUntil(
                             std::time::Instant::now() + std::time::Duration::from_millis(15)
                         ));
