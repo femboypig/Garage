@@ -1,9 +1,8 @@
-pub mod buffer;
-pub mod cursor;
-pub mod config;
 pub mod actions;
+pub mod buffer;
+pub mod config;
+pub mod cursor;
 pub mod keymap;
-
 
 #[derive(Debug, Clone)]
 pub struct DiagnosticDetail {
@@ -89,8 +88,5 @@ pub fn get_absolute_path(path: &str) -> String {
     } else {
         std::env::current_dir().unwrap_or_default().join(path_buf)
     };
-    normalize_path(&abs_path)
-        .to_string_lossy()
-        .to_string()
+    normalize_path(&abs_path).to_string_lossy().to_string()
 }
-

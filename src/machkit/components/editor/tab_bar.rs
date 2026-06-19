@@ -21,7 +21,7 @@ pub fn draw_tab_bar(
     let white_uv = atlas.white_pixel_uv();
     let tabbar_start_x = activity_bar_width + ui.sidebar_width;
     let visible_width = (width - tabbar_start_x).max(0.0);
-    
+
     // Tab Bar background (gray)
     ui.push_quad(
         vertices,
@@ -78,7 +78,7 @@ pub fn draw_tab_bar(
     if has_active_tab {
         let active_left = active_tab_x.clamp(tabbar_start_x, width);
         let active_right = (active_tab_x + active_tab_w).clamp(tabbar_start_x, width);
-        
+
         if active_left > tabbar_start_x {
             ui.push_quad(
                 vertices,
@@ -226,7 +226,7 @@ pub fn draw_tab_bar(
             if Some(idx) == dragged_tab_idx {
                 label_color[3] *= 0.15;
             }
-            
+
             let mut cur_char_x = label_x;
             for (char_idx, c) in file_name.chars().enumerate() {
                 if cur_char_x + ui.ui_char_width > clip_right - 18.0 {
@@ -251,15 +251,8 @@ pub fn draw_tab_bar(
                         let dot_size = (ui.ui_font_size * 0.65).round().max(8.0);
                         let dot_y = (main_y + ui.tabbar_height / 2.0 - dot_size / 2.0).round();
                         ui.push_icon(
-                            vertices,
-                            indices,
-                            atlas,
-                            queue,
-                            "circle",
-                            cur_char_x,
-                            dot_y,
-                            dot_color,
-                            dot_size,
+                            vertices, indices, atlas, queue, "circle", cur_char_x, dot_y,
+                            dot_color, dot_size,
                         );
                     } else {
                         ui.push_char(
@@ -286,8 +279,9 @@ pub fn draw_tab_bar(
                 && mouse_x < draw_x + tab_w
                 && mouse_y >= main_y
                 && mouse_y < main_y + ui.tabbar_height;
-            let is_tab_hovered_visible = is_tab_hovered && mouse_x >= tabbar_start_x && mouse_x < width;
-            
+            let is_tab_hovered_visible =
+                is_tab_hovered && mouse_x >= tabbar_start_x && mouse_x < width;
+
             if is_tab_hovered_visible {
                 let close_x = draw_x + tab_w - 10.0 - tab_close_icon_sz;
                 let close_y = (main_y + ui.tabbar_height / 2.0 - tab_close_icon_sz / 2.0).round();
@@ -335,7 +329,7 @@ pub fn draw_tab_bar(
         if is_tabbar_hovered || ui.tab_scroll_is_dragging {
             let sb_y = main_y + ui.tabbar_height - 4.0;
             let sb_h = 4.0f32;
-            
+
             // Track background
             ui.push_quad(
                 vertices,
@@ -347,20 +341,27 @@ pub fn draw_tab_bar(
                 white_uv,
                 [0.0, 0.0, 0.0, 0.15],
             );
-            
+
             // Thumb
             let ratio = visible_width / total_tabs_width;
             let thumb_w = (visible_width * ratio).clamp(20.0_f32.min(visible_width), visible_width);
-            let scroll_ratio_x = if max_scroll_x > 0.0 { tab_scroll_x / max_scroll_x } else { 0.0 };
+            let scroll_ratio_x = if max_scroll_x > 0.0 {
+                tab_scroll_x / max_scroll_x
+            } else {
+                0.0
+            };
             let thumb_x = tabbar_start_x + scroll_ratio_x * (visible_width - thumb_w);
-            
-            let is_thumb_hovered = mouse_x >= thumb_x && mouse_x < thumb_x + thumb_w && mouse_y >= sb_y && mouse_y < sb_y + sb_h;
+
+            let is_thumb_hovered = mouse_x >= thumb_x
+                && mouse_x < thumb_x + thumb_w
+                && mouse_y >= sb_y
+                && mouse_y < sb_y + sb_h;
             let thumb_color = if is_thumb_hovered || ui.tab_scroll_is_dragging {
                 ui.config.theme.scrollbar_thumb_hover
             } else {
                 ui.config.theme.scrollbar_thumb
             };
-            
+
             ui.push_quad(
                 vertices,
                 indices,
@@ -388,41 +389,70 @@ pub fn draw_floating_tab(
 ) {
     let white_uv = atlas.white_pixel_uv();
     let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
-    
+
     let is_diagnostics = tab_path == Some("diagnostics://project");
     let file_name = ui.get_tab_name(tab_path);
-    
+
     let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
     let dot_reserved = 18.0f32;
     let close_reserved = 8.0f32 + tab_close_icon_sz;
     let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
     let tab_h = ui.tabbar_height;
-    
+
     let draw_x = mouse_x - tab_w / 2.0;
     let draw_y = mouse_y - tab_h / 2.0;
-    
+
     // Background (semi-transparent active tab color)
     let mut bg_color = ui.config.theme.tab_active_bg;
     bg_color[3] = 0.85; // slightly transparent
-    
+
+    ui.push_quad(
+        vertices, indices, draw_x, draw_y, tab_w, tab_h, white_uv, bg_color,
+    );
+
+    // Subtle border around the floating tab
+    let border_color = [0.25, 0.55, 0.95, 0.9]; // Premium blue border
     ui.push_quad(
         vertices,
         indices,
         draw_x,
         draw_y,
         tab_w,
+        1.0,
+        white_uv,
+        border_color,
+    );
+    ui.push_quad(
+        vertices,
+        indices,
+        draw_x,
+        draw_y + tab_h - 1.0,
+        tab_w,
+        1.0,
+        white_uv,
+        border_color,
+    );
+    ui.push_quad(
+        vertices,
+        indices,
+        draw_x,
+        draw_y,
+        1.0,
         tab_h,
         white_uv,
-        bg_color,
+        border_color,
     );
-    
-    // Subtle border around the floating tab
-    let border_color = [0.25, 0.55, 0.95, 0.9]; // Premium blue border
-    ui.push_quad(vertices, indices, draw_x, draw_y, tab_w, 1.0, white_uv, border_color);
-    ui.push_quad(vertices, indices, draw_x, draw_y + tab_h - 1.0, tab_w, 1.0, white_uv, border_color);
-    ui.push_quad(vertices, indices, draw_x, draw_y, 1.0, tab_h, white_uv, border_color);
-    ui.push_quad(vertices, indices, draw_x + tab_w - 1.0, draw_y, 1.0, tab_h, white_uv, border_color);
-    
+    ui.push_quad(
+        vertices,
+        indices,
+        draw_x + tab_w - 1.0,
+        draw_y,
+        1.0,
+        tab_h,
+        white_uv,
+        border_color,
+    );
+
     // Draw unsaved dot
     if is_modified && !is_diagnostics {
         let dot_size = (ui.ui_font_size * 0.55).round().max(7.0);
@@ -440,12 +470,12 @@ pub fn draw_floating_tab(
             dot_size,
         );
     }
-    
+
     // Draw label
     let label_x = draw_x + 12.0 + dot_reserved;
     let label_color = ui.config.theme.tab_text;
     let tab_baseline = (draw_y + tab_h / 2.0 + ui.ui_font_ascent / 2.0 - 3.5).round();
-    
+
     let mut cur_char_x = label_x;
     for (char_idx, c) in file_name.chars().enumerate() {
         if cur_char_x + ui.ui_char_width > draw_x + tab_w - 18.0 {
@@ -468,15 +498,7 @@ pub fn draw_floating_tab(
             let dot_size = (ui.ui_font_size * 0.65).round().max(8.0);
             let dot_y = (draw_y + tab_h / 2.0 - dot_size / 2.0).round();
             ui.push_icon(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                "circle",
-                cur_char_x,
-                dot_y,
-                dot_color,
-                dot_size,
+                vertices, indices, atlas, queue, "circle", cur_char_x, dot_y, dot_color, dot_size,
             );
         } else {
             ui.push_char(
@@ -494,7 +516,7 @@ pub fn draw_floating_tab(
         }
         cur_char_x += ui.ui_char_width;
     }
-    
+
     // Draw close icon
     let close_x = draw_x + tab_w - 10.0 - tab_close_icon_sz;
     let close_y = (draw_y + tab_h / 2.0 - tab_close_icon_sz / 2.0).round();

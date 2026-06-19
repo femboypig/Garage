@@ -1,17 +1,27 @@
+use super::types::{FrameInput, ModalType, UiAction};
+use super::ui_state::{CommandPaletteMode, UiState};
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
-use super::ui_state::{UiState, CommandPaletteMode};
-use super::types::{UiAction, ModalType, FrameInput};
 
 impl UiState {
-    pub fn get_max_line_len(&mut self, buffer: &Buffer, active_file_path: Option<&str>, cursor_line: usize) -> usize {
+    pub fn get_max_line_len(
+        &mut self,
+        buffer: &Buffer,
+        active_file_path: Option<&str>,
+        cursor_line: usize,
+    ) -> usize {
         let mut raw_max = buffer.max_line_len();
         if self.config.show_git_blame {
             if let Some(blame_str) = self.get_or_update_blame(active_file_path, cursor_line) {
                 if blame_str != "Loading blame..." && !blame_str.is_empty() {
-                    let cursor_line_len = buffer.lines().get(cursor_line).map_or(0, |l| l.chars().count()) + 4 + blame_str.chars().count();
+                    let cursor_line_len = buffer
+                        .lines()
+                        .get(cursor_line)
+                        .map_or(0, |l| l.chars().count())
+                        + 4
+                        + blame_str.chars().count();
                     if cursor_line_len > raw_max {
                         raw_max = cursor_line_len;
                     }
@@ -45,9 +55,27 @@ impl UiState {
         // 2px solid border using cursor_color (theme's primary accent color)
         let border_color = self.config.theme.cursor_color;
         self.push_quad(vertices, indices, x, y, w, 2.0, white_uv, border_color); // top
-        self.push_quad(vertices, indices, x, y + h - 2.0, w, 2.0, white_uv, border_color); // bottom
+        self.push_quad(
+            vertices,
+            indices,
+            x,
+            y + h - 2.0,
+            w,
+            2.0,
+            white_uv,
+            border_color,
+        ); // bottom
         self.push_quad(vertices, indices, x, y, 2.0, h, white_uv, border_color); // left
-        self.push_quad(vertices, indices, x + w - 2.0, y, 2.0, h, white_uv, border_color); // right
+        self.push_quad(
+            vertices,
+            indices,
+            x + w - 2.0,
+            y,
+            2.0,
+            h,
+            white_uv,
+            border_color,
+        ); // right
     }
 
     /// Push a solid rectangle (quad) into the vertex and index vectors
@@ -175,7 +203,10 @@ impl UiState {
             }
             let line = &buffer.lines()[i];
             let trimmed = line.trim_start();
-            if trimmed.starts_with("pub fn ") || trimmed.starts_with("fn ") || trimmed.starts_with("pub(crate) fn ") {
+            if trimmed.starts_with("pub fn ")
+                || trimmed.starts_with("fn ")
+                || trimmed.starts_with("pub(crate) fn ")
+            {
                 let parts: Vec<&str> = trimmed.split_whitespace().collect();
                 for (idx, &part) in parts.iter().enumerate() {
                     if part == "fn" && idx + 1 < parts.len() {
@@ -184,7 +215,10 @@ impl UiState {
                         return Some(format!("fn {}", fn_name));
                     }
                 }
-            } else if trimmed.starts_with("impl ") || trimmed.starts_with("pub struct ") || trimmed.starts_with("struct ") {
+            } else if trimmed.starts_with("impl ")
+                || trimmed.starts_with("pub struct ")
+                || trimmed.starts_with("struct ")
+            {
                 let parts: Vec<&str> = trimmed.split_whitespace().collect();
                 for (idx, &part) in parts.iter().enumerate() {
                     if (part == "struct" || part == "impl") && idx + 1 < parts.len() {
@@ -202,7 +236,6 @@ impl UiState {
     pub fn get_line_char_colors(&self, line_text: &str, _path_opt: Option<&str>) -> Vec<[f32; 4]> {
         vec![self.config.theme.syntax_default; line_text.chars().count()]
     }
-
 
     pub fn update_git_branch(&mut self) {
         crate::git::update_git_branch(self.git_branch_tx.clone(), self.event_loop_proxy.clone());
@@ -225,7 +258,7 @@ impl UiState {
         self.is_searching_globally = true;
         let tx = self.global_search_tx.clone();
         let proxy = self.event_loop_proxy.clone();
-        
+
         let case_sensitive = self.global_search_case_sensitive;
         let whole_word = self.global_search_whole_word;
         let is_regex = self.global_search_regex;
@@ -233,39 +266,44 @@ impl UiState {
         std::thread::spawn(move || {
             let mut results = Vec::new();
             let mut file_cache = std::collections::HashMap::new();
-            
+
             let pattern = if is_regex {
                 query.clone()
             } else {
                 regex::escape(&query)
             };
-            
+
             let pattern = if whole_word {
                 format!(r"\b{}\b", pattern)
             } else {
                 pattern
             };
-            
+
             let mut builder = regex::RegexBuilder::new(&pattern);
             builder.case_insensitive(!case_sensitive);
-            
+
             if let Ok(re) = builder.build() {
                 let walker = ignore::WalkBuilder::new(".")
                     .hidden(true)
                     .git_ignore(true)
                     .parents(true)
                     .build();
-                    
+
                 for result in walker {
                     if let Ok(entry) = result {
                         if entry.file_type().map_or(false, |t| t.is_file()) {
                             let path = entry.path().to_path_buf();
                             if let Ok(content) = std::fs::read_to_string(&path) {
                                 let mut has_match = false;
-                                let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                                let lines: Vec<String> =
+                                    content.lines().map(|s| s.to_string()).collect();
                                 for (line_idx, line) in lines.iter().enumerate() {
                                     if re.is_match(line) {
-                                        results.push((path.clone(), line_idx, line.trim().to_string()));
+                                        results.push((
+                                            path.clone(),
+                                            line_idx,
+                                            line.trim().to_string(),
+                                        ));
                                         has_match = true;
                                         if results.len() >= 100 {
                                             break;
@@ -322,16 +360,37 @@ impl UiState {
             CommandPaletteMode::Commands => vec![
                 ("Theme: Light Theme", "Switch to the Light Theme"),
                 ("Theme: Dark Theme", "Switch to the default Dark Theme"),
-                ("Sidebar: Toggle Visibility", "Show or hide the file tree sidebar"),
-                ("Font Size: Increase Editor Font", "Increase the text size of the editor"),
-                ("Font Size: Decrease Editor Font", "Decrease the text size of the editor"),
-                ("Git Blame: Toggle Inline Annotations", "Enable/disable inline git blame"),
-                ("Git Branch: Toggle Branch Statusbar", "Enable/disable git branch status"),
+                (
+                    "Sidebar: Toggle Visibility",
+                    "Show or hide the file tree sidebar",
+                ),
+                (
+                    "Font Size: Increase Editor Font",
+                    "Increase the text size of the editor",
+                ),
+                (
+                    "Font Size: Decrease Editor Font",
+                    "Decrease the text size of the editor",
+                ),
+                (
+                    "Git Blame: Toggle Inline Annotations",
+                    "Enable/disable inline git blame",
+                ),
+                (
+                    "Git Branch: Toggle Branch Statusbar",
+                    "Enable/disable git branch status",
+                ),
                 ("Settings: Open settings modal", "Configure editor options"),
                 ("About: Open about dialog", "View editor information"),
                 ("Exit: Quit Garage", "Close the code editor"),
-                ("Split Editor: Vertical", "Split the active editor vertically"),
-                ("Split Editor: Horizontal", "Split the active editor horizontally"),
+                (
+                    "Split Editor: Vertical",
+                    "Split the active editor vertically",
+                ),
+                (
+                    "Split Editor: Horizontal",
+                    "Split the active editor horizontally",
+                ),
             ],
             CommandPaletteMode::Languages => vec![
                 ("Rust", ""),
@@ -408,23 +467,72 @@ impl UiState {
             }
             "Exit: Quit Garage" => UiAction::Exit,
             // Languages
-            "Rust" => { self.forced_languages.insert(path_key, "rs".to_string()); UiAction::None }
-            "Python" => { self.forced_languages.insert(path_key, "py".to_string()); UiAction::None }
-            "JavaScript" => { self.forced_languages.insert(path_key, "js".to_string()); UiAction::None }
-            "TypeScript" => { self.forced_languages.insert(path_key, "ts".to_string()); UiAction::None }
-            "HTML" => { self.forced_languages.insert(path_key, "html".to_string()); UiAction::None }
-            "CSS" => { self.forced_languages.insert(path_key, "css".to_string()); UiAction::None }
-            "JSON" => { self.forced_languages.insert(path_key, "json".to_string()); UiAction::None }
-            "TOML" => { self.forced_languages.insert(path_key, "toml".to_string()); UiAction::None }
-            "C" => { self.forced_languages.insert(path_key, "c".to_string()); UiAction::None }
-            "C++" => { self.forced_languages.insert(path_key, "cpp".to_string()); UiAction::None }
-            "Go" => { self.forced_languages.insert(path_key, "go".to_string()); UiAction::None }
-            "Plain Text" => { self.forced_languages.insert(path_key, "".to_string()); UiAction::None }
+            "Rust" => {
+                self.forced_languages.insert(path_key, "rs".to_string());
+                UiAction::None
+            }
+            "Python" => {
+                self.forced_languages.insert(path_key, "py".to_string());
+                UiAction::None
+            }
+            "JavaScript" => {
+                self.forced_languages.insert(path_key, "js".to_string());
+                UiAction::None
+            }
+            "TypeScript" => {
+                self.forced_languages.insert(path_key, "ts".to_string());
+                UiAction::None
+            }
+            "HTML" => {
+                self.forced_languages.insert(path_key, "html".to_string());
+                UiAction::None
+            }
+            "CSS" => {
+                self.forced_languages.insert(path_key, "css".to_string());
+                UiAction::None
+            }
+            "JSON" => {
+                self.forced_languages.insert(path_key, "json".to_string());
+                UiAction::None
+            }
+            "TOML" => {
+                self.forced_languages.insert(path_key, "toml".to_string());
+                UiAction::None
+            }
+            "C" => {
+                self.forced_languages.insert(path_key, "c".to_string());
+                UiAction::None
+            }
+            "C++" => {
+                self.forced_languages.insert(path_key, "cpp".to_string());
+                UiAction::None
+            }
+            "Go" => {
+                self.forced_languages.insert(path_key, "go".to_string());
+                UiAction::None
+            }
+            "Plain Text" => {
+                self.forced_languages.insert(path_key, "".to_string());
+                UiAction::None
+            }
             // Encodings
-            "UTF-8" => { self.forced_encodings.insert(path_key, "UTF-8".to_string()); UiAction::None }
-            "UTF-16" => { self.forced_encodings.insert(path_key, "UTF-16".to_string()); UiAction::None }
-            "ASCII" => { self.forced_encodings.insert(path_key, "ASCII".to_string()); UiAction::None }
-            "ISO-8859-1" => { self.forced_encodings.insert(path_key, "ISO-8859-1".to_string()); UiAction::None }
+            "UTF-8" => {
+                self.forced_encodings.insert(path_key, "UTF-8".to_string());
+                UiAction::None
+            }
+            "UTF-16" => {
+                self.forced_encodings.insert(path_key, "UTF-16".to_string());
+                UiAction::None
+            }
+            "ASCII" => {
+                self.forced_encodings.insert(path_key, "ASCII".to_string());
+                UiAction::None
+            }
+            "ISO-8859-1" => {
+                self.forced_encodings
+                    .insert(path_key, "ISO-8859-1".to_string());
+                UiAction::None
+            }
             // Line Endings
             "LF" => {
                 self.forced_line_endings.insert(path_key, "LF".to_string());
@@ -432,7 +540,8 @@ impl UiState {
                 UiAction::None
             }
             "CRLF" => {
-                self.forced_line_endings.insert(path_key, "CRLF".to_string());
+                self.forced_line_endings
+                    .insert(path_key, "CRLF".to_string());
                 buffer.line_ending = "CRLF".to_string();
                 UiAction::None
             }
@@ -546,7 +655,9 @@ impl UiState {
         }
 
         // Throttled git branch, status and diff check (every 1 second)
-        if self.last_branch_check.is_none() || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(1) {
+        if self.last_branch_check.is_none()
+            || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(1)
+        {
             if self.config.show_git_branch {
                 self.update_git_branch();
             }
@@ -574,21 +685,19 @@ impl UiState {
 
         let mut dock_y = height - self.status_height;
         if self.show_dock {
-            dock_y = (height - self.status_height - self.dock_height).max(main_y + self.tabbar_height + self.breadcrumb_height + 50.0);
+            dock_y = (height - self.status_height - self.dock_height)
+                .max(main_y + self.tabbar_height + self.breadcrumb_height + 50.0);
         }
-        let status_y = if self.show_dock { dock_y.round() } else { (height - self.status_height).round() };
+        let status_y = if self.show_dock {
+            dock_y.round()
+        } else {
+            (height - self.status_height).round()
+        };
         let dock_start_y = status_y;
 
         // --- 1. Draw Titlebar Menu Headers (Light Theme) ---
         crate::machkit::components::titlebar::draw_titlebar(
-            self,
-            vertices,
-            indices,
-            atlas,
-            queue,
-            width,
-            mouse_x,
-            mouse_y,
+            self, vertices, indices, atlas, queue, width, mouse_x, mouse_y,
         );
 
         // --- 2. Draw Sidebar Panel (Light Theme) ---
@@ -608,7 +717,7 @@ impl UiState {
 
         // --- 3. Draw Editor Tabbar, Breadcrumbs, Text Area, Gutter, Scrollbars & Minimap ---
         let sidebar_original = self.sidebar_width;
-        
+
         if inactive_panes.is_empty() {
             crate::machkit::components::editor_view::draw_editor_view(
                 self,
@@ -633,19 +742,41 @@ impl UiState {
         } else if is_split_horizontal {
             let editor_area_height = status_y - main_y;
             let pane_height = (editor_area_height / 2.0).round();
-            
+
             // Draw Top Pane (Pane 0)
-            let (p0_buffer, p0_cursor, p0_secondary, p0_paths, p0_modified, p0_active_idx) = if active_pane_idx == 0 {
-                (buffer, cursor, secondary_cursors, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
-            } else {
-                let inactive_pane = &inactive_panes[0];
-                let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
-                let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
-                let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
-                let active_tab = &inactive_pane.tabs[in_active_idx];
-                (&active_tab.buffer, &active_tab.cursor, &active_tab.secondary_cursors[..], in_paths, in_modified, in_active_idx)
-            };
-            
+            let (p0_buffer, p0_cursor, p0_secondary, p0_paths, p0_modified, p0_active_idx) =
+                if active_pane_idx == 0 {
+                    (
+                        buffer,
+                        cursor,
+                        secondary_cursors,
+                        tab_paths.to_vec(),
+                        tab_modified.to_vec(),
+                        active_tab_idx,
+                    )
+                } else {
+                    let inactive_pane = &inactive_panes[0];
+                    let in_paths: Vec<Option<String>> =
+                        inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
+                    let in_modified: Vec<bool> = inactive_pane
+                        .tabs
+                        .iter()
+                        .map(|t| t.buffer.is_modified)
+                        .collect();
+                    let in_active_idx = inactive_pane
+                        .active_tab_idx
+                        .min(inactive_pane.tabs.len().saturating_sub(1));
+                    let active_tab = &inactive_pane.tabs[in_active_idx];
+                    (
+                        &active_tab.buffer,
+                        &active_tab.cursor,
+                        &active_tab.secondary_cursors[..],
+                        in_paths,
+                        in_modified,
+                        in_active_idx,
+                    )
+                };
+
             let orig_scroll_x = self.scroll_x;
             let orig_scroll_y = self.scroll_y;
             if active_pane_idx != 0 {
@@ -655,8 +786,12 @@ impl UiState {
                     self.scroll_y = tab.scroll_y;
                 }
             }
-            let p0_scroll_x = if active_pane_idx == 0 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
- 
+            let p0_scroll_x = if active_pane_idx == 0 {
+                self.tab_scroll_x
+            } else {
+                inactive_panes[0].tab_scroll_x
+            };
+
             crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
@@ -673,26 +808,52 @@ impl UiState {
                 &p0_modified,
                 p0_active_idx,
                 main_y + pane_height,
-                if active_pane_idx == 0 { dragged_tab_idx } else { None },
+                if active_pane_idx == 0 {
+                    dragged_tab_idx
+                } else {
+                    None
+                },
                 p0_scroll_x,
                 active_pane_idx == 0,
             );
-            
+
             self.scroll_x = orig_scroll_x;
             self.scroll_y = orig_scroll_y;
-            
+
             // Draw Bottom Pane (Pane 1)
-            let (p1_buffer, p1_cursor, p1_secondary, p1_paths, p1_modified, p1_active_idx) = if active_pane_idx == 1 {
-                (buffer, cursor, secondary_cursors, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
-            } else {
-                let inactive_pane = &inactive_panes[0];
-                let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
-                let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
-                let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
-                let active_tab = &inactive_pane.tabs[in_active_idx];
-                (&active_tab.buffer, &active_tab.cursor, &active_tab.secondary_cursors[..], in_paths, in_modified, in_active_idx)
-            };
-            
+            let (p1_buffer, p1_cursor, p1_secondary, p1_paths, p1_modified, p1_active_idx) =
+                if active_pane_idx == 1 {
+                    (
+                        buffer,
+                        cursor,
+                        secondary_cursors,
+                        tab_paths.to_vec(),
+                        tab_modified.to_vec(),
+                        active_tab_idx,
+                    )
+                } else {
+                    let inactive_pane = &inactive_panes[0];
+                    let in_paths: Vec<Option<String>> =
+                        inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
+                    let in_modified: Vec<bool> = inactive_pane
+                        .tabs
+                        .iter()
+                        .map(|t| t.buffer.is_modified)
+                        .collect();
+                    let in_active_idx = inactive_pane
+                        .active_tab_idx
+                        .min(inactive_pane.tabs.len().saturating_sub(1));
+                    let active_tab = &inactive_pane.tabs[in_active_idx];
+                    (
+                        &active_tab.buffer,
+                        &active_tab.cursor,
+                        &active_tab.secondary_cursors[..],
+                        in_paths,
+                        in_modified,
+                        in_active_idx,
+                    )
+                };
+
             let orig_scroll_x = self.scroll_x;
             let orig_scroll_y = self.scroll_y;
             if active_pane_idx != 1 {
@@ -702,12 +863,16 @@ impl UiState {
                     self.scroll_y = tab.scroll_y;
                 }
             }
-            let p1_scroll_x = if active_pane_idx == 1 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
- 
+            let p1_scroll_x = if active_pane_idx == 1 {
+                self.tab_scroll_x
+            } else {
+                inactive_panes[0].tab_scroll_x
+            };
+
             // Temporarily shift titlebar_height to start bottom pane at main_y + pane_height
             let orig_titlebar_height = self.titlebar_height;
             self.titlebar_height = main_y + pane_height;
-            
+
             crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
@@ -724,7 +889,11 @@ impl UiState {
                 &p1_modified,
                 p1_active_idx,
                 status_y,
-                if active_pane_idx == 1 { dragged_tab_idx } else { None },
+                if active_pane_idx == 1 {
+                    dragged_tab_idx
+                } else {
+                    None
+                },
                 p1_scroll_x,
                 active_pane_idx == 1,
             );
@@ -732,7 +901,7 @@ impl UiState {
             self.scroll_x = orig_scroll_x;
             self.scroll_y = orig_scroll_y;
             self.titlebar_height = orig_titlebar_height;
-            
+
             // Draw horizontal split separator border line between the two panes
             let white_uv = atlas.white_pixel_uv();
             self.push_quad(
@@ -748,22 +917,44 @@ impl UiState {
         } else {
             let editor_area_width = width - sidebar_original;
             let pane_width = editor_area_width / 2.0;
-            
+
             // Draw Left Pane (Pane 0)
-            let (p0_buffer, p0_cursor, p0_secondary, p0_paths, p0_modified, p0_active_idx) = if active_pane_idx == 0 {
-                (buffer, cursor, secondary_cursors, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
-            } else {
-                let inactive_pane = &inactive_panes[0];
-                let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
-                let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
-                let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
-                let active_tab = &inactive_pane.tabs[in_active_idx];
-                (&active_tab.buffer, &active_tab.cursor, &active_tab.secondary_cursors[..], in_paths, in_modified, in_active_idx)
-            };
-            
+            let (p0_buffer, p0_cursor, p0_secondary, p0_paths, p0_modified, p0_active_idx) =
+                if active_pane_idx == 0 {
+                    (
+                        buffer,
+                        cursor,
+                        secondary_cursors,
+                        tab_paths.to_vec(),
+                        tab_modified.to_vec(),
+                        active_tab_idx,
+                    )
+                } else {
+                    let inactive_pane = &inactive_panes[0];
+                    let in_paths: Vec<Option<String>> =
+                        inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
+                    let in_modified: Vec<bool> = inactive_pane
+                        .tabs
+                        .iter()
+                        .map(|t| t.buffer.is_modified)
+                        .collect();
+                    let in_active_idx = inactive_pane
+                        .active_tab_idx
+                        .min(inactive_pane.tabs.len().saturating_sub(1));
+                    let active_tab = &inactive_pane.tabs[in_active_idx];
+                    (
+                        &active_tab.buffer,
+                        &active_tab.cursor,
+                        &active_tab.secondary_cursors[..],
+                        in_paths,
+                        in_modified,
+                        in_active_idx,
+                    )
+                };
+
             // Left pane ends at sidebar_original + pane_width
             let left_pane_width = sidebar_original + pane_width;
-            
+
             let orig_scroll_x = self.scroll_x;
             let orig_scroll_y = self.scroll_y;
             if active_pane_idx != 0 {
@@ -773,8 +964,12 @@ impl UiState {
                     self.scroll_y = tab.scroll_y;
                 }
             }
-            let p0_scroll_x = if active_pane_idx == 0 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
- 
+            let p0_scroll_x = if active_pane_idx == 0 {
+                self.tab_scroll_x
+            } else {
+                inactive_panes[0].tab_scroll_x
+            };
+
             crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
@@ -791,26 +986,52 @@ impl UiState {
                 &p0_modified,
                 p0_active_idx,
                 status_y,
-                if active_pane_idx == 0 { dragged_tab_idx } else { None },
+                if active_pane_idx == 0 {
+                    dragged_tab_idx
+                } else {
+                    None
+                },
                 p0_scroll_x,
                 active_pane_idx == 0,
             );
-            
+
             self.scroll_x = orig_scroll_x;
             self.scroll_y = orig_scroll_y;
-            
+
             // Draw Right Pane (Pane 1)
-            let (p1_buffer, p1_cursor, p1_secondary, p1_paths, p1_modified, p1_active_idx) = if active_pane_idx == 1 {
-                (buffer, cursor, secondary_cursors, tab_paths.to_vec(), tab_modified.to_vec(), active_tab_idx)
-            } else {
-                let inactive_pane = &inactive_panes[0];
-                let in_paths: Vec<Option<String>> = inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
-                let in_modified: Vec<bool> = inactive_pane.tabs.iter().map(|t| t.buffer.is_modified).collect();
-                let in_active_idx = inactive_pane.active_tab_idx.min(inactive_pane.tabs.len().saturating_sub(1));
-                let active_tab = &inactive_pane.tabs[in_active_idx];
-                (&active_tab.buffer, &active_tab.cursor, &active_tab.secondary_cursors[..], in_paths, in_modified, in_active_idx)
-            };
-            
+            let (p1_buffer, p1_cursor, p1_secondary, p1_paths, p1_modified, p1_active_idx) =
+                if active_pane_idx == 1 {
+                    (
+                        buffer,
+                        cursor,
+                        secondary_cursors,
+                        tab_paths.to_vec(),
+                        tab_modified.to_vec(),
+                        active_tab_idx,
+                    )
+                } else {
+                    let inactive_pane = &inactive_panes[0];
+                    let in_paths: Vec<Option<String>> =
+                        inactive_pane.tabs.iter().map(|t| t.path.clone()).collect();
+                    let in_modified: Vec<bool> = inactive_pane
+                        .tabs
+                        .iter()
+                        .map(|t| t.buffer.is_modified)
+                        .collect();
+                    let in_active_idx = inactive_pane
+                        .active_tab_idx
+                        .min(inactive_pane.tabs.len().saturating_sub(1));
+                    let active_tab = &inactive_pane.tabs[in_active_idx];
+                    (
+                        &active_tab.buffer,
+                        &active_tab.cursor,
+                        &active_tab.secondary_cursors[..],
+                        in_paths,
+                        in_modified,
+                        in_active_idx,
+                    )
+                };
+
             let orig_scroll_x = self.scroll_x;
             let orig_scroll_y = self.scroll_y;
             if active_pane_idx != 1 {
@@ -820,11 +1041,15 @@ impl UiState {
                     self.scroll_y = tab.scroll_y;
                 }
             }
-            let p1_scroll_x = if active_pane_idx == 1 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
- 
+            let p1_scroll_x = if active_pane_idx == 1 {
+                self.tab_scroll_x
+            } else {
+                inactive_panes[0].tab_scroll_x
+            };
+
             // Temporarily shift sidebar_width to start right pane at sidebar_original + pane_width
             self.sidebar_width = sidebar_original + pane_width;
-            
+
             crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
@@ -841,14 +1066,18 @@ impl UiState {
                 &p1_modified,
                 p1_active_idx,
                 status_y,
-                if active_pane_idx == 1 { dragged_tab_idx } else { None },
+                if active_pane_idx == 1 {
+                    dragged_tab_idx
+                } else {
+                    None
+                },
                 p1_scroll_x,
                 active_pane_idx == 1,
             );
 
             self.scroll_x = orig_scroll_x;
             self.scroll_y = orig_scroll_y;
-            
+
             // Draw vertical split separator border line between the two panes
             let white_uv = atlas.white_pixel_uv();
             self.push_quad(
@@ -861,7 +1090,7 @@ impl UiState {
                 white_uv,
                 self.config.theme.modal_border,
             );
-            
+
             // Restore sidebar_width
             self.sidebar_width = sidebar_original;
         }
@@ -919,24 +1148,28 @@ impl UiState {
             let main_y = self.titlebar_height;
             let mut dock_start_y = height - self.status_height;
             if self.show_dock {
-                dock_start_y = (height - self.status_height - self.dock_height).max(main_y + self.tabbar_height + self.breadcrumb_height + 50.0);
+                dock_start_y = (height - self.status_height - self.dock_height)
+                    .max(main_y + self.tabbar_height + self.breadcrumb_height + 50.0);
             }
             let editor_bottom_limit = if self.show_dock {
                 dock_start_y
             } else {
                 height - self.status_height
             };
-            
-            let is_outside = mouse_x < 0.0 || mouse_x >= width || mouse_y < 0.0 || mouse_y >= height;
+
+            let is_outside =
+                mouse_x < 0.0 || mouse_x >= width || mouse_y < 0.0 || mouse_y >= height;
             let is_in_tabbar = if !inactive_panes.is_empty() && is_split_horizontal {
                 let editor_area_height = editor_bottom_limit - main_y;
                 let pane_height = (editor_area_height / 2.0).round();
                 (mouse_y >= main_y && mouse_y < main_y + self.tabbar_height)
-                    || (mouse_y >= main_y + pane_height && mouse_y < main_y + pane_height + self.tabbar_height)
+                    || (mouse_y >= main_y + pane_height
+                        && mouse_y < main_y + pane_height + self.tabbar_height)
             } else {
                 mouse_y >= main_y && mouse_y < main_y + self.tabbar_height
             };
-            let is_in_editor_area = mouse_y >= main_y + self.tabbar_height && mouse_y < editor_bottom_limit;
+            let is_in_editor_area =
+                mouse_y >= main_y + self.tabbar_height && mouse_y < editor_bottom_limit;
             let white_uv = atlas.white_pixel_uv();
             let mut overlay_color = self.config.theme.tab_active_bg;
             overlay_color[3] = 0.25; // Premium semi-transparent theme active tab highlight
@@ -957,26 +1190,63 @@ impl UiState {
                     white_uv,
                     overlay_rect_color,
                 );
-                
+
                 // Draw a nice border around the editor area to highlight the drop target using theme active tab bg
                 let border_color = self.config.theme.tabbar_border;
                 let area_x = sidebar_original;
                 let area_y = main_y + self.tabbar_height;
                 let area_w = editor_area_width;
                 let area_h = editor_area_height;
-                self.push_quad(vertices, indices, area_x, area_y, area_w, 2.0, white_uv, border_color);
-                self.push_quad(vertices, indices, area_x, area_y + area_h - 2.0, area_w, 2.0, white_uv, border_color);
-                self.push_quad(vertices, indices, area_x, area_y, 2.0, area_h, white_uv, border_color);
-                self.push_quad(vertices, indices, area_x + area_w - 2.0, area_y, 2.0, area_h, white_uv, border_color);
-                
+                self.push_quad(
+                    vertices,
+                    indices,
+                    area_x,
+                    area_y,
+                    area_w,
+                    2.0,
+                    white_uv,
+                    border_color,
+                );
+                self.push_quad(
+                    vertices,
+                    indices,
+                    area_x,
+                    area_y + area_h - 2.0,
+                    area_w,
+                    2.0,
+                    white_uv,
+                    border_color,
+                );
+                self.push_quad(
+                    vertices,
+                    indices,
+                    area_x,
+                    area_y,
+                    2.0,
+                    area_h,
+                    white_uv,
+                    border_color,
+                );
+                self.push_quad(
+                    vertices,
+                    indices,
+                    area_x + area_w - 2.0,
+                    area_y,
+                    2.0,
+                    area_h,
+                    white_uv,
+                    border_color,
+                );
+
                 // Draw floating tab-like banner in the center
                 let msg = "Drop outside to open in a new window";
                 let msg_w = msg.chars().count() as f32 * self.ui_char_width;
                 let pill_w = msg_w + 32.0; // padding of 16px on each side (no decorative icons)
                 let pill_h = self.tabbar_height + 4.0; // matching tab height
                 let pill_x = (sidebar_original + (editor_area_width - pill_w) / 2.0).round();
-                let pill_y = (main_y + self.tabbar_height + (editor_area_height - pill_h) / 2.0).round();
-                
+                let pill_y =
+                    (main_y + self.tabbar_height + (editor_area_height - pill_h) / 2.0).round();
+
                 // 1. Tab-like background
                 self.push_quad(
                     vertices,
@@ -988,13 +1258,49 @@ impl UiState {
                     white_uv,
                     self.config.theme.tab_active_bg,
                 );
-                
+
                 // 2. Tab borders
-                self.push_quad(vertices, indices, pill_x, pill_y, pill_w, 1.0, white_uv, border_color); // top border
-                self.push_quad(vertices, indices, pill_x, pill_y + pill_h - 1.0, pill_w, 1.0, white_uv, border_color); // bottom border
-                self.push_quad(vertices, indices, pill_x, pill_y, 1.0, pill_h, white_uv, border_color); // left border
-                self.push_quad(vertices, indices, pill_x + pill_w - 1.0, pill_y, 1.0, pill_h, white_uv, border_color); // right border
-                
+                self.push_quad(
+                    vertices,
+                    indices,
+                    pill_x,
+                    pill_y,
+                    pill_w,
+                    1.0,
+                    white_uv,
+                    border_color,
+                ); // top border
+                self.push_quad(
+                    vertices,
+                    indices,
+                    pill_x,
+                    pill_y + pill_h - 1.0,
+                    pill_w,
+                    1.0,
+                    white_uv,
+                    border_color,
+                ); // bottom border
+                self.push_quad(
+                    vertices,
+                    indices,
+                    pill_x,
+                    pill_y,
+                    1.0,
+                    pill_h,
+                    white_uv,
+                    border_color,
+                ); // left border
+                self.push_quad(
+                    vertices,
+                    indices,
+                    pill_x + pill_w - 1.0,
+                    pill_y,
+                    1.0,
+                    pill_h,
+                    white_uv,
+                    border_color,
+                ); // right border
+
                 // 3. Draw the text (properly centered vertically and horizontally)
                 let text_x = (pill_x + (pill_w - msg_w) / 2.0).round();
                 let text_y = (pill_y + pill_h / 2.0 + self.ui_font_ascent / 2.0 - 3.5).round();
@@ -1015,7 +1321,7 @@ impl UiState {
                     // Split editor visual cue
                     let editor_area_width = width - sidebar_original;
                     let editor_area_height = editor_bottom_limit - (main_y + self.tabbar_height);
-                    
+
                     if mouse_y < main_y + self.tabbar_height + editor_area_height * 0.25 {
                         // Top pane preview split
                         self.draw_split_preview(
@@ -1066,7 +1372,7 @@ impl UiState {
                     if is_split_horizontal {
                         let editor_area_height = editor_bottom_limit - main_y;
                         let pane_height = (editor_area_height / 2.0).round();
-                        
+
                         if mouse_y < main_y + pane_height {
                             // Top pane highlight
                             self.draw_split_preview(
@@ -1093,7 +1399,7 @@ impl UiState {
                     } else {
                         let editor_area_width = width - sidebar_original;
                         let pane_width = editor_area_width / 2.0;
-                        
+
                         if mouse_x < sidebar_original + pane_width {
                             self.draw_split_preview(
                                 vertices,
@@ -1201,12 +1507,12 @@ impl UiState {
             let pad_y = 3.0;
             let badge_w = fps_w + pad_x * 2.0;
             let badge_h = self.ui_line_height + pad_y * 2.0;
-            
+
             let badge_x = width - badge_w - 10.0;
             let badge_y = ((self.titlebar_height - badge_h) / 2.0).round();
-            
+
             let white_uv = atlas.white_pixel_uv();
-            
+
             // Dark translucent background card
             self.push_quad(
                 vertices,
@@ -1218,14 +1524,50 @@ impl UiState {
                 white_uv,
                 [0.1, 0.1, 0.1, 0.75],
             );
-            
+
             // Subtle outline border
             let border_color = self.config.theme.titlebar_border;
-            self.push_quad(vertices, indices, badge_x, badge_y, badge_w, 1.0, white_uv, border_color); // top
-            self.push_quad(vertices, indices, badge_x, badge_y + badge_h - 1.0, badge_w, 1.0, white_uv, border_color); // bottom
-            self.push_quad(vertices, indices, badge_x, badge_y, 1.0, badge_h, white_uv, border_color); // left
-            self.push_quad(vertices, indices, badge_x + badge_w - 1.0, badge_y, 1.0, badge_h, white_uv, border_color); // right
-            
+            self.push_quad(
+                vertices,
+                indices,
+                badge_x,
+                badge_y,
+                badge_w,
+                1.0,
+                white_uv,
+                border_color,
+            ); // top
+            self.push_quad(
+                vertices,
+                indices,
+                badge_x,
+                badge_y + badge_h - 1.0,
+                badge_w,
+                1.0,
+                white_uv,
+                border_color,
+            ); // bottom
+            self.push_quad(
+                vertices,
+                indices,
+                badge_x,
+                badge_y,
+                1.0,
+                badge_h,
+                white_uv,
+                border_color,
+            ); // left
+            self.push_quad(
+                vertices,
+                indices,
+                badge_x + badge_w - 1.0,
+                badge_y,
+                1.0,
+                badge_h,
+                white_uv,
+                border_color,
+            ); // right
+
             // Text colored in a nice neon green
             let text_x = badge_x + pad_x;
             let text_y = (badge_y + badge_h / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();

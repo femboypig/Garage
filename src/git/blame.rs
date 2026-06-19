@@ -18,7 +18,7 @@ pub fn update_git_file_blame(
         if let Ok(out) = output {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout);
-                
+
                 struct CommitInfo {
                     author: String,
                     time: u64,
@@ -27,7 +27,7 @@ pub fn update_git_file_blame(
 
                 let mut commits = HashMap::<String, CommitInfo>::new();
                 let mut line_commits = HashMap::<usize, String>::new();
-                
+
                 let mut lines = stdout.lines();
                 while let Some(line) = lines.next() {
                     if line.starts_with('\t') {
@@ -46,26 +46,36 @@ pub fn update_git_file_blame(
                                 let mut author = None;
                                 let mut author_time = None;
                                 let mut summary = None;
-                                
+
                                 while let Some(hdr_line) = lines.next() {
                                     if hdr_line.starts_with('\t') {
                                         break;
                                     }
                                     if hdr_line.starts_with("author ") {
-                                        author = Some(hdr_line["author ".len()..].trim().to_string());
+                                        author =
+                                            Some(hdr_line["author ".len()..].trim().to_string());
                                     } else if hdr_line.starts_with("author-time ") {
-                                        author_time = hdr_line["author-time ".len()..].trim().parse::<u64>().ok();
+                                        author_time = hdr_line["author-time ".len()..]
+                                            .trim()
+                                            .parse::<u64>()
+                                            .ok();
                                     } else if hdr_line.starts_with("summary ") {
-                                        summary = Some(hdr_line["summary ".len()..].trim().to_string());
+                                        summary =
+                                            Some(hdr_line["summary ".len()..].trim().to_string());
                                     }
                                 }
-                                
-                                if let (Some(auth), Some(time), Some(sum)) = (author, author_time, summary) {
-                                    commits.insert(commit_hash, CommitInfo {
-                                        author: auth,
-                                        time,
-                                        summary: sum,
-                                    });
+
+                                if let (Some(auth), Some(time), Some(sum)) =
+                                    (author, author_time, summary)
+                                {
+                                    commits.insert(
+                                        commit_hash,
+                                        CommitInfo {
+                                            author: auth,
+                                            time,
+                                            summary: sum,
+                                        },
+                                    );
                                 }
                             }
                         }
@@ -91,13 +101,25 @@ pub fn update_git_file_blame(
                                 format!("{}h ago", diff / 3600)
                             } else if diff < 2592000 {
                                 let days = diff / 86400;
-                                if days == 1 { "yesterday".to_string() } else { format!("{} days ago", days) }
+                                if days == 1 {
+                                    "yesterday".to_string()
+                                } else {
+                                    format!("{} days ago", days)
+                                }
                             } else if diff < 31536000 {
                                 let months = diff / 2592000;
-                                if months == 1 { "1 month ago".to_string() } else { format!("{} months ago", months) }
+                                if months == 1 {
+                                    "1 month ago".to_string()
+                                } else {
+                                    format!("{} months ago", months)
+                                }
                             } else {
                                 let years = diff / 31536000;
-                                if years == 1 { "1 year ago".to_string() } else { format!("{} years ago", years) }
+                                if years == 1 {
+                                    "1 year ago".to_string()
+                                } else {
+                                    format!("{} years ago", years)
+                                }
                             };
                             format!("{} • {} • {}", info.author, time_str, info.summary)
                         };

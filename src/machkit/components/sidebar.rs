@@ -1,6 +1,6 @@
+use crate::machkit::UiState;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
-use crate::machkit::UiState;
 
 pub fn draw_sidebar(
     ui: &UiState,
@@ -66,7 +66,8 @@ pub fn draw_sidebar(
     // Draw root folder if visible (r == 0)
     if start_r == 0 {
         let row_y = main_y;
-        let root_text_baseline = (row_y + ui.ui_line_height / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
+        let root_text_baseline =
+            (row_y + ui.ui_line_height / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
         let root_icon_y_center = root_text_baseline - (ui.ui_font_ascent * 0.33).round();
         let root_icon_y = root_icon_y_center - (icon_sz / 2.0).round();
         let root_text_x = root_icon_x + icon_sz + (ui.ui_char_width * 0.6).round().max(4.0);
@@ -191,7 +192,9 @@ pub fn draw_sidebar(
                     if let Some(t_path) = t_path_opt {
                         let t_path_buf = std::path::Path::new(t_path);
                         let t_path_rel = t_path_buf.strip_prefix("./").unwrap_or(t_path_buf);
-                        if t_path_rel.starts_with(relative_path) && tab_modified.get(t_idx).copied().unwrap_or(false) {
+                        if t_path_rel.starts_with(relative_path)
+                            && tab_modified.get(t_idx).copied().unwrap_or(false)
+                        {
                             has_modified = true;
                             break;
                         }
@@ -211,7 +214,8 @@ pub fn draw_sidebar(
                     let t_path_buf = std::path::Path::new(t_path);
                     let matches = t_path == relative_path.to_str().unwrap_or("")
                         || t_path == node.path.to_str().unwrap_or("")
-                        || crate::editor::normalize_path(t_path_buf) == crate::editor::normalize_path(&node.path);
+                        || crate::editor::normalize_path(t_path_buf)
+                            == crate::editor::normalize_path(&node.path);
                     if matches && tab_modified.get(t_idx).copied().unwrap_or(false) {
                         is_unsaved_modified = true;
                         break;
@@ -225,10 +229,18 @@ pub fn draw_sidebar(
 
             if let Some(status) = ui.git_statuses.get(relative_path) {
                 if status.contains('M') {
-                    file_color = if is_unsaved_modified { [0.95, 0.45, 0.1, 1.0] } else { [0.86, 0.49, 0.18, 0.85] };
+                    file_color = if is_unsaved_modified {
+                        [0.95, 0.45, 0.1, 1.0]
+                    } else {
+                        [0.86, 0.49, 0.18, 0.85]
+                    };
                     git_badge = Some("M");
                 } else if status.contains('?') || status.contains('A') {
-                    file_color = if is_unsaved_modified { [0.95, 0.45, 0.1, 1.0] } else { [0.18, 0.65, 0.43, 0.85] };
+                    file_color = if is_unsaved_modified {
+                        [0.95, 0.45, 0.1, 1.0]
+                    } else {
+                        [0.18, 0.65, 0.43, 0.85]
+                    };
                     git_badge = Some(if status.contains('A') { "A" } else { "U" });
                 }
             }
@@ -236,7 +248,8 @@ pub fn draw_sidebar(
 
         let text_color = file_color;
 
-        let text_baseline = (row_y + ui.ui_line_height / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
+        let text_baseline =
+            (row_y + ui.ui_line_height / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
         let icon_y_center = text_baseline - (ui.ui_font_ascent * 0.33).round();
         let icon_x = indent_x;
         let icon_y = icon_y_center - (icon_sz / 2.0).round();
@@ -257,7 +270,8 @@ pub fn draw_sidebar(
 
             let should_draw = (i < effective_depth - 1 && has_later) || (i == effective_depth - 1);
             if should_draw {
-                let line_x = (activity_bar_width + 10.0 + i as f32 * indent_step + icon_sz / 2.0).floor();
+                let line_x =
+                    (activity_bar_width + 10.0 + i as f32 * indent_step + icon_sz / 2.0).floor();
                 let end_y = if has_later {
                     row_y + ui.ui_line_height
                 } else {
@@ -293,22 +307,10 @@ pub fn draw_sidebar(
         if node.is_dir {
             // Draw Folder Outline Icon from SVGs
             let is_expanded = ui.expanded_dirs.contains(&node.path);
-            let icon_path = if is_expanded {
-                "folder_open"
-            } else {
-                "folder"
-            };
+            let icon_path = if is_expanded { "folder_open" } else { "folder" };
 
             ui.push_icon(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                icon_path,
-                icon_x,
-                icon_y,
-                text_color,
-                icon_sz,
+                vertices, indices, atlas, queue, icon_path, icon_x, icon_y, text_color, icon_sz,
             );
         } else {
             // Check file extension for specific icon types and colors
@@ -317,7 +319,7 @@ pub fn draw_sidebar(
                 "rs" => ("rust", [0.87, 0.29, 0.15, 1.0]), // Rust red-orange
                 "toml" => ("toml", [0.65, 0.53, 0.43, 1.0]), // TOML beige
                 "json" => ("json", [0.8, 0.68, 0.0, 1.0]), // JSON yellow
-                "md" => ("md", [0.26, 0.53, 0.79, 1.0]), // Markdown blue
+                "md" => ("md", [0.26, 0.53, 0.79, 1.0]),   // Markdown blue
                 _ => ("file", text_color),
             };
 
@@ -329,7 +331,11 @@ pub fn draw_sidebar(
                 icon_path,
                 icon_x,
                 icon_y,
-                if ext == "rs" || ext == "toml" || ext == "json" || ext == "md" { icon_color } else { text_color },
+                if ext == "rs" || ext == "toml" || ext == "json" || ext == "md" {
+                    icon_color
+                } else {
+                    text_color
+                },
                 icon_sz,
             );
         }
@@ -424,23 +430,92 @@ pub fn draw_sidebar(
         let item_height = ui.ui_line_height;
         let menu_w = 120.0f32;
         let menu_h = items.len() as f32 * item_height;
-        
-        ui.push_quad(vertices, indices, menu_x, menu_y, menu_w, menu_h, white_uv, ui.config.theme.modal_bg);
-        ui.push_quad(vertices, indices, menu_x, menu_y, menu_w, 1.0, white_uv, ui.config.theme.modal_border);
-        ui.push_quad(vertices, indices, menu_x, menu_y + menu_h - 1.0, menu_w, 1.0, white_uv, ui.config.theme.modal_border);
-        ui.push_quad(vertices, indices, menu_x, menu_y, 1.0, menu_h, white_uv, ui.config.theme.modal_border);
-        ui.push_quad(vertices, indices, menu_x + menu_w - 1.0, menu_y, 1.0, menu_h, white_uv, ui.config.theme.modal_border);
-        
+
+        ui.push_quad(
+            vertices,
+            indices,
+            menu_x,
+            menu_y,
+            menu_w,
+            menu_h,
+            white_uv,
+            ui.config.theme.modal_bg,
+        );
+        ui.push_quad(
+            vertices,
+            indices,
+            menu_x,
+            menu_y,
+            menu_w,
+            1.0,
+            white_uv,
+            ui.config.theme.modal_border,
+        );
+        ui.push_quad(
+            vertices,
+            indices,
+            menu_x,
+            menu_y + menu_h - 1.0,
+            menu_w,
+            1.0,
+            white_uv,
+            ui.config.theme.modal_border,
+        );
+        ui.push_quad(
+            vertices,
+            indices,
+            menu_x,
+            menu_y,
+            1.0,
+            menu_h,
+            white_uv,
+            ui.config.theme.modal_border,
+        );
+        ui.push_quad(
+            vertices,
+            indices,
+            menu_x + menu_w - 1.0,
+            menu_y,
+            1.0,
+            menu_h,
+            white_uv,
+            ui.config.theme.modal_border,
+        );
+
         for (idx, label) in items.iter().enumerate() {
             let item_y = menu_y + idx as f32 * item_height;
-            let is_hovered = mouse_x >= menu_x && mouse_x < menu_x + menu_w && mouse_y >= item_y && mouse_y < item_y + item_height;
-            
+            let is_hovered = mouse_x >= menu_x
+                && mouse_x < menu_x + menu_w
+                && mouse_y >= item_y
+                && mouse_y < item_y + item_height;
+
             if is_hovered {
-                ui.push_quad(vertices, indices, menu_x + 1.0, item_y + 1.0, menu_w - 2.0, item_height - 2.0, white_uv, ui.config.theme.dropdown_hover_bg);
+                ui.push_quad(
+                    vertices,
+                    indices,
+                    menu_x + 1.0,
+                    item_y + 1.0,
+                    menu_w - 2.0,
+                    item_height - 2.0,
+                    white_uv,
+                    ui.config.theme.dropdown_hover_bg,
+                );
             }
-            
-            let text_baseline = (item_y + item_height / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
-            ui.push_str(vertices, indices, atlas, queue, label, menu_x + 10.0, text_baseline, ui.config.theme.modal_text_normal, ui.ui_font_size, ui.ui_char_width);
+
+            let text_baseline =
+                (item_y + item_height / 2.0 + ui.ui_font_ascent / 2.0 - 1.0).round();
+            ui.push_str(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                label,
+                menu_x + 10.0,
+                text_baseline,
+                ui.config.theme.modal_text_normal,
+                ui.ui_font_size,
+                ui.ui_char_width,
+            );
         }
     }
 }

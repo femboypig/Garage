@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use winit::window::Window;
-use winit::event_loop::EventLoopWindowTarget;
-use crate::machkit::{UiState, UiAction};
-use crate::renderer::wgpu::GpuContext;
-use crate::renderer::atlas::FontAtlas;
+use super::state::{AppState, Tab};
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
-use super::state::{AppState, Tab};
+use crate::machkit::{UiAction, UiState};
+use crate::renderer::atlas::FontAtlas;
+use crate::renderer::wgpu::GpuContext;
+use std::sync::Arc;
+use winit::event_loop::EventLoopWindowTarget;
+use winit::window::Window;
 
 pub fn handle_action(
     ui: &mut UiState,
@@ -44,21 +44,22 @@ pub fn handle_action(
         UiAction::OpenFile(path) | UiAction::OpenFileAt(path, _) => {
             let current_dir = std::env::current_dir().unwrap_or_default();
             let path_str = path.to_string_lossy().to_string();
-            let path_str = if path_str.starts_with("diagnostics://") || path_str.starts_with("search://") {
-                path_str
-            } else {
-                let normalized_path = if path.is_absolute() {
-                    if let Ok(rel) = path.strip_prefix(&current_dir) {
-                        rel.to_path_buf()
+            let path_str =
+                if path_str.starts_with("diagnostics://") || path_str.starts_with("search://") {
+                    path_str
+                } else {
+                    let normalized_path = if path.is_absolute() {
+                        if let Ok(rel) = path.strip_prefix(&current_dir) {
+                            rel.to_path_buf()
+                        } else {
+                            path.clone()
+                        }
                     } else {
                         path.clone()
-                    }
-                } else {
-                    path.clone()
+                    };
+                    let normalized_path = crate::editor::normalize_path(&normalized_path);
+                    normalized_path.to_string_lossy().to_string()
                 };
-                let normalized_path = crate::editor::normalize_path(&normalized_path);
-                normalized_path.to_string_lossy().to_string()
-            };
             let _is_new = if let Some(existing_idx) = state.tabs.iter().position(|t| {
                 t.path.as_ref().map_or(false, |p| {
                     if p.starts_with("diagnostics://") || p.starts_with("search://") {
@@ -66,11 +67,17 @@ pub fn handle_action(
                     } else {
                         let p_buf = std::path::PathBuf::from(p);
                         let p_norm = if p_buf.is_absolute() {
-                            p_buf.strip_prefix(&current_dir).map(|r| r.to_path_buf()).unwrap_or(p_buf)
+                            p_buf
+                                .strip_prefix(&current_dir)
+                                .map(|r| r.to_path_buf())
+                                .unwrap_or(p_buf)
                         } else {
                             p_buf
                         };
-                        crate::editor::normalize_path(&p_norm).to_string_lossy().to_string() == path_str
+                        crate::editor::normalize_path(&p_norm)
+                            .to_string_lossy()
+                            .to_string()
+                            == path_str
                     }
                 })
             }) {
@@ -107,9 +114,14 @@ pub fn handle_action(
                 if active_path == "search://project" {
                     ui.global_search_focused = true;
                 }
-                if !active_path.starts_with("diagnostics://") && !active_path.starts_with("search://") {
+                if !active_path.starts_with("diagnostics://")
+                    && !active_path.starts_with("search://")
+                {
                     let abs_path = crate::editor::get_absolute_path(active_path);
-                    ui.diagnostics_file_cache.insert(abs_path, state.tabs[state.active_tab_idx].buffer.lines().to_vec());
+                    ui.diagnostics_file_cache.insert(
+                        abs_path,
+                        state.tabs[state.active_tab_idx].buffer.lines().to_vec(),
+                    );
                     ui.update_git_diff(Some(active_path));
                     ui.update_git_file_blame(Some(active_path));
                     ui.update_git_statuses();
@@ -118,14 +130,20 @@ pub fn handle_action(
             } else {
                 ui.selected_file = None;
             }
-            let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+            let tab_paths: Vec<Option<String>> =
+                state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
             let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal {
                 size.width as f32 - ui.sidebar_width
             } else {
                 ((size.width as f32 - ui.sidebar_width) / 2.0).round()
             };
-            state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
+            state.tab_scroll_x = ui.scroll_to_tab(
+                state.active_tab_idx,
+                &tab_paths,
+                visible_width,
+                state.tab_scroll_x,
+            );
 
             // Handle jumping to specific line
             if let Some(line) = line_to_jump {
@@ -135,8 +153,13 @@ pub fn handle_action(
                 active_tab.cursor.col = 0;
                 active_tab.cursor.intended_col = 0;
                 active_tab.cursor.selection_anchor = None;
-                
-                ui.scroll_to_cursor(&active_tab.cursor, active_tab.buffer.len(), size.width as f32, size.height as f32);
+
+                ui.scroll_to_cursor(
+                    &active_tab.cursor,
+                    active_tab.buffer.len(),
+                    size.width as f32,
+                    size.height as f32,
+                );
             }
         }
         UiAction::SaveFile => {
@@ -161,7 +184,9 @@ pub fn handle_action(
             let active_tab = &mut state.tabs[state.active_tab_idx];
             if let Some((line, col)) = active_tab.buffer.undo() {
                 active_tab.cursor.line = line.min(active_tab.buffer.len() - 1);
-                let max_col = active_tab.buffer.lines()[active_tab.cursor.line].chars().count();
+                let max_col = active_tab.buffer.lines()[active_tab.cursor.line]
+                    .chars()
+                    .count();
                 active_tab.cursor.col = col.min(max_col);
                 active_tab.cursor.intended_col = active_tab.cursor.col;
             }
@@ -171,7 +196,9 @@ pub fn handle_action(
             let active_tab = &mut state.tabs[state.active_tab_idx];
             if let Some((line, col)) = active_tab.buffer.redo() {
                 active_tab.cursor.line = line.min(active_tab.buffer.len() - 1);
-                let max_col = active_tab.buffer.lines()[active_tab.cursor.line].chars().count();
+                let max_col = active_tab.buffer.lines()[active_tab.cursor.line]
+                    .chars()
+                    .count();
                 active_tab.cursor.col = col.min(max_col);
                 active_tab.cursor.intended_col = active_tab.cursor.col;
             }
@@ -193,11 +220,28 @@ pub fn handle_action(
             ui.perform_search(state);
         }
         UiAction::FindInProject => {
-            handle_action(ui, state, UiAction::OpenFile(std::path::PathBuf::from("search://project")), window, elwt, gpu, atlas, font_bytes);
+            handle_action(
+                ui,
+                state,
+                UiAction::OpenFile(std::path::PathBuf::from("search://project")),
+                window,
+                elwt,
+                gpu,
+                atlas,
+                font_bytes,
+            );
         }
         UiAction::ToggleSidebar => {
-            let preferred = if ui.config.sidebar_width > 0.0 { ui.config.sidebar_width } else { 200.0 };
-            ui.target_sidebar_width = if ui.target_sidebar_width > 0.0 { 0.0 } else { preferred };
+            let preferred = if ui.config.sidebar_width > 0.0 {
+                ui.config.sidebar_width
+            } else {
+                200.0
+            };
+            ui.target_sidebar_width = if ui.target_sidebar_width > 0.0 {
+                0.0
+            } else {
+                preferred
+            };
             ui.sidebar_width = ui.target_sidebar_width;
             if ui.target_sidebar_width > 0.0 {
                 ui.config.sidebar_width = ui.target_sidebar_width;
@@ -261,7 +305,8 @@ pub fn handle_action(
                 _ => wgpu::Backends::all(),
             };
             *gpu = None;
-            let mut new_gpu = pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
+            let mut new_gpu =
+                pollster::block_on(GpuContext::new(window.clone(), Some(forced_backends)));
 
             let actual_backend_str = match new_gpu.backend {
                 wgpu::Backend::Vulkan => "Vulkan",
@@ -272,14 +317,23 @@ pub fn handle_action(
             if let Err(e) = new_config.save() {
                 log::warn!("Failed to save config on settings change: {:?}", e);
             } else {
-                log::warn!("Successfully saved backend '{}' to config from settings.", actual_backend_str);
+                log::warn!(
+                    "Successfully saved backend '{}' to config from settings.",
+                    actual_backend_str
+                );
             }
 
             if let Ok(new_atlas) = FontAtlas::new(&new_gpu.device, &new_gpu.queue, font_bytes) {
                 *atlas = new_atlas;
                 new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
 
-                let mut new_ui = UiState::new(atlas, &new_gpu.queue, new_config, ui.event_loop_proxy.clone(), ui.experimental);
+                let mut new_ui = UiState::new(
+                    atlas,
+                    &new_gpu.queue,
+                    new_config,
+                    ui.event_loop_proxy.clone(),
+                    ui.experimental,
+                );
                 new_ui.active_device_name = new_gpu.device_name.clone();
 
                 let old_expanded = ui.expanded_dirs.clone();
@@ -307,19 +361,26 @@ pub fn handle_action(
             } else {
                 ui.selected_file = None;
             }
-            let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+            let tab_paths: Vec<Option<String>> =
+                state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
             let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal {
                 size.width as f32 - ui.sidebar_width
             } else {
                 ((size.width as f32 - ui.sidebar_width) / 2.0).round()
             };
-            state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
-
+            state.tab_scroll_x = ui.scroll_to_tab(
+                state.active_tab_idx,
+                &tab_paths,
+                visible_width,
+                state.tab_scroll_x,
+            );
         }
         UiAction::CloseTab(idx) => {
             let autosave_setting = &ui.config.autosave;
-            if crate::app::autosave::should_save_on_close(autosave_setting) && state.tabs[idx].path.is_some() {
+            if crate::app::autosave::should_save_on_close(autosave_setting)
+                && state.tabs[idx].path.is_some()
+            {
                 crate::app::autosave::save_tab(ui, &mut state.tabs[idx]);
             }
 
@@ -332,7 +393,9 @@ pub fn handle_action(
                     if !state.inactive_panes.is_empty() {
                         let target_pane = state.inactive_panes.remove(0);
                         state.tabs = target_pane.tabs;
-                        state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
+                        state.active_tab_idx = target_pane
+                            .active_tab_idx
+                            .min(state.tabs.len().saturating_sub(1));
                         state.active_pane_idx = 0;
                         state.is_split_horizontal = false;
                     } else {
@@ -354,14 +417,21 @@ pub fn handle_action(
                 } else {
                     ui.selected_file = None;
                 }
-                let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+                let tab_paths: Vec<Option<String>> =
+                    state.tabs.iter().map(|t| t.path.clone()).collect();
                 let size = window.inner_size();
-                let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal {
+                let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal
+                {
                     size.width as f32 - ui.sidebar_width
                 } else {
                     ((size.width as f32 - ui.sidebar_width) / 2.0).round()
                 };
-                state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
+                state.tab_scroll_x = ui.scroll_to_tab(
+                    state.active_tab_idx,
+                    &tab_paths,
+                    visible_width,
+                    state.tab_scroll_x,
+                );
                 crate::app::autosave::save_session_and_dirty_buffers(state);
             }
         }
@@ -371,7 +441,9 @@ pub fn handle_action(
                 if !state.inactive_panes.is_empty() {
                     let target_pane = state.inactive_panes.remove(0);
                     state.tabs = target_pane.tabs;
-                    state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
+                    state.active_tab_idx = target_pane
+                        .active_tab_idx
+                        .min(state.tabs.len().saturating_sub(1));
                     state.active_pane_idx = 0;
                     state.is_split_horizontal = false;
                 } else {
@@ -395,14 +467,20 @@ pub fn handle_action(
             }
             ui.tab_to_close = None;
             ui.active_modal = None;
-            let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+            let tab_paths: Vec<Option<String>> =
+                state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
             let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal {
                 size.width as f32 - ui.sidebar_width
             } else {
                 ((size.width as f32 - ui.sidebar_width) / 2.0).round()
             };
-            state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
+            state.tab_scroll_x = ui.scroll_to_tab(
+                state.active_tab_idx,
+                &tab_paths,
+                visible_width,
+                state.tab_scroll_x,
+            );
             crate::app::autosave::save_session_and_dirty_buffers(state);
         }
         UiAction::SaveAndCloseTab(idx) => {
@@ -418,13 +496,15 @@ pub fn handle_action(
                 tab_to_save.buffer.mark_saved();
                 ui.external_change_warnings.remove(&path_to_save);
             }
-            
+
             state.tabs.remove(idx);
             if state.tabs.is_empty() {
                 if !state.inactive_panes.is_empty() {
                     let target_pane = state.inactive_panes.remove(0);
                     state.tabs = target_pane.tabs;
-                    state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
+                    state.active_tab_idx = target_pane
+                        .active_tab_idx
+                        .min(state.tabs.len().saturating_sub(1));
                     state.active_pane_idx = 0;
                     state.is_split_horizontal = false;
                 } else {
@@ -449,14 +529,20 @@ pub fn handle_action(
             ui.tab_to_close = None;
             ui.active_modal = None;
             ui.rebuild_tree();
-            let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+            let tab_paths: Vec<Option<String>> =
+                state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
             let visible_width = if state.inactive_panes.is_empty() || state.is_split_horizontal {
                 size.width as f32 - ui.sidebar_width
             } else {
                 ((size.width as f32 - ui.sidebar_width) / 2.0).round()
             };
-            state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
+            state.tab_scroll_x = ui.scroll_to_tab(
+                state.active_tab_idx,
+                &tab_paths,
+                visible_width,
+                state.tab_scroll_x,
+            );
             crate::app::autosave::save_session_and_dirty_buffers(state);
         }
         UiAction::MinimizeWindow => {
@@ -476,9 +562,14 @@ pub fn handle_action(
                 let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
                 let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
                 let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
-                
+
                 if state.dock_terminals.is_empty() {
-                    if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone(), ui.event_loop_proxy.clone()) {
+                    if let Ok(term) = crate::terminal::TerminalInstance::new(
+                        cols,
+                        rows,
+                        window.clone(),
+                        ui.event_loop_proxy.clone(),
+                    ) {
                         state.dock_terminals.push(term);
                         state.active_terminal_idx = 0;
                     }
@@ -495,7 +586,12 @@ pub fn handle_action(
             let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
             let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
             let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
-            if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone(), ui.event_loop_proxy.clone()) {
+            if let Ok(term) = crate::terminal::TerminalInstance::new(
+                cols,
+                rows,
+                window.clone(),
+                ui.event_loop_proxy.clone(),
+            ) {
                 state.dock_terminals.push(term);
                 state.active_terminal_idx = state.dock_terminals.len() - 1;
             }
@@ -510,11 +606,18 @@ pub fn handle_action(
                     let height_content = ui.dock_height - 28.0 - 1.0 - 12.0;
                     let cols = (width_content / ui.buffer_char_width).floor().max(10.0) as usize;
                     let rows = (height_content / ui.buffer_line_height).floor().max(2.0) as usize;
-                    if let Ok(term) = crate::terminal::TerminalInstance::new(cols, rows, window.clone(), ui.event_loop_proxy.clone()) {
+                    if let Ok(term) = crate::terminal::TerminalInstance::new(
+                        cols,
+                        rows,
+                        window.clone(),
+                        ui.event_loop_proxy.clone(),
+                    ) {
                         state.dock_terminals.push(term);
                     }
                 }
-                state.active_terminal_idx = state.active_terminal_idx.min(state.dock_terminals.len() - 1);
+                state.active_terminal_idx = state
+                    .active_terminal_idx
+                    .min(state.dock_terminals.len() - 1);
             }
         }
         UiAction::SelectTerminal(idx) => {
@@ -603,8 +706,10 @@ pub fn handle_action(
             if active_tab.path.as_ref() == Some(&start_path) {
                 if old_rev != active_tab.buffer.revision {
                     let abs_path = crate::editor::get_absolute_path(&start_path);
-                    ui.diagnostics_file_cache.insert(abs_path.clone(), active_tab.buffer.lines().to_vec());
-                    ui.synced_revisions.insert(abs_path, active_tab.buffer.revision);
+                    ui.diagnostics_file_cache
+                        .insert(abs_path.clone(), active_tab.buffer.lines().to_vec());
+                    ui.synced_revisions
+                        .insert(abs_path, active_tab.buffer.revision);
                     ui.diagnostics_changed = true;
                 }
             }

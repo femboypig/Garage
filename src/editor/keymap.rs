@@ -1,8 +1,8 @@
+use super::actions::Action;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use serde::{Serialize, Deserialize};
-use winit::keyboard::{Key, NamedKey, PhysicalKey, KeyCode};
-use super::actions::Action;
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct KeyContextBindings {
@@ -30,7 +30,7 @@ impl Keystroke {
         let mut ctrl = false;
         let mut shift = false;
         let mut alt = false;
-        
+
         let mut remainder = s.as_str();
         loop {
             if remainder.starts_with("ctrl-") {
@@ -46,11 +46,11 @@ impl Keystroke {
                 break;
             }
         }
-        
+
         if remainder.is_empty() {
             return Err(format!("Invalid keystroke: {}", s));
         }
-        
+
         Ok(Self {
             ctrl,
             shift,
@@ -216,30 +216,26 @@ fn get_key_name(logical_key: &Key, physical_key: PhysicalKey, ctrl: bool) -> Str
             }
         }
     }
-    
+
     match logical_key {
-        Key::Character(text) => {
-            text.to_lowercase()
-        }
-        Key::Named(named_key) => {
-            match named_key {
-                NamedKey::ArrowLeft => "left".to_string(),
-                NamedKey::ArrowRight => "right".to_string(),
-                NamedKey::ArrowUp => "up".to_string(),
-                NamedKey::ArrowDown => "down".to_string(),
-                NamedKey::Home => "home".to_string(),
-                NamedKey::End => "end".to_string(),
-                NamedKey::Escape => "escape".to_string(),
-                NamedKey::Backspace => "backspace".to_string(),
-                NamedKey::Delete => "delete".to_string(),
-                NamedKey::Enter => "enter".to_string(),
-                NamedKey::Tab => "tab".to_string(),
-                NamedKey::Space => "space".to_string(),
-                NamedKey::PageUp => "pageup".to_string(),
-                NamedKey::PageDown => "pagedown".to_string(),
-                _ => format!("{:?}", named_key).to_lowercase(),
-            }
-        }
+        Key::Character(text) => text.to_lowercase(),
+        Key::Named(named_key) => match named_key {
+            NamedKey::ArrowLeft => "left".to_string(),
+            NamedKey::ArrowRight => "right".to_string(),
+            NamedKey::ArrowUp => "up".to_string(),
+            NamedKey::ArrowDown => "down".to_string(),
+            NamedKey::Home => "home".to_string(),
+            NamedKey::End => "end".to_string(),
+            NamedKey::Escape => "escape".to_string(),
+            NamedKey::Backspace => "backspace".to_string(),
+            NamedKey::Delete => "delete".to_string(),
+            NamedKey::Enter => "enter".to_string(),
+            NamedKey::Tab => "tab".to_string(),
+            NamedKey::Space => "space".to_string(),
+            NamedKey::PageUp => "pageup".to_string(),
+            NamedKey::PageDown => "pagedown".to_string(),
+            _ => format!("{:?}", named_key).to_lowercase(),
+        },
         _ => {
             if let PhysicalKey::Code(keycode) = physical_key {
                 if let Some(name) = keycode_to_string(keycode) {
@@ -255,7 +251,9 @@ pub fn parse_action(action_str: &str) -> Option<Action> {
     match action_str {
         "workspace::ZoomIn" => Some(Action::ZoomIn),
         "workspace::ZoomOut" => Some(Action::ZoomOut),
-        "workspace::CommandPalette" | "workspace::ToggleCommandPalette" => Some(Action::CommandPalette),
+        "workspace::CommandPalette" | "workspace::ToggleCommandPalette" => {
+            Some(Action::CommandPalette)
+        }
         "editor::Save" => Some(Action::SaveFile),
         "editor::Escape" | "workspace::Escape" => Some(Action::Escape),
         "editor::SelectAll" => Some(Action::SelectAll),
@@ -268,29 +266,53 @@ pub fn parse_action(action_str: &str) -> Option<Action> {
         "editor::DeleteRight" | "editor::Delete" => Some(Action::DeleteRight),
         "editor::InsertNewLine" | "editor::Newline" => Some(Action::InsertNewLine),
         "editor::InsertTab" | "editor::Tab" => Some(Action::InsertTab),
-        
-        "editor::MoveLeft" => Some(Action::MoveLeft { select: false, word: false }),
-        "editor::SelectLeft" => Some(Action::MoveLeft { select: true, word: false }),
-        "editor::MoveWordLeft" => Some(Action::MoveLeft { select: false, word: true }),
-        "editor::SelectWordLeft" => Some(Action::MoveLeft { select: true, word: true }),
-        
-        "editor::MoveRight" => Some(Action::MoveRight { select: false, word: false }),
-        "editor::SelectRight" => Some(Action::MoveRight { select: true, word: false }),
-        "editor::MoveWordRight" => Some(Action::MoveRight { select: false, word: true }),
-        "editor::SelectWordRight" => Some(Action::MoveRight { select: true, word: true }),
-        
+
+        "editor::MoveLeft" => Some(Action::MoveLeft {
+            select: false,
+            word: false,
+        }),
+        "editor::SelectLeft" => Some(Action::MoveLeft {
+            select: true,
+            word: false,
+        }),
+        "editor::MoveWordLeft" => Some(Action::MoveLeft {
+            select: false,
+            word: true,
+        }),
+        "editor::SelectWordLeft" => Some(Action::MoveLeft {
+            select: true,
+            word: true,
+        }),
+
+        "editor::MoveRight" => Some(Action::MoveRight {
+            select: false,
+            word: false,
+        }),
+        "editor::SelectRight" => Some(Action::MoveRight {
+            select: true,
+            word: false,
+        }),
+        "editor::MoveWordRight" => Some(Action::MoveRight {
+            select: false,
+            word: true,
+        }),
+        "editor::SelectWordRight" => Some(Action::MoveRight {
+            select: true,
+            word: true,
+        }),
+
         "editor::MoveUp" => Some(Action::MoveUp { select: false }),
         "editor::SelectUp" => Some(Action::MoveUp { select: true }),
-        
+
         "editor::MoveDown" => Some(Action::MoveDown { select: false }),
         "editor::SelectDown" => Some(Action::MoveDown { select: true }),
-        
+
         "editor::MoveToLineStart" => Some(Action::MoveToLineStart { select: false }),
         "editor::SelectToLineStart" => Some(Action::MoveToLineStart { select: true }),
-        
+
         "editor::MoveToLineEnd" => Some(Action::MoveToLineEnd { select: false }),
         "editor::SelectToLineEnd" => Some(Action::MoveToLineEnd { select: true }),
-        
+
         "editor::MoveLineUp" => Some(Action::MoveLineUp),
         "editor::MoveLineDown" => Some(Action::MoveLineDown),
         "editor::DuplicateLine" => Some(Action::DuplicateLine),
@@ -300,7 +322,7 @@ pub fn parse_action(action_str: &str) -> Option<Action> {
         "workspace::Split" | "editor::Split" => Some(Action::Split),
         "editor::AddCursorUp" => Some(Action::AddCursorUp),
         "editor::AddCursorDown" => Some(Action::AddCursorDown),
-        
+
         _ => None,
     }
 }
@@ -308,7 +330,10 @@ pub fn parse_action(action_str: &str) -> Option<Action> {
 impl Keymap {
     pub fn config_path() -> PathBuf {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home).join(".config").join("garage").join("keymaps.json")
+        PathBuf::from(home)
+            .join(".config")
+            .join("garage")
+            .join("keymaps.json")
     }
 
     pub fn load() -> Self {
@@ -349,12 +374,17 @@ impl Keymap {
         if let Some(action) = self.lookup_in_bindings(&self.contexts, keystroke, active_contexts) {
             return Some(action);
         }
-        
+
         // 2. Fall back to default keymap
         self.lookup_in_bindings(&self.defaults, keystroke, active_contexts)
     }
 
-    fn lookup_in_bindings(&self, contexts: &[KeyContextBindings], keystroke: &Keystroke, active_contexts: &[&str]) -> Option<Action> {
+    fn lookup_in_bindings(
+        &self,
+        contexts: &[KeyContextBindings],
+        keystroke: &Keystroke,
+        active_contexts: &[&str],
+    ) -> Option<Action> {
         for context_name in active_contexts {
             for context_bindings in contexts {
                 let context_matches = match &context_bindings.context {
@@ -363,7 +393,7 @@ impl Keymap {
                 };
                 if context_matches {
                     let normalized_key = normalize_key_name(&keystroke.key);
-                    
+
                     let mut key_str = String::new();
                     if keystroke.ctrl {
                         key_str.push_str("ctrl-");
@@ -375,7 +405,7 @@ impl Keymap {
                         key_str.push_str("shift-");
                     }
                     key_str.push_str(&normalized_key);
-                    
+
                     if let Some(action_str) = context_bindings.bindings.get(&key_str) {
                         if let Some(action) = parse_action(action_str) {
                             return Some(action);
@@ -403,11 +433,11 @@ pub fn map_key(
         alt,
         key: get_key_name(logical_key, physical_key, ctrl),
     };
-    
+
     if let Some(action) = keymap.lookup(&keystroke, contexts) {
         return Some(action);
     }
-    
+
     if contexts.contains(&"Editor") {
         if let Key::Character(text) = logical_key {
             if !ctrl && !alt {
@@ -419,7 +449,7 @@ pub fn map_key(
             }
         }
     }
-    
+
     None
 }
 

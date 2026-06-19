@@ -1,11 +1,11 @@
+use std::fs;
+use std::io::{Read, Write};
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::io::{Read, Write};
-use std::fs;
-use std::path::{Path, PathBuf};
-use winit::window::Window;
 use winit::event_loop::EventLoopProxy;
+use winit::window::Window;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct WindowInfo {
@@ -95,15 +95,15 @@ pub fn start_ipc_server(
         .join(format!("garage-ipc-{}.sock", pid))
         .to_string_lossy()
         .into_owned();
-    
+
     // Remove if socket file already exists
     let _ = fs::remove_file(&socket_path);
-    
+
     let listener = match UnixListener::bind(&socket_path) {
         Ok(l) => l,
         Err(_) => return socket_path,
     };
-    
+
     let socket_path_clone = socket_path.clone();
     thread::spawn(move || {
         for stream in listener.incoming() {
@@ -124,20 +124,22 @@ pub fn start_ipc_server(
         }
         let _ = fs::remove_file(&socket_path_clone);
     });
-    
+
     socket_path
 }
 
 /// Register this window at startup
 pub fn register_window(window: &Window, socket_path: &str) {
     let pid = std::process::id();
-    let pos = window.inner_position().unwrap_or(winit::dpi::PhysicalPosition::new(0, 0));
+    let pos = window
+        .inner_position()
+        .unwrap_or(winit::dpi::PhysicalPosition::new(0, 0));
     let size = window.inner_size();
-    
+
     let mut list = load_active_windows();
     // Remove existing if any
     list.retain(|w| w.pid != pid);
-    
+
     list.push(WindowInfo {
         pid,
         x: pos.x,
@@ -146,7 +148,7 @@ pub fn register_window(window: &Window, socket_path: &str) {
         height: size.height,
         socket_path: socket_path.to_string(),
     });
-    
+
     save_active_windows(&list);
 }
 
@@ -158,7 +160,7 @@ pub fn update_window_geometry(window: &Window) {
         Err(_) => return,
     };
     let size = window.inner_size();
-    
+
     let mut list = load_active_windows();
     let mut found = false;
     for w in &mut list {
@@ -171,7 +173,7 @@ pub fn update_window_geometry(window: &Window) {
             break;
         }
     }
-    
+
     if found {
         save_active_windows(&list);
     }
@@ -190,15 +192,15 @@ pub fn unregister_window() {
 pub fn try_drop_to_other_window(global_x: i32, global_y: i32, file_path: &str) -> bool {
     let list = load_active_windows();
     let current_pid = std::process::id();
-    
+
     for w in list {
         if w.pid == current_pid {
             continue;
         }
-        
+
         let inside_x = global_x >= w.x && global_x < w.x + w.width as i32;
         let inside_y = global_y >= w.y && global_y < w.y + w.height as i32;
-        
+
         if inside_x && inside_y {
             // Attempt to connect to other window's IPC socket and send the path
             if let Ok(mut stream) = UnixStream::connect(&w.socket_path) {
@@ -208,6 +210,6 @@ pub fn try_drop_to_other_window(global_x: i32, global_y: i32, file_path: &str) -
             }
         }
     }
-    
+
     false
 }

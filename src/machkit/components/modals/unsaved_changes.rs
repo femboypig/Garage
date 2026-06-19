@@ -35,10 +35,15 @@ pub fn draw_unsaved_changes(
         buffer_line_height: ui.buffer_line_height,
     };
 
-    let file_name = ui.tab_to_close
+    let file_name = ui
+        .tab_to_close
         .and_then(|idx| tab_paths.get(idx).cloned())
         .flatten()
-        .and_then(|p| Path::new(&p).file_name().map(|n| n.to_string_lossy().to_string()))
+        .and_then(|p| {
+            Path::new(&p)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+        })
         .unwrap_or_else(|| "untitled.txt".to_string());
 
     let title_text = "Unsaved Changes";

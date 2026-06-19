@@ -1,9 +1,9 @@
-use crate::machkit::{UiState, Vertex};
-use crate::renderer::atlas::FontAtlas;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 
-use super::editor::{tab_bar, breadcrumbs, gutter, text_area, scrollbar, minimap};
+use super::editor::{breadcrumbs, gutter, minimap, scrollbar, tab_bar, text_area};
 
 pub fn draw_editor_view(
     ui: &mut UiState,
@@ -35,11 +35,19 @@ pub fn draw_editor_view(
 
     // Calculate dynamic layouts
     let max_line_digits = buffer.len().to_string().len().max(3);
-    let gutter_width = if is_diagnostics || is_project_search { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
+    let gutter_width = if is_diagnostics || is_project_search {
+        0.0
+    } else {
+        (max_line_digits as f32 + 2.0) * ui.buffer_char_width
+    };
     let text_area_x = activity_bar_width + ui.sidebar_width + gutter_width;
-    
+
     let scrollbar_width = ui.scrollbar_width();
-    let minimap_width = if is_diagnostics || is_project_search { 0.0 } else { ui.minimap_width() };
+    let minimap_width = if is_diagnostics || is_project_search {
+        0.0
+    } else {
+        ui.minimap_width()
+    };
     let sb_x = width - scrollbar_width;
     let minimap_x = sb_x - minimap_width;
     let text_viewport_w = minimap_x - text_area_x;
@@ -65,7 +73,11 @@ pub fn draw_editor_view(
             if ui.collapsed_diagnostics.contains(file_path) {
                 count += 1; // Just the header
             } else {
-                let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
+                let file_lines_len = ui
+                    .diagnostics_file_cache
+                    .get(file_path)
+                    .map(|l| l.len())
+                    .unwrap_or(0);
                 for diag in diags {
                     let start_line = diag.line.saturating_sub(3);
                     let end_line = if file_lines_len > 0 {

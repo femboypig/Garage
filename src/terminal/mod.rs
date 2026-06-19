@@ -1,6 +1,6 @@
-use portable_pty::{native_pty_system, CommandBuilder, PtySize, PtyPair, Child};
-use std::sync::mpsc::{channel, Receiver};
+use portable_pty::{Child, CommandBuilder, PtyPair, PtySize, native_pty_system};
 use std::io::{Read, Write};
+use std::sync::mpsc::{Receiver, channel};
 use std::thread;
 
 const COLOR_PALETTE: [[f32; 4]; 16] = [
@@ -125,7 +125,7 @@ impl TerminalGrid {
 
         let mut new_cells = vec![Cell::default(); new_cols * new_rows];
         let mut new_alt_cells = vec![Cell::default(); new_cols * new_rows];
-        
+
         // Calculate vertical shift if the height is shrinking and the cursor would be off-screen
         let shift_y = if new_rows < self.rows && self.cursor_y >= new_rows {
             self.cursor_y - new_rows + 1
@@ -163,7 +163,10 @@ impl TerminalGrid {
         self.cols = new_cols;
         self.rows = new_rows;
         self.cursor_x = self.cursor_x.min(new_cols.saturating_sub(1));
-        self.cursor_y = self.cursor_y.saturating_sub(shift_y).min(new_rows.saturating_sub(1));
+        self.cursor_y = self
+            .cursor_y
+            .saturating_sub(shift_y)
+            .min(new_rows.saturating_sub(1));
         self.scroll_offset = self.scroll_offset.min(self.scrollback.len());
     }
 
@@ -222,34 +225,40 @@ impl vte::Perform for TerminalGrid {
             self.newline();
         }
         let idx = self.cursor_y * self.cols + self.cursor_x;
-        let fg = if self.inverse { self.current_bg } else { self.current_fg };
-        let bg = if self.inverse { self.current_fg } else { self.current_bg };
-        
-
+        let fg = if self.inverse {
+            self.current_bg
+        } else {
+            self.current_fg
+        };
+        let bg = if self.inverse {
+            self.current_fg
+        } else {
+            self.current_bg
+        };
 
         let cells = self.get_cells_mut();
         if idx < cells.len() {
-            cells[idx] = Cell {
-                c,
-                fg,
-                bg,
-            };
+            cells[idx] = Cell { c, fg, bg };
         }
         self.cursor_x += 1;
     }
 
     fn execute(&mut self, byte: u8) {
         match byte {
-            10 => { // LF (Line Feed)
+            10 => {
+                // LF (Line Feed)
                 self.newline();
             }
-            13 => { // CR (Carriage Return)
+            13 => {
+                // CR (Carriage Return)
                 self.cursor_x = 0;
             }
-            8 => { // BS (Backspace)
+            8 => {
+                // BS (Backspace)
                 self.cursor_x = self.cursor_x.saturating_sub(1);
             }
-            9 => { // TAB
+            9 => {
+                // TAB
                 let tab_width = 8;
                 let next_tab = ((self.cursor_x / tab_width) + 1) * tab_width;
                 self.cursor_x = next_tab.min(self.cols - 1);
@@ -258,50 +267,66 @@ impl vte::Perform for TerminalGrid {
         }
     }
 
-    fn csi_dispatch(&mut self, params: &vte::Params, _intermediates: &[u8], _ignore: bool, action: char) {
+    fn csi_dispatch(
+        &mut self,
+        params: &vte::Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        action: char,
+    ) {
         match action {
-            'm' => { // SGR (Select Graphic Rendition)
+            'm' => {
+                // SGR (Select Graphic Rendition)
                 if params.is_empty() {
                     self.current_fg = DEFAULT_FG;
                     self.current_bg = DEFAULT_BG;
                     self.bold = false;
                     return;
                 }
-                
+
                 let mut params_iter = params.iter();
                 while let Some(param) = params_iter.next() {
                     let p = param.get(0).copied().unwrap_or(0);
                     match p {
-                        0 => { // Reset
+                        0 => {
+                            // Reset
                             self.current_fg = DEFAULT_FG;
                             self.current_bg = DEFAULT_BG;
                             self.bold = false;
                             self.inverse = false;
                         }
-                        1 => { // Bold
+                        1 => {
+                            // Bold
                             self.bold = true;
                         }
-                        7 => { // Reverse video
+                        7 => {
+                            // Reverse video
                             self.inverse = true;
                         }
-                        22 => { // Normal color or intensity
+                        22 => {
+                            // Normal color or intensity
                             self.bold = false;
                         }
-                        27 => { // Positive image (normal video)
+                        27 => {
+                            // Positive image (normal video)
                             self.inverse = false;
                         }
-                        30..=37 => { // Foreground color
+                        30..=37 => {
+                            // Foreground color
                             let idx = (p - 30) as usize;
                             self.current_fg = COLOR_PALETTE[idx];
                         }
-                        38 => { // Extended Foreground (256-color or RGB)
+                        38 => {
+                            // Extended Foreground (256-color or RGB)
                             // We can skip or parse basic 256 colors if next params allow.
                             // For simplicity, support 256 colors basic mapping
                             if let Some(next_param) = params_iter.next() {
                                 let mode = next_param.get(0).copied().unwrap_or(0);
-                                if mode == 5 { // 256 color
+                                if mode == 5 {
+                                    // 256 color
                                     if let Some(color_idx_param) = params_iter.next() {
-                                        let c_idx = color_idx_param.get(0).copied().unwrap_or(0) as usize;
+                                        let c_idx =
+                                            color_idx_param.get(0).copied().unwrap_or(0) as usize;
                                         if c_idx < 16 {
                                             self.current_fg = COLOR_PALETTE[c_idx];
                                         } else if c_idx >= 232 {
@@ -317,8 +342,11 @@ impl vte::Perform for TerminalGrid {
                                             self.current_fg = [r, g, b, 1.0];
                                         }
                                     }
-                                } else if mode == 2 { // RGB
-                                    if let (Some(r_p), Some(g_p), Some(b_p)) = (params_iter.next(), params_iter.next(), params_iter.next()) {
+                                } else if mode == 2 {
+                                    // RGB
+                                    if let (Some(r_p), Some(g_p), Some(b_p)) =
+                                        (params_iter.next(), params_iter.next(), params_iter.next())
+                                    {
                                         let r = r_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
                                         let g = g_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
                                         let b = b_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
@@ -327,19 +355,23 @@ impl vte::Perform for TerminalGrid {
                                 }
                             }
                         }
-                        39 => { // Default foreground
+                        39 => {
+                            // Default foreground
                             self.current_fg = DEFAULT_FG;
                         }
-                        40..=47 => { // Background color
+                        40..=47 => {
+                            // Background color
                             let idx = (p - 40) as usize;
                             self.current_bg = COLOR_PALETTE[idx];
                         }
-                        48 => { // Extended Background
+                        48 => {
+                            // Extended Background
                             if let Some(next_param) = params_iter.next() {
                                 let mode = next_param.get(0).copied().unwrap_or(0);
                                 if mode == 5 {
                                     if let Some(color_idx_param) = params_iter.next() {
-                                        let c_idx = color_idx_param.get(0).copied().unwrap_or(0) as usize;
+                                        let c_idx =
+                                            color_idx_param.get(0).copied().unwrap_or(0) as usize;
                                         if c_idx < 16 {
                                             self.current_bg = COLOR_PALETTE[c_idx];
                                         } else if c_idx >= 232 {
@@ -354,7 +386,9 @@ impl vte::Perform for TerminalGrid {
                                         }
                                     }
                                 } else if mode == 2 {
-                                    if let (Some(r_p), Some(g_p), Some(b_p)) = (params_iter.next(), params_iter.next(), params_iter.next()) {
+                                    if let (Some(r_p), Some(g_p), Some(b_p)) =
+                                        (params_iter.next(), params_iter.next(), params_iter.next())
+                                    {
                                         let r = r_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
                                         let g = g_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
                                         let b = b_p.get(0).copied().unwrap_or(0) as f32 / 255.0;
@@ -363,14 +397,17 @@ impl vte::Perform for TerminalGrid {
                                 }
                             }
                         }
-                        49 => { // Default background
+                        49 => {
+                            // Default background
                             self.current_bg = DEFAULT_BG;
                         }
-                        90..=97 => { // Bright foreground
+                        90..=97 => {
+                            // Bright foreground
                             let idx = (p - 90 + 8) as usize;
                             self.current_fg = COLOR_PALETTE[idx];
                         }
-                        100..=107 => { // Bright background
+                        100..=107 => {
+                            // Bright background
                             let idx = (p - 100 + 8) as usize;
                             self.current_bg = COLOR_PALETTE[idx];
                         }
@@ -378,15 +415,21 @@ impl vte::Perform for TerminalGrid {
                     }
                 }
             }
-            'J' => { // Erase in Display (ED)
-                let mode = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(0);
+            'J' => {
+                // Erase in Display (ED)
+                let mode = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(0);
                 if mode == 0 {
                     let cursor_x = self.cursor_x;
                     let cursor_y = self.cursor_y;
                     let cols = self.cols;
                     let rows = self.rows;
                     let cells = self.get_cells_mut();
-                    
+
                     // Clear current line from cursor to end
                     let start_idx = cursor_y * cols;
                     for x in cursor_x..cols {
@@ -408,7 +451,7 @@ impl vte::Perform for TerminalGrid {
                     let cursor_y = self.cursor_y;
                     let cols = self.cols;
                     let cells = self.get_cells_mut();
-                    
+
                     // Clear all lines above cursor
                     for y in 0..cursor_y {
                         let line_start = y * cols;
@@ -439,24 +482,33 @@ impl vte::Perform for TerminalGrid {
                     }
                 }
             }
-            'K' => { // Erase in Line (EL)
-                let mode = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(0);
+            'K' => {
+                // Erase in Line (EL)
+                let mode = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(0);
                 let start_idx = self.cursor_y * self.cols;
                 let cursor_x = self.cursor_x;
                 let cols = self.cols;
                 let cells = self.get_cells_mut();
                 match mode {
-                    0 => { // Clear from cursor to end of line
+                    0 => {
+                        // Clear from cursor to end of line
                         for x in cursor_x..cols {
                             cells[start_idx + x] = Cell::default();
                         }
                     }
-                    1 => { // Clear from start of line to cursor
+                    1 => {
+                        // Clear from start of line to cursor
                         for x in 0..=cursor_x.min(cols - 1) {
                             cells[start_idx + x] = Cell::default();
                         }
                     }
-                    2 => { // Clear entire line
+                    2 => {
+                        // Clear entire line
                         for x in 0..cols {
                             cells[start_idx + x] = Cell::default();
                         }
@@ -464,43 +516,92 @@ impl vte::Perform for TerminalGrid {
                     _ => {}
                 }
             }
-            'H' | 'f' => { // Cursor Position (CUP)
+            'H' | 'f' => {
+                // Cursor Position (CUP)
                 let mut iter = params.iter();
                 let row = iter.next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
                 let col = iter.next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
                 self.cursor_y = (row.saturating_sub(1)).min(self.rows - 1);
                 self.cursor_x = (col.saturating_sub(1)).min(self.cols - 1);
             }
-            'A' => { // Cursor Up
-                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+            'A' => {
+                // Cursor Up
+                let count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
                 self.cursor_y = self.cursor_y.saturating_sub(count);
             }
-            'B' => { // Cursor Down
-                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+            'B' => {
+                // Cursor Down
+                let count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
                 self.cursor_y = (self.cursor_y + count).min(self.rows - 1);
             }
-            'C' => { // Cursor Forward
-                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+            'C' => {
+                // Cursor Forward
+                let count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
                 self.cursor_x = (self.cursor_x + count).min(self.cols - 1);
             }
-            'D' => { // Cursor Backward
-                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+            'D' => {
+                // Cursor Backward
+                let count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
                 self.cursor_x = self.cursor_x.saturating_sub(count);
             }
-            'G' => { // Cursor Horizontal Absolute (CHA)
-                let col = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+            'G' => {
+                // Cursor Horizontal Absolute (CHA)
+                let col = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
                 self.cursor_x = (col.saturating_sub(1)).min(self.cols - 1);
             }
-            'd' => { // Cursor Vertical Absolute (VPA)
-                let row = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+            'd' => {
+                // Cursor Vertical Absolute (VPA)
+                let row = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
                 self.cursor_y = (row.saturating_sub(1)).min(self.rows - 1);
             }
-            'e' => { // Cursor Down Line
-                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+            'e' => {
+                // Cursor Down Line
+                let count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
                 self.cursor_y = (self.cursor_y + count).min(self.rows - 1);
             }
-            'X' => { // Erase Character (ECH)
-                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+            'X' => {
+                // Erase Character (ECH)
+                let count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
                 let start_idx = self.cursor_y * self.cols;
                 let cursor_x = self.cursor_x;
                 let cols = self.cols;
@@ -510,16 +611,18 @@ impl vte::Perform for TerminalGrid {
                 for offset in 0..count {
                     let x = cursor_x + offset;
                     if x < cols {
-                        cells[start_idx + x] = Cell {
-                            c: ' ',
-                            fg,
-                            bg,
-                        };
+                        cells[start_idx + x] = Cell { c: ' ', fg, bg };
                     }
                 }
             }
-            'P' => { // Delete Character (DCH)
-                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+            'P' => {
+                // Delete Character (DCH)
+                let count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
                 let start_idx = self.cursor_y * self.cols;
                 let cursor_x = self.cursor_x;
                 let cols = self.cols;
@@ -532,8 +635,14 @@ impl vte::Perform for TerminalGrid {
                     cells[start_idx + i] = Cell::default();
                 }
             }
-            '@' => { // Insert Character (ICH)
-                let count = params.iter().next().and_then(|p| p.get(0)).copied().unwrap_or(1) as usize;
+            '@' => {
+                // Insert Character (ICH)
+                let count = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.get(0))
+                    .copied()
+                    .unwrap_or(1) as usize;
                 let start_idx = self.cursor_y * self.cols;
                 let cursor_x = self.cursor_x;
                 let cols = self.cols;
@@ -546,7 +655,8 @@ impl vte::Perform for TerminalGrid {
                     cells[start_idx + cursor_x + i] = Cell::default();
                 }
             }
-            'h' => { // SM (Set Mode)
+            'h' => {
+                // SM (Set Mode)
                 let is_private = _intermediates.contains(&b'?');
                 for param in params.iter() {
                     let p = param.get(0).copied().unwrap_or(0);
@@ -565,7 +675,8 @@ impl vte::Perform for TerminalGrid {
                     }
                 }
             }
-            'l' => { // RM (Reset Mode)
+            'l' => {
+                // RM (Reset Mode)
                 let is_private = _intermediates.contains(&b'?');
                 for param in params.iter() {
                     let p = param.get(0).copied().unwrap_or(0);
@@ -581,11 +692,13 @@ impl vte::Perform for TerminalGrid {
                     }
                 }
             }
-            's' => { // Save Cursor Position
+            's' => {
+                // Save Cursor Position
                 self.saved_cursor_x = Some(self.cursor_x);
                 self.saved_cursor_y = Some(self.cursor_y);
             }
-            'u' => { // Restore Cursor Position
+            'u' => {
+                // Restore Cursor Position
                 if let (Some(x), Some(y)) = (self.saved_cursor_x, self.saved_cursor_y) {
                     self.cursor_x = x.min(self.cols - 1);
                     self.cursor_y = y.min(self.rows - 1);
@@ -632,11 +745,13 @@ impl vte::Perform for TerminalGrid {
 
     fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, byte: u8) {
         match byte {
-            b'7' => { // Save cursor position (DECSC)
+            b'7' => {
+                // Save cursor position (DECSC)
                 self.saved_cursor_x = Some(self.cursor_x);
                 self.saved_cursor_y = Some(self.cursor_y);
             }
-            b'8' => { // Restore cursor position (DECRC)
+            b'8' => {
+                // Restore cursor position (DECRC)
                 if let (Some(x), Some(y)) = (self.saved_cursor_x, self.saved_cursor_y) {
                     self.cursor_x = x.min(self.cols - 1);
                     self.cursor_y = y.min(self.rows - 1);
@@ -691,9 +806,12 @@ impl TerminalInstance {
         cmd.arg("--login");
         // Tell bash to emit OSC 7 (current directory) after each prompt
         if shell.ends_with("bash") {
-            cmd.env("PROMPT_COMMAND", r#"printf "\033]7;file://%s%s\007" "$(hostname)" "$(pwd)""#);
+            cmd.env(
+                "PROMPT_COMMAND",
+                r#"printf "\033]7;file://%s%s\007" "$(hostname)" "$(pwd)""#,
+            );
         }
-        
+
         if let Ok(current_dir) = std::env::current_dir() {
             cmd.cwd(current_dir);
         }
@@ -764,7 +882,9 @@ impl TerminalInstance {
                         if parts.len() > 5 {
                             if let Ok(tpgid) = parts[5].parse::<i32>() {
                                 if tpgid > 0 {
-                                    if let Ok(comm) = std::fs::read_to_string(format!("/proc/{}/comm", tpgid)) {
+                                    if let Ok(comm) =
+                                        std::fs::read_to_string(format!("/proc/{}/comm", tpgid))
+                                    {
                                         let name = comm.trim().to_string();
                                         if !name.is_empty() {
                                             return Some(name);
@@ -794,7 +914,7 @@ impl TerminalInstance {
         } else {
             self.grid.title.clone()
         };
-        
+
         let mut name = raw_name;
         if name.chars().count() > 20 {
             let prefix: String = name.chars().take(17).collect();

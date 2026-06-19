@@ -1,8 +1,7 @@
-use crate::machkit::{UiState, Vertex};
-use crate::renderer::atlas::FontAtlas;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
-
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 
 pub fn draw_breadcrumbs(
     ui: &UiState,
@@ -25,7 +24,7 @@ pub fn draw_breadcrumbs(
     let bar_w = width - bar_x;
     let bar_y = main_y + ui.tabbar_height;
     let bar_h = ui.breadcrumb_height;
-    
+
     let mut ctx = crate::machkit::UiContext {
         vertices,
         indices,
@@ -45,13 +44,7 @@ pub fn draw_breadcrumbs(
     };
 
     // Breadcrumb Bar background
-    ctx.push_quad(
-        bar_x,
-        bar_y,
-        bar_w,
-        bar_h,
-        ctx.theme.breadcrumb_bg,
-    );
+    ctx.push_quad(bar_x, bar_y, bar_w, bar_h, ctx.theme.breadcrumb_bg);
     // Breadcrumb bottom border
     ctx.push_quad(
         bar_x,
@@ -60,18 +53,46 @@ pub fn draw_breadcrumbs(
         1.0,
         ctx.theme.breadcrumb_border,
     );
-    
+
     let is_project_search = active_file_path == Some("search://project");
     if is_active_pane && (ui.show_search_panel || is_project_search) {
         let is_local = !is_project_search;
-        let search_query = if is_local { &ui.search_query } else { &ui.global_search_query };
-        let replace_query = if is_local { &ui.replace_query } else { &ui.global_replace_query };
-        let case_sensitive = if is_local { ui.search_case_sensitive } else { ui.global_search_case_sensitive };
-        let whole_word = if is_local { ui.search_whole_word } else { ui.global_search_whole_word };
-        let regex = if is_local { ui.search_regex } else { ui.global_search_regex };
-        let is_replace_focused = if is_local { ui.search_focus_replace } else { ui.global_search_focus_replace };
+        let search_query = if is_local {
+            &ui.search_query
+        } else {
+            &ui.global_search_query
+        };
+        let replace_query = if is_local {
+            &ui.replace_query
+        } else {
+            &ui.global_replace_query
+        };
+        let case_sensitive = if is_local {
+            ui.search_case_sensitive
+        } else {
+            ui.global_search_case_sensitive
+        };
+        let whole_word = if is_local {
+            ui.search_whole_word
+        } else {
+            ui.global_search_whole_word
+        };
+        let regex = if is_local {
+            ui.search_regex
+        } else {
+            ui.global_search_regex
+        };
+        let is_replace_focused = if is_local {
+            ui.search_focus_replace
+        } else {
+            ui.global_search_focus_replace
+        };
         let is_find_focused = !is_replace_focused;
-        let show_replace = if is_local { ui.show_replace } else { ui.global_show_replace };
+        let show_replace = if is_local {
+            ui.show_replace
+        } else {
+            ui.global_show_replace
+        };
 
         let count_w = if is_local { 70.0f32 } else { 75.0f32 };
         let btn_prev_w = 24.0f32;
@@ -85,7 +106,11 @@ pub fn draw_breadcrumbs(
         let (input_y_1, input_y_2) = if is_local {
             let path_h = 20.0f32;
             let remaining_h = bar_h - path_h;
-            let row_h = if show_replace { remaining_h / 2.0 } else { remaining_h };
+            let row_h = if show_replace {
+                remaining_h / 2.0
+            } else {
+                remaining_h
+            };
             let y1 = bar_y + path_h + (row_h - input_h) / 2.0;
             let y2 = bar_y + path_h + row_h + (row_h - input_h) / 2.0;
             (y1, y2)
@@ -111,7 +136,7 @@ pub fn draw_breadcrumbs(
             let count_x = filter_x - 8.0 - count_w;
             (rep_toggle_x, filter_x, count_x)
         };
-        
+
         let toggle_btn_w = 24.0f32;
         let toggle_btn_x = bar_x + 10.0;
         let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
@@ -138,7 +163,11 @@ pub fn draw_breadcrumbs(
         // --- ROW 1: FIND ---
         // 0. Toggle Replace button / Collapse All button
         let toggle_icon_name = if is_local {
-            if show_replace { "chevron_up" } else { "chevron_down" }
+            if show_replace {
+                "chevron_up"
+            } else {
+                "chevron_down"
+            }
         } else {
             "list_collapse"
         };
@@ -148,7 +177,11 @@ pub fn draw_breadcrumbs(
             .draw(&mut ctx, toggle_btn_x, input_y_1, toggle_btn_w, input_h);
 
         // 1. Find Input text box
-        let placeholder = if is_local { "Search query..." } else { "Search in project..." };
+        let placeholder = if is_local {
+            "Search query..."
+        } else {
+            "Search in project..."
+        };
         let opt_btn_w = 22.0f32;
         let options_w = 3.0 * opt_btn_w + 10.0;
 
@@ -193,7 +226,11 @@ pub fn draw_breadcrumbs(
             if ui.search_matches.is_empty() {
                 "0 of 0".to_string()
             } else {
-                format!("{} of {}", ui.active_search_match_idx + 1, ui.search_matches.len())
+                format!(
+                    "{} of {}",
+                    ui.active_search_match_idx + 1,
+                    ui.search_matches.len()
+                )
             }
         } else {
             if ui.global_search_results.is_empty() {
@@ -203,19 +240,33 @@ pub fn draw_breadcrumbs(
                     "0/0".to_string()
                 }
             } else {
-                format!("{}/{}", ui.global_search_selected + 1, ui.global_search_results.len())
+                format!(
+                    "{}/{}",
+                    ui.global_search_selected + 1,
+                    ui.global_search_results.len()
+                )
             }
         };
         let count_text_len = count_str.chars().count() as f32;
         let count_text_x = count_x + ((count_w - count_text_len * ctx.ui_char_width) / 2.0).round();
-        ctx.push_str(&count_str, count_text_x, l_baseline_1, ctx.theme.modal_text_muted, ctx.ui_font_size);
+        ctx.push_str(
+            &count_str,
+            count_text_x,
+            l_baseline_1,
+            ctx.theme.modal_text_muted,
+            ctx.ui_font_size,
+        );
 
         // 2.5 Optional Filter and Replace Toggle buttons for Project Search
         if !is_local {
             // Filter Button
-            crate::machkit::Button::new()
-                .icon("filter")
-                .draw(&mut ctx, filter_x, input_y_1, btn_filter_w, input_h);
+            crate::machkit::Button::new().icon("filter").draw(
+                &mut ctx,
+                filter_x,
+                input_y_1,
+                btn_filter_w,
+                input_h,
+            );
 
             // Replace Toggle Button
             crate::machkit::Button::new()
@@ -235,8 +286,15 @@ pub fn draw_breadcrumbs(
             .draw(&mut ctx, next_x, input_y_1, btn_next_w, input_h);
 
         // 5. Close Button (✕)
-        let close_hover = ctx.mouse_x >= close_x && ctx.mouse_x < close_x + close_btn_w && ctx.mouse_y >= input_y_1 && ctx.mouse_y < input_y_1 + input_h;
-        let close_color = if close_hover { ctx.theme.modal_text_title } else { ctx.theme.modal_text_muted };
+        let close_hover = ctx.mouse_x >= close_x
+            && ctx.mouse_x < close_x + close_btn_w
+            && ctx.mouse_y >= input_y_1
+            && ctx.mouse_y < input_y_1 + input_h;
+        let close_color = if close_hover {
+            ctx.theme.modal_text_title
+        } else {
+            ctx.theme.modal_text_muted
+        };
         crate::machkit::Button::new()
             .icon("close")
             .text_color(close_color)
@@ -263,9 +321,8 @@ pub fn draw_breadcrumbs(
         }
     } else {
         // Construct breadcrumb text: relative_path > current_function
-        let relative_path = active_file_path
-            .unwrap_or("Untitled");
-        
+        let relative_path = active_file_path.unwrap_or("Untitled");
+
         let current_fn = ui.find_current_function(buffer, cursor.line);
         let breadcrumb_text = if let Some(ref func) = current_fn {
             format!("{} > {}", relative_path, func)

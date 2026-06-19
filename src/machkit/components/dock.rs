@@ -1,7 +1,7 @@
+use crate::machkit::UiState;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
 use crate::terminal::TerminalInstance;
-use crate::machkit::UiState;
 
 pub fn draw_dock(
     ui: &UiState,
@@ -24,7 +24,7 @@ pub fn draw_dock(
     let white_uv = atlas.white_pixel_uv();
     let dock_w = width - ui.sidebar_width;
     let dock_h = (height - ui.status_height - dock_start_y).max(0.0);
-    
+
     // 1. Draw top border
     ui.push_quad(
         vertices,
@@ -124,7 +124,7 @@ pub fn draw_dock(
         let term_name = terminals[idx].get_display_name(idx);
         let term_name_w = term_name.chars().count() as f32 * ui.ui_char_width * 0.9;
         let tab_w = 12.0 + icon_sz + 6.0 + term_name_w + 8.0 + close_sz + 10.0;
-        
+
         // Draw tab background
         let bg_color = if is_active {
             ui.config.theme.tab_active_bg
@@ -136,8 +136,17 @@ pub fn draw_dock(
         } else {
             dock_tabbar_h - 1.0
         };
-        ui.push_quad(vertices, indices, cur_x, tab_y, tab_w, current_tab_h, white_uv, bg_color);
-        
+        ui.push_quad(
+            vertices,
+            indices,
+            cur_x,
+            tab_y,
+            tab_w,
+            current_tab_h,
+            white_uv,
+            bg_color,
+        );
+
         // Draw separators/borders like in editor tabbar
         if idx > 0 {
             ui.push_quad(
@@ -184,7 +193,8 @@ pub fn draw_dock(
         );
 
         // Draw text
-        let tab_baseline = (tab_y + cur_tab_h_for_calc / 2.0 + (ui.ui_font_ascent * 0.9) / 2.0 - 3.0).round();
+        let tab_baseline =
+            (tab_y + cur_tab_h_for_calc / 2.0 + (ui.ui_font_ascent * 0.9) / 2.0 - 3.0).round();
         ui.push_str(
             vertices,
             indices,
@@ -201,8 +211,12 @@ pub fn draw_dock(
         // Draw tab close button
         let close_x = cur_x + tab_w - 8.0 - close_sz;
         let close_y = (tab_y + (cur_tab_h_for_calc - close_sz) / 2.0).round();
-        
-        let is_close_hover = ui.active_modal.is_none() && mouse_x >= close_x - 3.0 && mouse_x < close_x + close_sz + 3.0 && mouse_y >= close_y - 3.0 && mouse_y < close_y + close_sz + 3.0;
+
+        let is_close_hover = ui.active_modal.is_none()
+            && mouse_x >= close_x - 3.0
+            && mouse_x < close_x + close_sz + 3.0
+            && mouse_y >= close_y - 3.0
+            && mouse_y < close_y + close_sz + 3.0;
         let close_color = if is_close_hover {
             [1.0, 0.3, 0.3, 1.0]
         } else {
@@ -229,14 +243,20 @@ pub fn draw_dock(
     // Draw '+' button to add new terminal
     let add_btn_w = 28.0f32;
     let add_btn_x = cur_x;
-    let is_add_hover = ui.active_modal.is_none() && mouse_x >= add_btn_x && mouse_x < add_btn_x + add_btn_w && mouse_y >= tab_y && mouse_y < tab_y + tab_h;
+    let is_add_hover = ui.active_modal.is_none()
+        && mouse_x >= add_btn_x
+        && mouse_x < add_btn_x + add_btn_w
+        && mouse_y >= tab_y
+        && mouse_y < tab_y + tab_h;
     let add_bg = if is_add_hover {
         ui.config.theme.titlebar_hover_bg
     } else {
         ui.config.theme.tabbar_bg
     };
-    ui.push_quad(vertices, indices, add_btn_x, tab_y, add_btn_w, tab_h, white_uv, add_bg);
-    
+    ui.push_quad(
+        vertices, indices, add_btn_x, tab_y, add_btn_w, tab_h, white_uv, add_bg,
+    );
+
     let plus_icon_sz = 12.0f32;
     ui.push_icon(
         vertices,
@@ -253,13 +273,26 @@ pub fn draw_dock(
     // Draw Close dock button
     let close_dock_w = 28.0f32;
     let close_dock_x = width - 10.0 - close_dock_w;
-    let is_close_dock_hover = ui.active_modal.is_none() && mouse_x >= close_dock_x && mouse_x < close_dock_x + close_dock_w && mouse_y >= tab_y && mouse_y < tab_y + tab_h;
+    let is_close_dock_hover = ui.active_modal.is_none()
+        && mouse_x >= close_dock_x
+        && mouse_x < close_dock_x + close_dock_w
+        && mouse_y >= tab_y
+        && mouse_y < tab_y + tab_h;
     let close_dock_bg = if is_close_dock_hover {
         ui.config.theme.titlebar_hover_bg
     } else {
         ui.config.theme.tabbar_bg
     };
-    ui.push_quad(vertices, indices, close_dock_x, tab_y, close_dock_w, tab_h, white_uv, close_dock_bg);
+    ui.push_quad(
+        vertices,
+        indices,
+        close_dock_x,
+        tab_y,
+        close_dock_w,
+        tab_h,
+        white_uv,
+        close_dock_bg,
+    );
     ui.push_icon(
         vertices,
         indices,
@@ -290,7 +323,7 @@ pub fn draw_dock(
     if !terminals.is_empty() {
         let term = &terminals[ui.active_dock_tab.min(terminals.len() - 1)];
         let grid = &term.grid;
-        
+
         let term_font_sz = ui.buffer_font_size;
         let term_char_w = ui.buffer_char_width;
         let term_line_h = ui.buffer_line_height;
@@ -304,7 +337,7 @@ pub fn draw_dock(
             if cell_y + term_line_h > content_y + content_h {
                 break;
             }
-            
+
             let cell_baseline = (cell_y + term_font_ascent).round();
 
             for tx in 0..grid.cols {
@@ -360,10 +393,10 @@ pub fn draw_dock(
                     if grid.bold && color == crate::terminal::DEFAULT_FG {
                         color = [1.0, 1.0, 1.0, 1.0];
                     }
-                    
+
                     let mut buf = [0u8; 4];
                     let c_str = cell.c.encode_utf8(&mut buf);
-                    
+
                     ui.push_str(
                         vertices,
                         indices,
@@ -390,8 +423,10 @@ pub fn draw_dock(
             if display_cursor_y < grid.rows {
                 let cursor_x = ui.sidebar_width + term_pad_x + grid.cursor_x as f32 * term_char_w;
                 let cursor_y = content_y + term_pad_y + display_cursor_y as f32 * term_line_h;
-                
-                if cursor_x + term_char_w <= width && cursor_y + term_line_h <= content_y + content_h {
+
+                if cursor_x + term_char_w <= width
+                    && cursor_y + term_line_h <= content_y + content_h
+                {
                     if terminal_focus {
                         ui.push_quad(
                             vertices,
@@ -404,10 +439,46 @@ pub fn draw_dock(
                             [0.7, 0.7, 0.7, 0.6],
                         );
                     } else {
-                        ui.push_quad(vertices, indices, cursor_x, cursor_y, term_char_w, 1.5, white_uv, [0.6, 0.6, 0.6, 0.8]);
-                        ui.push_quad(vertices, indices, cursor_x, cursor_y + term_line_h - 1.5, term_char_w, 1.5, white_uv, [0.6, 0.6, 0.6, 0.8]);
-                        ui.push_quad(vertices, indices, cursor_x, cursor_y, 1.5, term_line_h, white_uv, [0.6, 0.6, 0.6, 0.8]);
-                        ui.push_quad(vertices, indices, cursor_x + term_char_w - 1.5, cursor_y, 1.5, term_line_h, white_uv, [0.6, 0.6, 0.6, 0.8]);
+                        ui.push_quad(
+                            vertices,
+                            indices,
+                            cursor_x,
+                            cursor_y,
+                            term_char_w,
+                            1.5,
+                            white_uv,
+                            [0.6, 0.6, 0.6, 0.8],
+                        );
+                        ui.push_quad(
+                            vertices,
+                            indices,
+                            cursor_x,
+                            cursor_y + term_line_h - 1.5,
+                            term_char_w,
+                            1.5,
+                            white_uv,
+                            [0.6, 0.6, 0.6, 0.8],
+                        );
+                        ui.push_quad(
+                            vertices,
+                            indices,
+                            cursor_x,
+                            cursor_y,
+                            1.5,
+                            term_line_h,
+                            white_uv,
+                            [0.6, 0.6, 0.6, 0.8],
+                        );
+                        ui.push_quad(
+                            vertices,
+                            indices,
+                            cursor_x + term_char_w - 1.5,
+                            cursor_y,
+                            1.5,
+                            term_line_h,
+                            white_uv,
+                            [0.6, 0.6, 0.6, 0.8],
+                        );
                     }
                 }
             }
@@ -417,7 +488,7 @@ pub fn draw_dock(
         if !grid.use_alt_screen && !grid.scrollback.is_empty() {
             let sb_w = 10.0f32;
             let sb_x = width - sb_w - 4.0;
-            
+
             // Draw separator line
             ui.push_quad(
                 vertices,
@@ -443,12 +514,17 @@ pub fn draw_dock(
             );
 
             let total_lines = (grid.rows + grid.scrollback.len()) as f32;
-            let thumb_h = ((grid.rows as f32 / total_lines) * content_h).clamp(15.0_f32.min(content_h), content_h);
+            let thumb_h = ((grid.rows as f32 / total_lines) * content_h)
+                .clamp(15.0_f32.min(content_h), content_h);
             let max_scroll = grid.scrollback.len() as f32;
             let scroll_ratio = 1.0 - (grid.scroll_offset as f32 / max_scroll);
             let thumb_y = content_y + scroll_ratio * (content_h - thumb_h);
 
-            let is_sb_hovered = ui.active_modal.is_none() && mouse_x >= sb_x && mouse_x < sb_x + sb_w && mouse_y >= content_y && mouse_y < content_y + content_h;
+            let is_sb_hovered = ui.active_modal.is_none()
+                && mouse_x >= sb_x
+                && mouse_x < sb_x + sb_w
+                && mouse_y >= content_y
+                && mouse_y < content_y + content_h;
             let thumb_color = if is_sb_hovered {
                 ui.config.theme.scrollbar_thumb_hover
             } else {

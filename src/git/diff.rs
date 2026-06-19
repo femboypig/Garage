@@ -19,11 +19,11 @@ pub fn update_git_diff(
         let output = Command::new("git")
             .args(&["diff", "--no-ext-diff", "-U0", "--", &file_path])
             .output();
-        
+
         if let Ok(out) = output {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let mut hunks = Vec::new();
-            
+
             for line in stdout.lines() {
                 if line.starts_with("@@ ") {
                     let parts: Vec<&str> = line.split("@@").collect();
@@ -36,17 +36,19 @@ pub fn update_git_diff(
                                 let content = &new_spec[1..];
                                 let subparts: Vec<&str> = content.split(',').collect();
                                 if !subparts.is_empty() {
-                                    let line_idx = subparts[0].parse::<usize>().unwrap_or(1).saturating_sub(1);
+                                    let line_idx =
+                                        subparts[0].parse::<usize>().unwrap_or(1).saturating_sub(1);
                                     let count = if subparts.len() >= 2 {
                                         subparts[1].parse::<usize>().unwrap_or(1)
                                     } else {
                                         1
                                     };
-                                    
+
                                     let old_spec = specs[0];
                                     let old_count = if old_spec.starts_with('-') {
                                         let old_content = &old_spec[1..];
-                                        let old_subparts: Vec<&str> = old_content.split(',').collect();
+                                        let old_subparts: Vec<&str> =
+                                            old_content.split(',').collect();
                                         if old_subparts.len() >= 2 {
                                             old_subparts[1].parse::<usize>().unwrap_or(1)
                                         } else {
@@ -57,11 +59,17 @@ pub fn update_git_diff(
                                     };
 
                                     if old_count == 0 {
-                                        hunks.push(GitDiffHunk::Added { line: line_idx, count });
+                                        hunks.push(GitDiffHunk::Added {
+                                            line: line_idx,
+                                            count,
+                                        });
                                     } else if count == 0 {
                                         hunks.push(GitDiffHunk::Deleted { line: line_idx });
                                     } else {
-                                        hunks.push(GitDiffHunk::Modified { line: line_idx, count });
+                                        hunks.push(GitDiffHunk::Modified {
+                                            line: line_idx,
+                                            count,
+                                        });
                                     }
                                 }
                             }

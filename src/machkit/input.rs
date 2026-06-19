@@ -58,14 +58,7 @@ impl<'a> Input<'a> {
         self
     }
 
-    pub fn draw(
-        self,
-        ctx: &mut UiContext,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-    ) {
+    pub fn draw(self, ctx: &mut UiContext, x: f32, y: f32, w: f32, h: f32) {
         // Background
         ctx.push_quad(x, y, w, h, ctx.theme.editor_bg);
 
@@ -93,9 +86,13 @@ impl<'a> Input<'a> {
         }
 
         let baseline_y = (y + h / 2.0 + ctx.ui_font_ascent / 2.0 - 1.0).round();
-        let padding_r = self.right_padding.unwrap_or(if self.icon.is_some() { 28.0 } else { 12.0 });
+        let padding_r = self
+            .right_padding
+            .unwrap_or(if self.icon.is_some() { 28.0 } else { 12.0 });
         let left_offset = start_x - x;
-        let max_chars = ((w - padding_r - left_offset) / ctx.ui_char_width).floor().max(1.0) as usize;
+        let max_chars = ((w - padding_r - left_offset) / ctx.ui_char_width)
+            .floor()
+            .max(1.0) as usize;
 
         // Value or placeholder text
         if self.value.is_empty() {
@@ -104,11 +101,20 @@ impl<'a> Input<'a> {
             } else {
                 self.placeholder.to_string()
             };
-            ctx.push_str(&display_placeholder, start_x, baseline_y, ctx.theme.syntax_comment, ctx.ui_font_size);
+            ctx.push_str(
+                &display_placeholder,
+                start_x,
+                baseline_y,
+                ctx.theme.syntax_comment,
+                ctx.ui_font_size,
+            );
         } else {
             let display_val = if self.value.chars().count() > max_chars {
                 if self.focused {
-                    self.value.chars().skip(self.value.chars().count() - max_chars).collect::<String>()
+                    self.value
+                        .chars()
+                        .skip(self.value.chars().count() - max_chars)
+                        .collect::<String>()
                 } else {
                     self.value.chars().take(max_chars).collect::<String>()
                 }
@@ -116,7 +122,13 @@ impl<'a> Input<'a> {
                 self.value.to_string()
             };
 
-            ctx.push_str(&display_val, start_x, baseline_y, ctx.theme.modal_text_normal, ctx.ui_font_size);
+            ctx.push_str(
+                &display_val,
+                start_x,
+                baseline_y,
+                ctx.theme.modal_text_normal,
+                ctx.ui_font_size,
+            );
 
             // Cursor
             if self.focused {

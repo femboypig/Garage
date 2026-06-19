@@ -18,7 +18,7 @@ pub fn draw_about(
     let title_char_w = ui.ui_char_width * 1.5;
     let title_w = title.chars().count() as f32 * title_char_w;
     let title_x = modal_x + ((modal_w - title_w) / 2.0).round();
-    
+
     // 1. Draw Title "Garage"
     ui.push_str(
         vertices,

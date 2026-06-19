@@ -1,8 +1,8 @@
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
+use crate::machkit::UiState;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
-use crate::machkit::UiState;
 
 pub fn draw_statusbar(
     ui: &UiState,
@@ -47,7 +47,7 @@ pub fn draw_statusbar(
 
     let baseline_y = (status_y + ui.status_height / 2.0 + ui.ui_font_ascent / 2.0 - 2.0).round();
     let text_color = ui.config.theme.statusbar_text;
-    
+
     let mut pen_x = 10.0;
 
     // 1. Draw Git Branch Info
@@ -56,18 +56,10 @@ pub fn draw_statusbar(
             let icon_sz = (ui.ui_font_size * 1.15).round().max(15.0);
             let icon_y = (status_y + (ui.status_height - icon_sz) / 2.0).round();
             ui.push_icon(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                "branch",
-                pen_x,
-                icon_y,
-                text_color,
-                icon_sz,
+                vertices, indices, atlas, queue, "branch", pen_x, icon_y, text_color, icon_sz,
             );
             pen_x += icon_sz + 4.0;
-            
+
             pen_x += ui.push_str(
                 vertices,
                 indices,
@@ -80,12 +72,10 @@ pub fn draw_statusbar(
                 ui.ui_font_size,
                 ui.ui_char_width,
             );
-            
+
             pen_x += 15.0; // spacing after branch name
         }
     }
-
-
 
     // 2. Draw Diagnostics Indicators
     let mut err_count = 0;
@@ -97,7 +87,7 @@ pub fn draw_statusbar(
 
     let err_val_str = format!("{}", err_count);
     let warn_val_str = format!("{}", warn_count);
-    
+
     let err_icon_sz = 14.0f32;
     let warn_icon_sz = 14.0f32;
     let err_text_w = err_val_str.chars().count() as f32 * ui.ui_char_width;
@@ -122,7 +112,11 @@ pub fn draw_statusbar(
         );
     }
 
-    let err_color = if err_count > 0 { [0.95, 0.25, 0.25, 1.0] } else { ui.config.theme.statusbar_text };
+    let err_color = if err_count > 0 {
+        [0.95, 0.25, 0.25, 1.0]
+    } else {
+        ui.config.theme.statusbar_text
+    };
     let err_icon_y = (status_y + (ui.status_height - err_icon_sz) / 2.0).round();
     ui.push_icon(
         vertices,
@@ -151,7 +145,11 @@ pub fn draw_statusbar(
     );
     pen_x += 12.0;
 
-    let warn_color = if warn_count > 0 { [0.95, 0.70, 0.15, 1.0] } else { ui.config.theme.statusbar_text };
+    let warn_color = if warn_count > 0 {
+        [0.95, 0.70, 0.15, 1.0]
+    } else {
+        ui.config.theme.statusbar_text
+    };
     let warn_icon_y = (status_y + (ui.status_height - warn_icon_sz) / 2.0).round();
     ui.push_icon(
         vertices,
@@ -230,7 +228,9 @@ pub fn draw_statusbar(
         }
     }
 
-    let language = ui.languages.get(&extension)
+    let language = ui
+        .languages
+        .get(&extension)
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
             if extension.is_empty() {
@@ -325,13 +325,39 @@ pub fn draw_statusbar(
     }
 
     // 4. Draw Terminal Toggle Button
-    let is_term_hover = ui.active_modal.is_none() && mouse_y >= status_y && mouse_x >= term_btn_x && mouse_x < term_btn_x + sb_btn_w;
+    let is_term_hover = ui.active_modal.is_none()
+        && mouse_y >= status_y
+        && mouse_x >= term_btn_x
+        && mouse_x < term_btn_x + sb_btn_w;
     let term_bg = if is_term_hover {
         ui.config.theme.titlebar_hover_bg
     } else {
         ui.config.theme.statusbar_bg
     };
-    ui.push_quad(vertices, indices, term_btn_x, status_y + 1.0, sb_btn_w, sb_btn_h, white_uv, term_bg);
-    let term_color = if ui.show_dock { [0.38, 0.69, 0.94, 1.0] } else { ui.config.theme.statusbar_text };
-    ui.push_icon(vertices, indices, atlas, queue, "terminal", term_btn_x + (sb_btn_w - icon_sz) / 2.0, icon_y, term_color, icon_sz);
+    ui.push_quad(
+        vertices,
+        indices,
+        term_btn_x,
+        status_y + 1.0,
+        sb_btn_w,
+        sb_btn_h,
+        white_uv,
+        term_bg,
+    );
+    let term_color = if ui.show_dock {
+        [0.38, 0.69, 0.94, 1.0]
+    } else {
+        ui.config.theme.statusbar_text
+    };
+    ui.push_icon(
+        vertices,
+        indices,
+        atlas,
+        queue,
+        "terminal",
+        term_btn_x + (sb_btn_w - icon_sz) / 2.0,
+        icon_y,
+        term_color,
+        icon_sz,
+    );
 }

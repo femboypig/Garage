@@ -1,8 +1,8 @@
+pub mod autosave;
 pub mod handler;
 pub mod input;
-pub mod state;
 pub mod ipc;
-pub mod autosave;
+pub mod state;
 
 use std::sync::Arc;
 use winit::{
@@ -13,13 +13,16 @@ use winit::{
 
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
+use crate::machkit::{FrameInput, UiState};
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::{GpuContext, Vertex};
-use crate::machkit::{UiState, FrameInput};
 
 use self::state::{AppState, Tab};
 
-pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_editor(
+    file_path: Option<String>,
+    experimental: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut builder = env_logger::Builder::from_default_env();
     if std::env::var("RUST_LOG").is_err() {
         builder.filter_level(log::LevelFilter::Warn);
@@ -42,8 +45,10 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
         _ => None,
     };
     let instance_backends = initial_backends.unwrap_or(wgpu::Backends::all());
-    let flags = (wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
-        & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
+    let flags = (wgpu::InstanceFlags::default()
+        | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
+        & !wgpu::InstanceFlags::VALIDATION
+        & !wgpu::InstanceFlags::DEBUG;
     let instance = Arc::new(wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: instance_backends,
         flags,
@@ -93,13 +98,14 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
         crate::experiments::startup::record_step("WGPU Context Pre-Init");
 
         // Complete initialization, configure surface and create bind groups/buffers
-        let mut gpu = pollster::block_on(crate::renderer::wgpu::GpuContext::complete_initialization(
-            window_for_bg,
-            surface,
-            pre_init,
-            initial_backends,
-            instance_for_bg,
-        ));
+        let mut gpu =
+            pollster::block_on(crate::renderer::wgpu::GpuContext::complete_initialization(
+                window_for_bg,
+                surface,
+                pre_init,
+                initial_backends,
+                instance_for_bg,
+            ));
         crate::experiments::startup::record_step("WGPU Context Complete & Surface Creation");
 
         let actual_backend_str = match gpu.backend {
@@ -113,7 +119,10 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
             if let Err(e) = saved_config.save() {
                 log::warn!("Failed to save config on startup fallback: {:?}", e);
             } else {
-                log::warn!("Successfully saved fallback backend '{}' to config.", actual_backend_str);
+                log::warn!(
+                    "Successfully saved fallback backend '{}' to config.",
+                    actual_backend_str
+                );
             }
         }
 
@@ -128,14 +137,23 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
 
         // Update bind group to use actual font texture and sampler
         gpu.update_bind_group(&atlas.texture, &atlas.sampler);
-        
+
         // Pre-rasterize ASCII characters for UI and buffer font sizes to prevent frame hitching/input lag during rendering
-        atlas.pre_rasterize_ascii(&gpu.queue, &[saved_config.ui_font_size, saved_config.buffer_font_size]);
-        
+        atlas.pre_rasterize_ascii(
+            &gpu.queue,
+            &[saved_config.ui_font_size, saved_config.buffer_font_size],
+        );
+
         crate::experiments::startup::record_step("Font Atlas & Texture upload");
 
         // Initialize layout and state
-        let mut ui = UiState::new(&mut atlas, &gpu.queue, saved_config, proxy_clone.clone(), experimental);
+        let mut ui = UiState::new(
+            &mut atlas,
+            &gpu.queue,
+            saved_config,
+            proxy_clone.clone(),
+            experimental,
+        );
         ui.active_device_name = gpu.device_name.clone();
         crate::experiments::startup::record_step("UI State Initialization");
 
@@ -143,11 +161,16 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
         let _ = proxy_clone.send_event(());
     });
 
-    let mut state = if let Some((mut restored_tabs, active_tab_idx)) = autosave::load_session_and_restore_buffers() {
+    let mut state = if let Some((mut restored_tabs, active_tab_idx)) =
+        autosave::load_session_and_restore_buffers()
+    {
         if let Some(ref path) = file_path {
             let abs_path = crate::editor::get_absolute_path(path);
             let position = restored_tabs.iter().position(|t| {
-                t.path.as_ref().map(|tp| crate::editor::get_absolute_path(tp)) == Some(abs_path.clone())
+                t.path
+                    .as_ref()
+                    .map(|tp| crate::editor::get_absolute_path(tp))
+                    == Some(abs_path.clone())
             });
             let final_active_idx = if let Some(idx) = position {
                 idx
@@ -182,7 +205,11 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
             let save_path = if let Some(ref path) = file_path {
                 if !path.starts_with("diagnostics://") {
                     if let Err(e) = buffer.load_file(path) {
-                        log::warn!("Failed to load file '{}': {}. Starting with empty buffer.", path, e);
+                        log::warn!(
+                            "Failed to load file '{}': {}. Starting with empty buffer.",
+                            path,
+                            e
+                        );
                     }
                 }
                 if path.starts_with("diagnostics://") {
@@ -246,21 +273,23 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
 
     let (watcher_tx, watcher_rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
     let proxy_for_watcher = event_loop.create_proxy();
-    
+
     // Spawn file watcher setup in a background thread to prevent disk/kernel API blocking the main thread
-    let (watcher_keepalive_tx, watcher_keepalive_rx) = std::sync::mpsc::channel::<Option<notify::RecommendedWatcher>>();
+    let (watcher_keepalive_tx, watcher_keepalive_rx) =
+        std::sync::mpsc::channel::<Option<notify::RecommendedWatcher>>();
     std::thread::spawn(move || {
-        let mut watcher = match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            if watcher_tx.send(res).is_ok() {
-                let _ = proxy_for_watcher.send_event(());
-            }
-        }) {
-            Ok(w) => Some(w),
-            Err(e) => {
-                log::warn!("Failed to initialize file watcher: {:?}", e);
-                None
-            }
-        };
+        let mut watcher =
+            match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                if watcher_tx.send(res).is_ok() {
+                    let _ = proxy_for_watcher.send_event(());
+                }
+            }) {
+                Ok(w) => Some(w),
+                Err(e) => {
+                    log::warn!("Failed to initialize file watcher: {:?}", e);
+                    None
+                }
+            };
 
         if let Some(ref mut w) = watcher {
             use notify::Watcher;
@@ -619,7 +648,7 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
                 if !first_frame_rendered && gpu.is_some() {
                     window.request_redraw();
                 }
-                
+
                 if gpu.is_some() && ui.is_some() && atlas.is_some() {
                     let ui_ref = ui.as_mut().unwrap();
 
@@ -655,7 +684,7 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
                             for p in event.paths {
                                 let normalized = crate::editor::normalize_path(&p);
                                 let abs_str = normalized.to_string_lossy().to_string();
-                                
+
                                 for tab in &mut state.tabs {
                                     if let Some(ref tab_path) = tab.path {
                                         if tab_path.starts_with("diagnostics://") {
@@ -666,13 +695,13 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
                                             if let Ok(content) = std::fs::read_to_string(&abs_str) {
                                                 let disk_lines: Vec<&str> = content.lines().collect();
                                                 let tab_lines = tab.buffer.lines();
-                                                
+
                                                 let is_different = if disk_lines.len() != tab_lines.len() {
                                                     true
                                                 } else {
                                                     disk_lines.iter().zip(tab_lines.iter()).any(|(d, t)| d != t)
                                                 };
-                                                
+
                                                 if is_different {
                                                     if !tab.buffer.is_modified {
                                                         if let Err(e) = tab.buffer.load_file(&abs_str) {
@@ -680,14 +709,14 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
                                                         } else {
                                                             tab.buffer.mark_saved();
                                                             ui_ref.external_change_warnings.remove(tab_path);
-                                                            
+
                                                             let max_line = tab.buffer.len() - 1;
                                                             tab.cursor.line = tab.cursor.line.min(max_line);
                                                             let max_col = tab.buffer.lines()[tab.cursor.line].chars().count();
                                                             tab.cursor.col = tab.cursor.col.min(max_col);
                                                             tab.cursor.intended_col = tab.cursor.col;
                                                             tab.secondary_cursors.clear();
-                                                            
+
                                                             watcher_updated = true;
                                                         }
                                                     } else {
