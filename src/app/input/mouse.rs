@@ -747,47 +747,7 @@ pub fn handle_cursor_moved(
  
     if let Some(dragged_idx) = state.dragged_tab_idx {
         if state.is_actually_dragging_tab() {
-            let is_inside_tabbar = state.mouse_y >= pane_top && state.mouse_y < pane_top + ui.tabbar_height;
-            if is_inside_tabbar {
-                let tabbar_start_x = sidebar_width;
-                let mut tab_widths = Vec::new();
-                let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
-                let close_reserved = 8.0f32 + tab_close_icon_sz;
-                let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
-                for idx in 0..tab_paths.len() {
-                    let path_opt = &tab_paths[idx];
-                    let file_name = ui.get_tab_name(path_opt.as_deref());
-                    let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
-                    let dot_reserved = 18.0f32;
-                    let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
-                    tab_widths.push(tab_w);
-                }
-
-                let mut hovered_idx = None;
-                let mut current_tab_x = tabbar_start_x;
-                for idx in 0..state.tabs.len() {
-                    let tab_w = tab_widths[idx];
-                    let draw_x = current_tab_x - state.tab_scroll_x;
-                    let clip_left = draw_x.max(tabbar_start_x);
-                    let clip_right = (draw_x + tab_w).min(w_width);
-                    
-                    if clip_left < clip_right && state.mouse_x >= clip_left && state.mouse_x < clip_right {
-                        hovered_idx = Some(idx);
-                        break;
-                    }
-                    current_tab_x += tab_w;
-                }
-
-                if let Some(h_idx) = hovered_idx {
-                    if h_idx != dragged_idx {
-                        let tab = state.tabs.remove(dragged_idx);
-                        state.tabs.insert(h_idx, tab);
-                        state.dragged_tab_idx = Some(h_idx);
-                        state.active_tab_idx = h_idx;
-                        window.request_redraw();
-                    }
-                }
-            }
+            handle_tab_drag_reorder(ui, state, window, dragged_idx, pane_top, sidebar_width, w_width);
         }
     } else if state.is_dragging_sidebar {
         let new_width = if state.mouse_x < 30.0 { 0.0 } else { state.mouse_x.clamp(50.0, 600.0) };
@@ -836,63 +796,7 @@ pub fn handle_cursor_moved(
     } else {
         ui.sidebar_width = sidebar_width;
         if state.is_dragging_scroll {
-            let active_path = state.tabs[state.active_tab_idx].path.as_deref().unwrap_or("");
-            let is_diagnostics = active_path.starts_with("diagnostics://") || active_path == "search://project";
-     
-            let editor_top = pane_top + ui.tabbar_height + ui.breadcrumb_height;
-            let status_y = pane_bottom.round();
-     
-            let show_horizontal_scrollbar = if is_diagnostics {
-                false
-            } else {
-                let max_line_len = ui.get_max_line_len(&state.tabs[state.active_tab_idx].buffer, Some(active_path), state.tabs[state.active_tab_idx].cursor.line);
-                let max_line_digits = state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3);
-                let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
-                let text_area_x = ui.sidebar_width + gutter_width;
-                let scrollbar_width = ui.scrollbar_width();
-                let minimap_width = ui.minimap_width();
-                let sb_x = w_width - scrollbar_width;
-                let minimap_x = sb_x - minimap_width;
-                let text_viewport_w = (minimap_x - text_area_x).max(10.0);
-                let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
-                max_line_len > visible_cols
-            };
-            let hs_height = if show_horizontal_scrollbar { 14.0 } else { 0.0 };
-            let editor_height = status_y - editor_top - hs_height;
-            let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-     
-            let virtual_len = if active_path == "search://project" {
-                crate::machkit::components::editor::project_search::build_search_render_items(ui).len()
-            } else if active_path.starts_with("diagnostics://") {
-                let mut count = 0;
-                for (file_path, diags) in &ui.lsp_diagnostics_details {
-                    if diags.is_empty() {
-                        continue;
-                    }
-                    let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
-                    for diag in diags {
-                        let start_line = diag.line.saturating_sub(3);
-                        let end_line = if file_lines_len > 0 {
-                            (diag.line + 3).min(file_lines_len - 1)
-                        } else {
-                            diag.line + 3
-                        };
-                        let num_code_lines = end_line - start_line + 1;
-                        count += 1 + num_code_lines + 1; // Header + Code lines + Banner
-                    }
-                }
-                count.max(1)
-            } else {
-                state.tabs[state.active_tab_idx].buffer.len()
-            };
-     
-            let ratio = visible_lines as f32 / virtual_len as f32;
-            let thumb_h = (editor_height * ratio).clamp(20.0_f32.min(editor_height), editor_height);
-            let max_scroll = (virtual_len as isize - visible_lines as isize).max(0) as f32;
-            let relative_y = state.mouse_y - editor_top - state.scroll_drag_offset_y;
-            let scroll_range = editor_height - thumb_h;
-            let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
-            ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+            handle_scroll_drag(ui, state, w_width, pane_top, pane_bottom);
         } else if state.is_dragging_horizontal_scroll {
             let max_line_digits = state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3);
             let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
@@ -940,57 +844,7 @@ pub fn handle_cursor_moved(
             
             ui.scroll_y = clicked_line.saturating_sub(visible_lines / 2).min(max_scroll as usize);
         } else if state.is_dragging {
-            let is_diagnostics = state.tabs[state.active_tab_idx].path.as_deref().map_or(false, |p| p.starts_with("diagnostics://") || p == "search://project");
-            let max_line_digits = if is_diagnostics { 3 } else { state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3) };
-            let gutter_width = if is_diagnostics { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
-            let text_area_x = ui.sidebar_width + gutter_width;
-            let scrollbar_width = ui.scrollbar_width();
-            let minimap_width = if is_diagnostics { 0.0 } else { ui.minimap_width() };
-            let sb_x = w_width - scrollbar_width;
-            let minimap_x = sb_x - minimap_width;
-      
-            let editor_top = pane_top + ui.tabbar_height + ui.breadcrumb_height;
-            let raw_line_idx = if state.mouse_y >= editor_top {
-                ((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y
-            } else {
-                ui.scroll_y
-            };
-     
-            let line_idx = if is_diagnostics {
-                let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
-                if visual_lines.is_empty() {
-                    0
-                } else {
-                    raw_line_idx.min(visual_lines.len() - 1)
-                }
-            } else {
-                raw_line_idx.min(state.tabs[state.active_tab_idx].buffer.len().saturating_sub(1))
-            };
-      
-            let mouse_x_clamped = state.mouse_x.min(minimap_x);
-            let col_idx = if mouse_x_clamped > text_area_x {
-                ((mouse_x_clamped - text_area_x) / ui.buffer_char_width).round() as usize + ui.scroll_x
-            } else {
-                0
-            };
-     
-            let line_chars = if is_diagnostics {
-                let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
-                visual_lines.get(line_idx).map_or(0, |vl| match vl {
-                    crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
-                    crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
-                    crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
-                })
-            } else {
-                state.tabs[state.active_tab_idx].buffer.lines()[line_idx].chars().count()
-            };
-            let col_idx = col_idx.min(line_chars);
-      
-            state.tabs[state.active_tab_idx].cursor.line = line_idx;
-            state.tabs[state.active_tab_idx].cursor.col = col_idx;
-            state.tabs[state.active_tab_idx].cursor.intended_col = col_idx;
-     
-            ui.scroll_to_cursor(&state.tabs[state.active_tab_idx].cursor, state.tabs[state.active_tab_idx].buffer.len(), w_width, size.height as f32);
+            handle_drag_selection(ui, state, pane_top, w_width, size.height as f32);
         }
         ui.sidebar_width = sidebar_original;
     } 
@@ -1008,6 +862,184 @@ pub fn handle_cursor_moved(
     }
 
     update_cursor_icon(window, ui, state);
+}
+
+fn handle_tab_drag_reorder(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &Window,
+    dragged_idx: usize,
+    pane_top: f32,
+    sidebar_width: f32,
+    w_width: f32,
+) {
+    let is_inside_tabbar = state.mouse_y >= pane_top && state.mouse_y < pane_top + ui.tabbar_height;
+    if is_inside_tabbar {
+        let tabbar_start_x = sidebar_width;
+        let mut tab_widths = Vec::new();
+        let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+        let close_reserved = 8.0f32 + tab_close_icon_sz;
+        let tab_paths = state.tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>();
+        for idx in 0..tab_paths.len() {
+            let path_opt = &tab_paths[idx];
+            let file_name = ui.get_tab_name(path_opt.as_deref());
+            let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+            let dot_reserved = 18.0f32;
+            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+            tab_widths.push(tab_w);
+        }
+
+        let mut hovered_idx = None;
+        let mut current_tab_x = tabbar_start_x;
+        for idx in 0..state.tabs.len() {
+            let tab_w = tab_widths[idx];
+            let draw_x = current_tab_x - state.tab_scroll_x;
+            let clip_left = draw_x.max(tabbar_start_x);
+            let clip_right = (draw_x + tab_w).min(w_width);
+            
+            if clip_left < clip_right && state.mouse_x >= clip_left && state.mouse_x < clip_right {
+                hovered_idx = Some(idx);
+                break;
+            }
+            current_tab_x += tab_w;
+        }
+
+        if let Some(h_idx) = hovered_idx {
+            if h_idx != dragged_idx {
+                let tab = state.tabs.remove(dragged_idx);
+                state.tabs.insert(h_idx, tab);
+                state.dragged_tab_idx = Some(h_idx);
+                state.active_tab_idx = h_idx;
+                window.request_redraw();
+            }
+        }
+    }
+}
+
+fn handle_scroll_drag(
+    ui: &mut UiState,
+    state: &mut AppState,
+    w_width: f32,
+    pane_top: f32,
+    pane_bottom: f32,
+) {
+    let active_path = state.tabs[state.active_tab_idx].path.as_deref().unwrap_or("");
+    let is_diagnostics = active_path.starts_with("diagnostics://") || active_path == "search://project";
+
+    let editor_top = pane_top + ui.tabbar_height + ui.breadcrumb_height;
+    let status_y = pane_bottom.round();
+
+    let show_horizontal_scrollbar = if is_diagnostics {
+        false
+    } else {
+        let max_line_len = ui.get_max_line_len(&state.tabs[state.active_tab_idx].buffer, Some(active_path), state.tabs[state.active_tab_idx].cursor.line);
+        let max_line_digits = state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3);
+        let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
+        let text_area_x = ui.sidebar_width + gutter_width;
+        let scrollbar_width = ui.scrollbar_width();
+        let minimap_width = ui.minimap_width();
+        let sb_x = w_width - scrollbar_width;
+        let minimap_x = sb_x - minimap_width;
+        let text_viewport_w = (minimap_x - text_area_x).max(10.0);
+        let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
+        max_line_len > visible_cols
+    };
+    let hs_height = if show_horizontal_scrollbar { 14.0 } else { 0.0 };
+    let editor_height = status_y - editor_top - hs_height;
+    let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
+
+    let virtual_len = if active_path == "search://project" {
+        crate::machkit::components::editor::project_search::build_search_render_items(ui).len()
+    } else if active_path.starts_with("diagnostics://") {
+        let mut count = 0;
+        for (file_path, diags) in &ui.lsp_diagnostics_details {
+            if diags.is_empty() {
+                continue;
+            }
+            let file_lines_len = ui.diagnostics_file_cache.get(file_path).map(|l| l.len()).unwrap_or(0);
+            for diag in diags {
+                let start_line = diag.line.saturating_sub(3);
+                let end_line = if file_lines_len > 0 {
+                    (diag.line + 3).min(file_lines_len - 1)
+                } else {
+                    diag.line + 3
+                };
+                let num_code_lines = end_line - start_line + 1;
+                count += 1 + num_code_lines + 1; // Header + Code lines + Banner
+            }
+        }
+        count.max(1)
+    } else {
+        state.tabs[state.active_tab_idx].buffer.len()
+    };
+
+    let ratio = visible_lines as f32 / virtual_len as f32;
+    let thumb_h = (editor_height * ratio).clamp(20.0_f32.min(editor_height), editor_height);
+    let max_scroll = (virtual_len as isize - visible_lines as isize).max(0) as f32;
+    let relative_y = state.mouse_y - editor_top - state.scroll_drag_offset_y;
+    let scroll_range = editor_height - thumb_h;
+    let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
+    ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+}
+
+fn handle_drag_selection(
+    ui: &mut UiState,
+    state: &mut AppState,
+    pane_top: f32,
+    w_width: f32,
+    window_height: f32,
+) {
+    let is_diagnostics = state.tabs[state.active_tab_idx].path.as_deref().map_or(false, |p| p.starts_with("diagnostics://") || p == "search://project");
+    let max_line_digits = if is_diagnostics { 3 } else { state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3) };
+    let gutter_width = if is_diagnostics { 0.0 } else { (max_line_digits as f32 + 2.0) * ui.buffer_char_width };
+    let text_area_x = ui.sidebar_width + gutter_width;
+    let scrollbar_width = ui.scrollbar_width();
+    let minimap_width = if is_diagnostics { 0.0 } else { ui.minimap_width() };
+    let sb_x = w_width - scrollbar_width;
+    let minimap_x = sb_x - minimap_width;
+
+    let editor_top = pane_top + ui.tabbar_height + ui.breadcrumb_height;
+    let raw_line_idx = if state.mouse_y >= editor_top {
+        ((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y
+    } else {
+        ui.scroll_y
+    };
+
+    let line_idx = if is_diagnostics {
+        let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
+        if visual_lines.is_empty() {
+            0
+        } else {
+            raw_line_idx.min(visual_lines.len() - 1)
+        }
+    } else {
+        raw_line_idx.min(state.tabs[state.active_tab_idx].buffer.len().saturating_sub(1))
+    };
+
+    let mouse_x_clamped = state.mouse_x.min(minimap_x);
+    let col_idx = if mouse_x_clamped > text_area_x {
+        ((mouse_x_clamped - text_area_x) / ui.buffer_char_width).round() as usize + ui.scroll_x
+    } else {
+        0
+    };
+
+    let line_chars = if is_diagnostics {
+        let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
+        visual_lines.get(line_idx).map_or(0, |vl| match vl {
+            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => line_content.chars().count(),
+            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { path, .. } => path.chars().count() + 10,
+            crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => diag.message.chars().count() + 10,
+        })
+    } else {
+        state.tabs[state.active_tab_idx].buffer.lines()[line_idx].chars().count()
+    };
+    let col_idx = col_idx.min(line_chars);
+
+    state.tabs[state.active_tab_idx].cursor.line = line_idx;
+    state.tabs[state.active_tab_idx].cursor.col = col_idx;
+    state.tabs[state.active_tab_idx].cursor.intended_col = col_idx;
+
+    ui.scroll_to_cursor(&state.tabs[state.active_tab_idx].cursor, state.tabs[state.active_tab_idx].buffer.len(), w_width, window_height);
 }
 
 struct SidebarGuard {
