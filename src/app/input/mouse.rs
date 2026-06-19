@@ -34,13 +34,14 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
             // Calculate left side (diagnostics)
             let mut pen_x = 10.0;
             if ui.config.show_git_branch
-                && let Some(ref branch) = ui.git_branch {
-                    let icon_sz = (ui.ui_font_size * 0.9).round().max(12.0);
-                    pen_x += icon_sz + 4.0;
-                    let branch_len = branch.chars().count() as f32;
-                    pen_x += branch_len * ui.ui_char_width;
-                    pen_x += 15.0;
-                }
+                && let Some(ref branch) = ui.git_branch
+            {
+                let icon_sz = (ui.ui_font_size * 0.9).round().max(12.0);
+                pen_x += icon_sz + 4.0;
+                let branch_len = branch.chars().count() as f32;
+                pen_x += branch_len * ui.ui_char_width;
+                pen_x += 15.0;
+            }
             let mut err_count = 0;
             let mut warn_count = 0;
             for (e, w) in ui.lsp_diagnostics.values() {
@@ -70,9 +71,10 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                     .unwrap_or("");
                 let mut extension = raw_ext.to_string();
                 if let Some(path) = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
-                    && let Some(forced_ext) = ui.forced_languages.get(path) {
-                        extension = forced_ext.clone();
-                    }
+                    && let Some(forced_ext) = ui.forced_languages.get(path)
+                {
+                    extension = forced_ext.clone();
+                }
 
                 let language = ui
                     .languages
@@ -123,7 +125,9 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
 
                 if mouse_x >= lang_left && mouse_x < lang_right {
                     true
-                } else { mouse_x >= enc_left && mouse_x < enc_right }
+                } else {
+                    mouse_x >= enc_left && mouse_x < enc_right
+                }
             }
         }
     } else {
@@ -172,16 +176,15 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
         }
     };
 
-    if !state.inactive_panes.is_empty()
-        && !state.is_split_horizontal {
-            let editor_area_width = size.width as f32 - sidebar_original;
-            let pane_width = editor_area_width / 2.0;
-            if hovered_pane_idx == 0 {
-                w_width = sidebar_original + pane_width;
-            } else {
-                sidebar_width = sidebar_original + pane_width;
-            }
+    if !state.inactive_panes.is_empty() && !state.is_split_horizontal {
+        let editor_area_width = size.width as f32 - sidebar_original;
+        let pane_width = editor_area_width / 2.0;
+        if hovered_pane_idx == 0 {
+            w_width = sidebar_original + pane_width;
+        } else {
+            sidebar_width = sidebar_original + pane_width;
         }
+    }
 
     let (hovered_tabs, hovered_active_tab_idx) = if hovered_pane_idx == state.active_pane_idx {
         (&state.tabs, state.active_tab_idx)
@@ -199,9 +202,10 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
 
     let active_tab = &hovered_tabs[hovered_active_tab_idx.min(hovered_tabs.len() - 1)];
     let buffer = &active_tab.buffer;
-    let is_diagnostics = active_tab.path.as_deref().is_some_and(|p| {
-        p.starts_with("diagnostics://") || p == "search://project"
-    });
+    let is_diagnostics = active_tab
+        .path
+        .as_deref()
+        .is_some_and(|p| p.starts_with("diagnostics://") || p == "search://project");
     let max_line_digits = buffer.len().to_string().len().max(3);
     let gutter_width = if is_diagnostics {
         0.0
@@ -1048,13 +1052,14 @@ fn handle_tab_drag_reorder(
         }
 
         if let Some(h_idx) = hovered_idx
-            && h_idx != dragged_idx {
-                let tab = state.tabs.remove(dragged_idx);
-                state.tabs.insert(h_idx, tab);
-                state.dragged_tab_idx = Some(h_idx);
-                state.active_tab_idx = h_idx;
-                window.request_redraw();
-            }
+            && h_idx != dragged_idx
+        {
+            let tab = state.tabs.remove(dragged_idx);
+            state.tabs.insert(h_idx, tab);
+            state.dragged_tab_idx = Some(h_idx);
+            state.active_tab_idx = h_idx;
+            window.request_redraw();
+        }
     }
 }
 
@@ -1155,9 +1160,7 @@ fn handle_drag_selection(
     let is_diagnostics = state.tabs[state.active_tab_idx]
         .path
         .as_deref()
-        .is_some_and(|p| {
-            p.starts_with("diagnostics://") || p == "search://project"
-        });
+        .is_some_and(|p| p.starts_with("diagnostics://") || p == "search://project");
     let max_line_digits = if is_diagnostics {
         3
     } else {
@@ -1299,52 +1302,51 @@ pub fn handle_mouse_input(
         size.height as f32 - ui.status_height
     };
 
-    if input_state == ElementState::Pressed
-        && !state.inactive_panes.is_empty() {
-            // Switch focus only if click is inside the editor area and outside sidebar
-            if state.mouse_x >= sidebar_original
-                && state.mouse_y >= main_y
-                && state.mouse_y < editor_bottom_limit
-            {
-                let clicked_pane_idx = if state.is_split_horizontal {
-                    let editor_area_height = editor_bottom_limit - main_y;
-                    let pane_height = (editor_area_height / 2.0).round();
-                    if state.mouse_y < main_y + pane_height {
-                        0
-                    } else {
-                        1
-                    }
+    if input_state == ElementState::Pressed && !state.inactive_panes.is_empty() {
+        // Switch focus only if click is inside the editor area and outside sidebar
+        if state.mouse_x >= sidebar_original
+            && state.mouse_y >= main_y
+            && state.mouse_y < editor_bottom_limit
+        {
+            let clicked_pane_idx = if state.is_split_horizontal {
+                let editor_area_height = editor_bottom_limit - main_y;
+                let pane_height = (editor_area_height / 2.0).round();
+                if state.mouse_y < main_y + pane_height {
+                    0
+                } else {
+                    1
+                }
+            } else {
+                let editor_area_width = size.width as f32 - sidebar_original;
+                let pane_width = editor_area_width / 2.0;
+                let divider_x = sidebar_original + pane_width;
+                if state.mouse_x < divider_x { 0 } else { 1 }
+            };
+            if clicked_pane_idx != state.active_pane_idx {
+                state.switch_pane(clicked_pane_idx);
+                if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+                    ui.scroll_x = active_tab.scroll_x;
+                    ui.scroll_y = active_tab.scroll_y;
+                }
+                // Recalculate w_width and sidebar_width since active_pane_idx changed!
+                if state.is_split_horizontal {
+                    w_width = size.width as f32;
+                    sidebar_width = sidebar_original;
                 } else {
                     let editor_area_width = size.width as f32 - sidebar_original;
                     let pane_width = editor_area_width / 2.0;
-                    let divider_x = sidebar_original + pane_width;
-                    if state.mouse_x < divider_x { 0 } else { 1 }
-                };
-                if clicked_pane_idx != state.active_pane_idx {
-                    state.switch_pane(clicked_pane_idx);
-                    if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
-                        ui.scroll_x = active_tab.scroll_x;
-                        ui.scroll_y = active_tab.scroll_y;
-                    }
-                    // Recalculate w_width and sidebar_width since active_pane_idx changed!
-                    if state.is_split_horizontal {
-                        w_width = size.width as f32;
+                    if state.active_pane_idx == 0 {
+                        w_width = sidebar_original + pane_width;
                         sidebar_width = sidebar_original;
                     } else {
-                        let editor_area_width = size.width as f32 - sidebar_original;
-                        let pane_width = editor_area_width / 2.0;
-                        if state.active_pane_idx == 0 {
-                            w_width = sidebar_original + pane_width;
-                            sidebar_width = sidebar_original;
-                        } else {
-                            sidebar_width = sidebar_original + pane_width;
-                            w_width = size.width as f32;
-                        }
+                        sidebar_width = sidebar_original + pane_width;
+                        w_width = size.width as f32;
                     }
-                    ui.sidebar_width = sidebar_width;
                 }
+                ui.sidebar_width = sidebar_width;
             }
         }
+    }
 
     if !state.inactive_panes.is_empty() && !state.is_split_horizontal {
         let editor_area_width = size.width as f32 - sidebar_original;
@@ -1787,33 +1789,33 @@ pub fn handle_mouse_input(
                                                         == crate::editor::get_absolute_path(
                                                             &path.to_string_lossy(),
                                                         )
-                                                    {
-                                                        if line_idx < tab.buffer.len() {
-                                                            tab.buffer.commit_transaction();
-                                                            tab.buffer.start_transaction();
-                                                            let line_content =
-                                                                &tab.buffer.lines()[line_idx];
-                                                            let new_line = re
-                                                                .replace_all(
-                                                                    line_content,
-                                                                    &ui.global_replace_query,
-                                                                )
-                                                                .to_string();
-                                                            if new_line != *line_content {
-                                                                tab.buffer.delete(
-                                                                    line_idx,
-                                                                    0,
-                                                                    line_idx,
-                                                                    line_content.chars().count(),
-                                                                );
-                                                                tab.buffer
-                                                                    .insert(line_idx, 0, &new_line);
-                                                            }
-                                                            tab.buffer.commit_transaction();
+                                                {
+                                                    if line_idx < tab.buffer.len() {
+                                                        tab.buffer.commit_transaction();
+                                                        tab.buffer.start_transaction();
+                                                        let line_content =
+                                                            &tab.buffer.lines()[line_idx];
+                                                        let new_line = re
+                                                            .replace_all(
+                                                                line_content,
+                                                                &ui.global_replace_query,
+                                                            )
+                                                            .to_string();
+                                                        if new_line != *line_content {
+                                                            tab.buffer.delete(
+                                                                line_idx,
+                                                                0,
+                                                                line_idx,
+                                                                line_content.chars().count(),
+                                                            );
+                                                            tab.buffer
+                                                                .insert(line_idx, 0, &new_line);
                                                         }
-                                                        found_in_tab = true;
-                                                        break;
+                                                        tab.buffer.commit_transaction();
                                                     }
+                                                    found_in_tab = true;
+                                                    break;
+                                                }
                                             }
                                             if !found_in_tab {
                                                 for pane in &mut state.inactive_panes {
@@ -1823,32 +1825,37 @@ pub fn handle_mouse_input(
                                                                 tab_path,
                                                             ) == crate::editor::get_absolute_path(
                                                                 &path.to_string_lossy(),
-                                                            ) {
-                                                                if line_idx < tab.buffer.len() {
-                                                                    tab.buffer.commit_transaction();
-                                                                    tab.buffer.start_transaction();
-                                                                    let line_content = &tab
-                                                                        .buffer
-                                                                        .lines()[line_idx];
-                                                                    let new_line = re.replace_all(line_content, &ui.global_replace_query).to_string();
-                                                                    if new_line != *line_content {
-                                                                        tab.buffer.delete(
-                                                                            line_idx,
-                                                                            0,
-                                                                            line_idx,
-                                                                            line_content
-                                                                                .chars()
-                                                                                .count(),
-                                                                        );
-                                                                        tab.buffer.insert(
-                                                                            line_idx, 0, &new_line,
-                                                                        );
-                                                                    }
-                                                                    tab.buffer.commit_transaction();
+                                                            )
+                                                        {
+                                                            if line_idx < tab.buffer.len() {
+                                                                tab.buffer.commit_transaction();
+                                                                tab.buffer.start_transaction();
+                                                                let line_content =
+                                                                    &tab.buffer.lines()[line_idx];
+                                                                let new_line = re
+                                                                    .replace_all(
+                                                                        line_content,
+                                                                        &ui.global_replace_query,
+                                                                    )
+                                                                    .to_string();
+                                                                if new_line != *line_content {
+                                                                    tab.buffer.delete(
+                                                                        line_idx,
+                                                                        0,
+                                                                        line_idx,
+                                                                        line_content
+                                                                            .chars()
+                                                                            .count(),
+                                                                    );
+                                                                    tab.buffer.insert(
+                                                                        line_idx, 0, &new_line,
+                                                                    );
                                                                 }
-                                                                found_in_tab = true;
-                                                                break;
+                                                                tab.buffer.commit_transaction();
                                                             }
+                                                            found_in_tab = true;
+                                                            break;
+                                                        }
                                                     }
                                                     if found_in_tab {
                                                         break;
@@ -1947,36 +1954,34 @@ pub fn handle_mouse_input(
                                                             tab_path,
                                                         ) == crate::editor::get_absolute_path(
                                                             &path.to_string_lossy(),
-                                                        ) {
-                                                            tab.buffer.commit_transaction();
-                                                            tab.buffer.start_transaction();
-                                                            for line_idx in 0..tab.buffer.len() {
-                                                                let line_content =
-                                                                    &tab.buffer.lines()[line_idx];
-                                                                let new_line = re
-                                                                    .replace_all(
-                                                                        line_content,
-                                                                        &ui.global_replace_query,
-                                                                    )
-                                                                    .to_string();
-                                                                if new_line != *line_content {
-                                                                    tab.buffer.delete(
-                                                                        line_idx,
-                                                                        0,
-                                                                        line_idx,
-                                                                        line_content
-                                                                            .chars()
-                                                                            .count(),
-                                                                    );
-                                                                    tab.buffer.insert(
-                                                                        line_idx, 0, &new_line,
-                                                                    );
-                                                                }
+                                                        )
+                                                    {
+                                                        tab.buffer.commit_transaction();
+                                                        tab.buffer.start_transaction();
+                                                        for line_idx in 0..tab.buffer.len() {
+                                                            let line_content =
+                                                                &tab.buffer.lines()[line_idx];
+                                                            let new_line = re
+                                                                .replace_all(
+                                                                    line_content,
+                                                                    &ui.global_replace_query,
+                                                                )
+                                                                .to_string();
+                                                            if new_line != *line_content {
+                                                                tab.buffer.delete(
+                                                                    line_idx,
+                                                                    0,
+                                                                    line_idx,
+                                                                    line_content.chars().count(),
+                                                                );
+                                                                tab.buffer
+                                                                    .insert(line_idx, 0, &new_line);
                                                             }
-                                                            tab.buffer.commit_transaction();
-                                                            found_in_tab = true;
-                                                            break;
                                                         }
+                                                        tab.buffer.commit_transaction();
+                                                        found_in_tab = true;
+                                                        break;
+                                                    }
                                                 }
                                                 if !found_in_tab {
                                                     for pane in &mut state.inactive_panes {
@@ -2186,7 +2191,8 @@ pub fn handle_mouse_input(
             }
 
             // Check if focus changes
-            state.terminal_focus = ui.show_dock && state.mouse_x >= ui.sidebar_width && state.mouse_y >= dock_start_y;
+            state.terminal_focus =
+                ui.show_dock && state.mouse_x >= ui.sidebar_width && state.mouse_y >= dock_start_y;
 
             // Check if click is on dock resize border
             let on_dock_border = ui.show_dock && (state.mouse_y - dock_start_y).abs() <= 4.0;
@@ -2304,10 +2310,8 @@ pub fn handle_mouse_input(
 
                             let editor_top = pane_top + ui.tabbar_height + ui.breadcrumb_height;
                             let editor_bottom_limit = pane_bottom;
-                            let is_diagnostics = state.tabs[active_tab_idx]
-                                .path
-                                .as_deref()
-                                .is_some_and(|p| {
+                            let is_diagnostics =
+                                state.tabs[active_tab_idx].path.as_deref().is_some_and(|p| {
                                     p.starts_with("diagnostics://") || p == "search://project"
                                 });
                             let active_tab_len = state.tabs[active_tab_idx].buffer.len();
@@ -2438,9 +2442,10 @@ pub fn handle_mouse_input(
                                             editor_top,
                                             text_area_x,
                                             text_viewport_w,
-                                        ) {
-                                            return;
-                                        }
+                                        )
+                                    {
+                                        return;
+                                    }
 
                                     // 2. Check if virtual diagnostics tab item was clicked
                                     if state.tabs[active_tab_idx].path.as_deref()
@@ -2456,9 +2461,10 @@ pub fn handle_mouse_input(
                                             editor_top,
                                             text_area_x,
                                             active_tab_idx,
-                                        ) {
-                                            return;
-                                        }
+                                        )
+                                    {
+                                        return;
+                                    }
 
                                     // Normal click
                                     handle_text_area_cursor_click(
@@ -2533,9 +2539,11 @@ pub fn handle_mouse_input(
 
             if let Some((s_l, s_c, e_l, e_c)) =
                 state.tabs[state.active_tab_idx].cursor.selection_range()
-                && s_l == e_l && s_c == e_c {
-                    state.tabs[state.active_tab_idx].cursor.clear_selection();
-                }
+                && s_l == e_l
+                && s_c == e_c
+            {
+                state.tabs[state.active_tab_idx].cursor.clear_selection();
+            }
         }
         update_cursor_icon(window, ui, state);
         window.request_redraw();
@@ -3041,15 +3049,16 @@ fn handle_project_search_code_click(
         } else if is_last_in_range
             && let Some(pos) = ui.global_search_results.iter().rposition(|(p, l, _)| {
                 p == path && *l >= start_line_of_range && *l <= end_line_of_range
-            }) {
-                let match_line = ui.global_search_results[pos].1;
-                let entry = ui
-                    .global_search_expanded_margins
-                    .entry((path.clone(), match_line))
-                    .or_insert((2, 2));
-                entry.1 += 10;
-                ui.invalidate_search_render_items();
-            }
+            })
+        {
+            let match_line = ui.global_search_results[pos].1;
+            let entry = ui
+                .global_search_expanded_margins
+                .entry((path.clone(), match_line))
+                .or_insert((2, 2));
+            entry.1 += 10;
+            ui.invalidate_search_render_items();
+        }
     } else {
         // Open the file at this line
         if let Some(res_idx) = result_idx {
@@ -3331,23 +3340,25 @@ fn handle_tab_drag_outside_window(
 ) {
     let mut removed = false;
     if let Some(ref path_str) = state.tabs[dragged_idx].path.clone()
-        && !path_str.starts_with("diagnostics://") {
-            if state.tabs[dragged_idx].buffer.is_modified {
-                let _ = state.tabs[dragged_idx].buffer.save_file(path_str);
-            }
-            let inner_pos = window
-                .inner_position()
-                .unwrap_or(winit::dpi::PhysicalPosition::new(0, 0));
-            let global_x = inner_pos.x + state.mouse_x as i32;
-            let global_y = inner_pos.y + state.mouse_y as i32;
-
-            if !crate::app::ipc::try_drop_to_other_window(global_x, global_y, path_str)
-                && let Ok(exe_path) = std::env::current_exe() {
-                    let _ = std::process::Command::new(exe_path).arg(path_str).spawn();
-                }
-            state.tabs.remove(dragged_idx);
-            removed = true;
+        && !path_str.starts_with("diagnostics://")
+    {
+        if state.tabs[dragged_idx].buffer.is_modified {
+            let _ = state.tabs[dragged_idx].buffer.save_file(path_str);
         }
+        let inner_pos = window
+            .inner_position()
+            .unwrap_or(winit::dpi::PhysicalPosition::new(0, 0));
+        let global_x = inner_pos.x + state.mouse_x as i32;
+        let global_y = inner_pos.y + state.mouse_y as i32;
+
+        if !crate::app::ipc::try_drop_to_other_window(global_x, global_y, path_str)
+            && let Ok(exe_path) = std::env::current_exe()
+        {
+            let _ = std::process::Command::new(exe_path).arg(path_str).spawn();
+        }
+        state.tabs.remove(dragged_idx);
+        removed = true;
+    }
 
     if removed {
         collapse_or_restore_empty_pane(ui, state, sidebar_original, size);

@@ -37,7 +37,8 @@ pub fn handle_keyboard_input(
     let alt = state.modifiers.alt_key();
 
     // If terminal is focused, check if key maps to a workspace action first
-    if state.terminal_focus && !state.dock_terminals.is_empty()
+    if state.terminal_focus
+        && !state.dock_terminals.is_empty()
         && let Some(action) = crate::editor::keymap::map_key(
             &ui.keymap,
             &logical_key,
@@ -47,11 +48,12 @@ pub fn handle_keyboard_input(
             alt,
             &["Workspace"],
         )
-            && handle_workspace_action_for_terminal(
-                ui, state, action, window, elwt, gpu, atlas, font_bytes,
-            ) {
-                return;
-            }
+        && handle_workspace_action_for_terminal(
+            ui, state, action, window, elwt, gpu, atlas, font_bytes,
+        )
+    {
+        return;
+    }
 
     // 1. Delegate to terminal input handler if terminal is focused
     if handle_terminal_input(state, window, &logical_key) {
@@ -76,7 +78,8 @@ pub fn handle_keyboard_input(
     };
 
     // Handle typing inside the Search Panel
-    if ui.show_search_panel && ui.search_focused
+    if ui.show_search_panel
+        && ui.search_focused
         && handle_search_panel_input(
             ui,
             state,
@@ -90,9 +93,10 @@ pub fn handle_keyboard_input(
             ctrl,
             shift,
             alt,
-        ) {
-            return;
-        }
+        )
+    {
+        return;
+    }
 
     // Handle typing inside the SidebarInput modal
     if ui.active_modal == Some(crate::machkit::ModalType::SidebarInput) {
@@ -267,10 +271,10 @@ fn handle_search_panel_input(
         shift,
         alt,
         &["Editor", "Workspace"],
-    )
-        && handle_search_panel_action(ui, state, action, window, elwt, gpu, atlas, font_bytes) {
-            return true;
-        }
+    ) && handle_search_panel_action(ui, state, action, window, elwt, gpu, atlas, font_bytes)
+    {
+        return true;
+    }
 
     // Otherwise handle raw input editing
     match logical_key {
@@ -866,33 +870,35 @@ pub fn handle_diagnostics_keyboard(
             shift,
             alt,
             &["Editor", "Workspace"],
-        ) {
-            let is_navigation_action = is_cursor_navigation_action(&action);
-            let is_global_action = is_workspace_global_action(&action);
-            let is_document_action = !is_navigation_action && !is_global_action;
+        )
+    {
+        let is_navigation_action = is_cursor_navigation_action(&action);
+        let is_global_action = is_workspace_global_action(&action);
+        let is_document_action = !is_navigation_action && !is_global_action;
 
-            if is_navigation_action {
-                handle_diagnostics_navigation(ui, state, &action);
-                window.request_redraw();
-                return true;
-            }
-
-            if is_document_action
-                && handle_diagnostics_document_action(
-                    ui,
-                    state,
-                    window,
-                    elwt,
-                    gpu,
-                    atlas,
-                    font_bytes,
-                    logical_key,
-                    physical_key,
-                    &action,
-                ) {
-                    return true;
-                }
+        if is_navigation_action {
+            handle_diagnostics_navigation(ui, state, &action);
+            window.request_redraw();
+            return true;
         }
+
+        if is_document_action
+            && handle_diagnostics_document_action(
+                ui,
+                state,
+                window,
+                elwt,
+                gpu,
+                atlas,
+                font_bytes,
+                logical_key,
+                physical_key,
+                &action,
+            )
+        {
+            return true;
+        }
+    }
     false
 }
 
@@ -1014,11 +1020,13 @@ fn handle_diagnostics_document_action(
     if matches!(action, crate::editor::actions::Action::SaveFile) {
         for tab in &mut state.tabs {
             if let Some(ref p) = tab.path
-                && !p.starts_with("diagnostics://") && tab.buffer.is_modified {
-                    let _ = tab.buffer.save_file(p);
-                    tab.buffer.mark_saved();
-                    ui.external_change_warnings.remove(p);
-                }
+                && !p.starts_with("diagnostics://")
+                && tab.buffer.is_modified
+            {
+                let _ = tab.buffer.save_file(p);
+                tab.buffer.mark_saved();
+                ui.external_change_warnings.remove(p);
+            }
         }
         window.request_redraw();
         return true;
@@ -1229,18 +1237,18 @@ pub fn handle_editor_keyboard(
     }
 
     if let (Some(start_path), Some(old_rev)) = (active_path_start, old_revision)
-        && state.active_tab_idx < state.tabs.len() {
-            let active_tab = &state.tabs[state.active_tab_idx];
-            if active_tab.path.as_ref() == Some(&start_path)
-                && old_rev != active_tab.buffer.revision {
-                    let abs_path = crate::editor::get_absolute_path(&start_path);
-                    ui.diagnostics_file_cache
-                        .insert(abs_path.clone(), active_tab.buffer.lines().to_vec());
-                    ui.synced_revisions
-                        .insert(abs_path, active_tab.buffer.revision);
-                    ui.diagnostics_changed = true;
-                }
+        && state.active_tab_idx < state.tabs.len()
+    {
+        let active_tab = &state.tabs[state.active_tab_idx];
+        if active_tab.path.as_ref() == Some(&start_path) && old_rev != active_tab.buffer.revision {
+            let abs_path = crate::editor::get_absolute_path(&start_path);
+            ui.diagnostics_file_cache
+                .insert(abs_path.clone(), active_tab.buffer.lines().to_vec());
+            ui.synced_revisions
+                .insert(abs_path, active_tab.buffer.revision);
+            ui.diagnostics_changed = true;
         }
+    }
 
     let active_tab = &state.tabs[state.active_tab_idx];
     ui.scroll_to_cursor(
@@ -2030,23 +2038,24 @@ fn handle_add_cursor_up(state: &mut AppState) {
         .chain(active_tab.secondary_cursors.iter().cloned())
         .collect();
     if let Some(min_cursor) = cursors.iter().min_by_key(|c| c.line)
-        && min_cursor.line > 0 {
-            let target_line = min_cursor.line - 1;
-            let line_len = active_tab.buffer.lines()[target_line].chars().count();
-            let target_col = min_cursor.intended_col.min(line_len);
-            let new_cursor = Cursor {
-                line: target_line,
-                col: target_col,
-                intended_col: min_cursor.intended_col,
-                selection_anchor: None,
-            };
-            if !cursors
-                .iter()
-                .any(|c| c.line == target_line && c.col == target_col)
-            {
-                active_tab.secondary_cursors.push(new_cursor);
-            }
+        && min_cursor.line > 0
+    {
+        let target_line = min_cursor.line - 1;
+        let line_len = active_tab.buffer.lines()[target_line].chars().count();
+        let target_col = min_cursor.intended_col.min(line_len);
+        let new_cursor = Cursor {
+            line: target_line,
+            col: target_col,
+            intended_col: min_cursor.intended_col,
+            selection_anchor: None,
+        };
+        if !cursors
+            .iter()
+            .any(|c| c.line == target_line && c.col == target_col)
+        {
+            active_tab.secondary_cursors.push(new_cursor);
         }
+    }
 }
 
 fn handle_add_cursor_down(state: &mut AppState) {
@@ -2056,23 +2065,24 @@ fn handle_add_cursor_down(state: &mut AppState) {
         .chain(active_tab.secondary_cursors.iter().cloned())
         .collect();
     if let Some(max_cursor) = cursors.iter().max_by_key(|c| c.line)
-        && max_cursor.line < active_tab.buffer.len() - 1 {
-            let target_line = max_cursor.line + 1;
-            let line_len = active_tab.buffer.lines()[target_line].chars().count();
-            let target_col = max_cursor.intended_col.min(line_len);
-            let new_cursor = Cursor {
-                line: target_line,
-                col: target_col,
-                intended_col: max_cursor.intended_col,
-                selection_anchor: None,
-            };
-            if !cursors
-                .iter()
-                .any(|c| c.line == target_line && c.col == target_col)
-            {
-                active_tab.secondary_cursors.push(new_cursor);
-            }
+        && max_cursor.line < active_tab.buffer.len() - 1
+    {
+        let target_line = max_cursor.line + 1;
+        let line_len = active_tab.buffer.lines()[target_line].chars().count();
+        let target_col = max_cursor.intended_col.min(line_len);
+        let new_cursor = Cursor {
+            line: target_line,
+            col: target_col,
+            intended_col: max_cursor.intended_col,
+            selection_anchor: None,
+        };
+        if !cursors
+            .iter()
+            .any(|c| c.line == target_line && c.col == target_col)
+        {
+            active_tab.secondary_cursors.push(new_cursor);
         }
+    }
 }
 
 fn insert_char_at(s: &str, idx: usize, c: char) -> String {
@@ -2110,9 +2120,10 @@ fn sync_file_changes(
 ) {
     // 1. Update project_search_file_cache
     if let Some(lines) = ui.project_search_file_cache.get_mut(&path)
-        && line_idx < lines.len() {
-            lines[line_idx] = new_line_content.clone();
-        }
+        && line_idx < lines.len()
+    {
+        lines[line_idx] = new_line_content.clone();
+    }
 
     // 2. Update all open tabs/buffers matching this path in active and inactive panes
     let abs_target_path = crate::editor::get_absolute_path(&path.to_string_lossy());
@@ -2121,28 +2132,30 @@ fn sync_file_changes(
     for tab in &mut state.tabs {
         if let Some(ref tab_path) = tab.path
             && crate::editor::get_absolute_path(tab_path) == abs_target_path
-                && line_idx < tab.buffer.len() {
-                    let old_line_len = tab.buffer.lines()[line_idx].chars().count();
-                    tab.buffer.commit_transaction();
-                    tab.buffer.start_transaction();
-                    tab.buffer.delete(line_idx, 0, line_idx, old_line_len);
-                    tab.buffer.insert(line_idx, 0, &new_line_content);
-                    tab.buffer.commit_transaction();
-                }
+            && line_idx < tab.buffer.len()
+        {
+            let old_line_len = tab.buffer.lines()[line_idx].chars().count();
+            tab.buffer.commit_transaction();
+            tab.buffer.start_transaction();
+            tab.buffer.delete(line_idx, 0, line_idx, old_line_len);
+            tab.buffer.insert(line_idx, 0, &new_line_content);
+            tab.buffer.commit_transaction();
+        }
     }
     // Check inactive pane tabs
     for pane in &mut state.inactive_panes {
         for tab in &mut pane.tabs {
             if let Some(ref tab_path) = tab.path
                 && crate::editor::get_absolute_path(tab_path) == abs_target_path
-                    && line_idx < tab.buffer.len() {
-                        let old_line_len = tab.buffer.lines()[line_idx].chars().count();
-                        tab.buffer.commit_transaction();
-                        tab.buffer.start_transaction();
-                        tab.buffer.delete(line_idx, 0, line_idx, old_line_len);
-                        tab.buffer.insert(line_idx, 0, &new_line_content);
-                        tab.buffer.commit_transaction();
-                    }
+                && line_idx < tab.buffer.len()
+            {
+                let old_line_len = tab.buffer.lines()[line_idx].chars().count();
+                tab.buffer.commit_transaction();
+                tab.buffer.start_transaction();
+                tab.buffer.delete(line_idx, 0, line_idx, old_line_len);
+                tab.buffer.insert(line_idx, 0, &new_line_content);
+                tab.buffer.commit_transaction();
+            }
         }
     }
 
@@ -2201,10 +2214,10 @@ pub fn handle_project_search_keyboard(
         shift,
         alt,
         &["Editor", "Workspace"],
-    )
-        && is_workspace_global_action(&action) {
-            return false;
-        }
+    ) && is_workspace_global_action(&action)
+    {
+        return false;
+    }
 
     if ui.global_search_focused {
         handle_project_search_focused_input(

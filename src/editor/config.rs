@@ -167,9 +167,10 @@ impl AppConfig {
         let path = Self::config_path();
         if path.exists()
             && let Ok(content) = fs::read_to_string(&path)
-                && let Ok(config) = serde_json::from_str::<AppConfig>(&content) {
-                    return config;
-                }
+            && let Ok(config) = serde_json::from_str::<AppConfig>(&content)
+        {
+            return config;
+        }
 
         // Return default if file doesn't exist or is corrupted
         let default_config = Self::default();

@@ -10,12 +10,13 @@ pub fn update_git_branch(tx: Sender<String>, proxy: EventLoopProxy<()>) {
             .output();
 
         if let Ok(out) = output
-            && out.status.success() {
-                let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !branch.is_empty() {
-                    let _ = tx.send(branch);
-                    let _ = proxy.send_event(());
-                }
+            && out.status.success()
+        {
+            let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !branch.is_empty() {
+                let _ = tx.send(branch);
+                let _ = proxy.send_event(());
             }
+        }
     });
 }

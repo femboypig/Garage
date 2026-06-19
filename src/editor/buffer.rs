@@ -237,10 +237,11 @@ impl Buffer {
     /// Commit the current group of edits.
     pub fn commit_transaction(&mut self) {
         if let Some(tx) = self.current_transaction.take()
-            && !tx.is_empty() {
-                self.push_undo(tx);
-                self.redo_stack.clear();
-            }
+            && !tx.is_empty()
+        {
+            self.push_undo(tx);
+            self.redo_stack.clear();
+        }
     }
 
     /// Insert text at a specific line and column.
@@ -480,9 +481,10 @@ impl Buffer {
 
     fn push_undo(&mut self, tx: Vec<Action>) {
         if let Some(saved_len) = self.saved_undo_len
-            && self.undo_stack.len() < saved_len {
-                self.saved_undo_len = None;
-            }
+            && self.undo_stack.len() < saved_len
+        {
+            self.saved_undo_len = None;
+        }
         self.undo_stack.push(tx);
         if self.undo_stack.len() > 1000 {
             if let Some(saved_len) = self.saved_undo_len {

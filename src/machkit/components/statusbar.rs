@@ -52,29 +52,30 @@ pub fn draw_statusbar(
 
     // 1. Draw Git Branch Info
     if ui.config.show_git_branch
-        && let Some(ref branch) = ui.git_branch {
-            let icon_sz = (ui.ui_font_size * 1.15).round().max(15.0);
-            let icon_y = (status_y + (ui.status_height - icon_sz) / 2.0).round();
-            ui.push_icon(
-                vertices, indices, atlas, queue, "branch", pen_x, icon_y, text_color, icon_sz,
-            );
-            pen_x += icon_sz + 4.0;
+        && let Some(ref branch) = ui.git_branch
+    {
+        let icon_sz = (ui.ui_font_size * 1.15).round().max(15.0);
+        let icon_y = (status_y + (ui.status_height - icon_sz) / 2.0).round();
+        ui.push_icon(
+            vertices, indices, atlas, queue, "branch", pen_x, icon_y, text_color, icon_sz,
+        );
+        pen_x += icon_sz + 4.0;
 
-            pen_x += ui.push_str(
-                vertices,
-                indices,
-                atlas,
-                queue,
-                branch,
-                pen_x,
-                baseline_y,
-                text_color,
-                ui.ui_font_size,
-                ui.ui_char_width,
-            );
+        pen_x += ui.push_str(
+            vertices,
+            indices,
+            atlas,
+            queue,
+            branch,
+            pen_x,
+            baseline_y,
+            text_color,
+            ui.ui_font_size,
+            ui.ui_char_width,
+        );
 
-            pen_x += 15.0; // spacing after branch name
-        }
+        pen_x += 15.0; // spacing after branch name
+    }
 
     // 2. Draw Diagnostics Indicators
     let mut err_count = 0;
@@ -222,9 +223,10 @@ pub fn draw_statusbar(
         .to_string();
 
     if let Some(path) = active_path
-        && let Some(forced_ext) = ui.forced_languages.get(path) {
-            extension = forced_ext.clone();
-        }
+        && let Some(forced_ext) = ui.forced_languages.get(path)
+    {
+        extension = forced_ext.clone();
+    }
 
     let language = ui
         .languages

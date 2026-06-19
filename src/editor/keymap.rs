@@ -211,9 +211,10 @@ fn normalize_key_name(key: &str) -> String {
 fn get_key_name(logical_key: &Key, physical_key: PhysicalKey, ctrl: bool) -> String {
     if ctrl
         && let PhysicalKey::Code(keycode) = physical_key
-            && let Some(name) = keycode_to_string(keycode) {
-                return name.to_string();
-            }
+        && let Some(name) = keycode_to_string(keycode)
+    {
+        return name.to_string();
+    }
 
     match logical_key {
         Key::Character(text) => text.to_lowercase(),
@@ -236,9 +237,10 @@ fn get_key_name(logical_key: &Key, physical_key: PhysicalKey, ctrl: bool) -> Str
         },
         _ => {
             if let PhysicalKey::Code(keycode) = physical_key
-                && let Some(name) = keycode_to_string(keycode) {
-                    return name.to_string();
-                }
+                && let Some(name) = keycode_to_string(keycode)
+            {
+                return name.to_string();
+            }
             "".to_string()
         }
     }
@@ -404,9 +406,10 @@ impl Keymap {
                     key_str.push_str(&normalized_key);
 
                     if let Some(action_str) = context_bindings.bindings.get(&key_str)
-                        && let Some(action) = parse_action(action_str) {
-                            return Some(action);
-                        }
+                        && let Some(action) = parse_action(action_str)
+                    {
+                        return Some(action);
+                    }
                 }
             }
         }
@@ -436,13 +439,15 @@ pub fn map_key(
 
     if contexts.contains(&"Editor")
         && let Key::Character(text) = logical_key
-            && !ctrl && !alt {
-                let text_str = text.to_string();
-                let has_non_control = text_str.chars().any(|c| !c.is_control());
-                if has_non_control {
-                    return Some(Action::InsertChar(text_str));
-                }
-            }
+        && !ctrl
+        && !alt
+    {
+        let text_str = text.to_string();
+        let has_non_control = text_str.chars().any(|c| !c.is_control());
+        if has_non_control {
+            return Some(Action::InsertChar(text_str));
+        }
+    }
 
     None
 }
