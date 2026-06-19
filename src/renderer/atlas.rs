@@ -184,6 +184,14 @@ impl FontAtlas {
         })
     }
 
+    pub fn pre_rasterize_ascii(&mut self, queue: &wgpu::Queue, sizes: &[f32]) {
+        for &size in sizes {
+            for c in 32..=126 {
+                let _ = self.get_or_rasterize(queue, c as u8 as char, size);
+            }
+        }
+    }
+
     pub fn clear(&mut self, queue: &wgpu::Queue) {
         self.glyphs.clear();
         self.icons.clear();

@@ -18,8 +18,19 @@ fn main() {
         std::env::set_var("__GL_THREADED_OPTIMIZATIONS", "1");   // Threaded NVIDIA execution
     }
 
-    let file_path = std::env::args().nth(1);
-    if let Err(e) = app::run_editor(file_path) {
+    let mut args = std::env::args().skip(1);
+    let mut file_path = None;
+    let mut experimental = false;
+
+    while let Some(arg) = args.next() {
+        if arg == "--experimental" || arg == "-experimental" {
+            experimental = true;
+        } else if file_path.is_none() {
+            file_path = Some(arg);
+        }
+    }
+
+    if let Err(e) = app::run_editor(file_path, experimental) {
         eprintln!("Error running editor: {}", e);
         std::process::exit(1);
     }

@@ -19,7 +19,7 @@ use crate::machkit::{UiState, FrameInput};
 
 use self::state::{AppState, Tab};
 
-pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut builder = env_logger::Builder::from_default_env();
     if std::env::var("RUST_LOG").is_err() {
         builder.filter_level(log::LevelFilter::Warn);
@@ -128,10 +128,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
         // Update bind group to use actual font texture and sampler
         gpu.update_bind_group(&atlas.texture, &atlas.sampler);
+        
+        // Pre-rasterize ASCII characters for UI and buffer font sizes to prevent frame hitching/input lag during rendering
+        atlas.pre_rasterize_ascii(&gpu.queue, &[saved_config.ui_font_size, saved_config.buffer_font_size]);
+        
         crate::experiments::startup::record_step("Font Atlas & Texture upload");
 
         // Initialize layout and state
-        let mut ui = UiState::new(&mut atlas, &gpu.queue, saved_config, proxy_clone.clone());
+        let mut ui = UiState::new(&mut atlas, &gpu.queue, saved_config, proxy_clone.clone(), experimental);
         ui.active_device_name = gpu.device_name.clone();
         crate::experiments::startup::record_step("UI State Initialization");
 
