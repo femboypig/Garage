@@ -99,7 +99,7 @@ impl GpuContext {
             };
 
             let mut adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: wgpu::PowerPreference::LowPower,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             }).await;
@@ -107,7 +107,7 @@ impl GpuContext {
             if adapter.is_none() {
                 log::warn!("try_create (backend={:?}): request_adapter with compatible_surface returned None, retrying without compatible_surface...", backends);
                 adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    power_preference: wgpu::PowerPreference::LowPower,
                     compatible_surface: None,
                     force_fallback_adapter: false,
                 }).await;
@@ -327,7 +327,7 @@ impl GpuContext {
             present_mode,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: 1,
         };
         surface.configure(&device, &config);
 
