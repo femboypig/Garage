@@ -17,9 +17,9 @@ mod unix_impl {
     use super::*;
     use std::fs;
     use std::io::{Read, Write};
+    use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::{Path, PathBuf};
     use std::thread;
-    use std::os::unix::net::{UnixListener, UnixStream};
 
     fn get_secure_runtime_dir() -> PathBuf {
         if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
