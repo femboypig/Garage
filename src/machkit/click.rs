@@ -130,7 +130,7 @@ impl UiState {
                     menu_x = current_x;
                     break;
                 }
-                current_x = current_x + item_w;
+                current_x += item_w;
             }
 
             let item_height = (self.ui_line_height * 1.6).round().max(26.0);
@@ -563,8 +563,8 @@ impl UiState {
             {
                 return action;
             }
-        } else if modal == ModalType::UnsavedChanges {
-            if let Some(action) = self.handle_unsaved_changes_modal_click(
+        } else if modal == ModalType::UnsavedChanges
+            && let Some(action) = self.handle_unsaved_changes_modal_click(
                 mx,
                 my,
                 modal_x,
@@ -575,7 +575,6 @@ impl UiState {
             ) {
                 return action;
             }
-        }
 
         // Check if clicked close button (centered horizontally)
         let btn_w = (12.0 * self.ui_char_width).max(100.0).round();
@@ -766,15 +765,14 @@ impl UiState {
 
             // Check if clicked the diagnostics indicator
             let mut pen_x = 10.0;
-            if self.config.show_git_branch {
-                if let Some(ref branch) = self.git_branch {
+            if self.config.show_git_branch
+                && let Some(ref branch) = self.git_branch {
                     let icon_sz = (self.ui_font_size * 0.9).round().max(12.0);
                     pen_x += icon_sz + 4.0;
                     let branch_len = branch.chars().count() as f32;
                     pen_x += branch_len * self.ui_char_width;
                     pen_x += 15.0;
                 }
-            }
             let mut err_count = 0;
             let mut warn_count = 0;
             for (e, w) in self.lsp_diagnostics.values() {
@@ -801,11 +799,10 @@ impl UiState {
                 .and_then(|ext| ext.to_str())
                 .unwrap_or("");
             let mut extension = raw_ext.to_string();
-            if let Some(path) = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref()) {
-                if let Some(forced_ext) = self.forced_languages.get(path) {
+            if let Some(path) = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
+                && let Some(forced_ext) = self.forced_languages.get(path) {
                     extension = forced_ext.clone();
                 }
-            }
 
             let language = self
                 .languages

@@ -33,15 +33,14 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
         } else {
             // Calculate left side (diagnostics)
             let mut pen_x = 10.0;
-            if ui.config.show_git_branch {
-                if let Some(ref branch) = ui.git_branch {
+            if ui.config.show_git_branch
+                && let Some(ref branch) = ui.git_branch {
                     let icon_sz = (ui.ui_font_size * 0.9).round().max(12.0);
                     pen_x += icon_sz + 4.0;
                     let branch_len = branch.chars().count() as f32;
                     pen_x += branch_len * ui.ui_char_width;
                     pen_x += 15.0;
                 }
-            }
             let mut err_count = 0;
             let mut warn_count = 0;
             for (e, w) in ui.lsp_diagnostics.values() {
@@ -70,11 +69,10 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                     .and_then(|ext| ext.to_str())
                     .unwrap_or("");
                 let mut extension = raw_ext.to_string();
-                if let Some(path) = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref()) {
-                    if let Some(forced_ext) = ui.forced_languages.get(path) {
+                if let Some(path) = tab_paths.get(active_tab_idx).and_then(|p| p.as_ref())
+                    && let Some(forced_ext) = ui.forced_languages.get(path) {
                         extension = forced_ext.clone();
                     }
-                }
 
                 let language = ui
                     .languages
@@ -125,11 +123,7 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
 
                 if mouse_x >= lang_left && mouse_x < lang_right {
                     true
-                } else if mouse_x >= enc_left && mouse_x < enc_right {
-                    true
-                } else {
-                    false
-                }
+                } else { mouse_x >= enc_left && mouse_x < enc_right }
             }
         }
     } else {
@@ -178,8 +172,8 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
         }
     };
 
-    if !state.inactive_panes.is_empty() {
-        if !state.is_split_horizontal {
+    if !state.inactive_panes.is_empty()
+        && !state.is_split_horizontal {
             let editor_area_width = size.width as f32 - sidebar_original;
             let pane_width = editor_area_width / 2.0;
             if hovered_pane_idx == 0 {
@@ -188,7 +182,6 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                 sidebar_width = sidebar_original + pane_width;
             }
         }
-    }
 
     let (hovered_tabs, hovered_active_tab_idx) = if hovered_pane_idx == state.active_pane_idx {
         (&state.tabs, state.active_tab_idx)
@@ -206,7 +199,7 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
 
     let active_tab = &hovered_tabs[hovered_active_tab_idx.min(hovered_tabs.len() - 1)];
     let buffer = &active_tab.buffer;
-    let is_diagnostics = active_tab.path.as_deref().map_or(false, |p| {
+    let is_diagnostics = active_tab.path.as_deref().is_some_and(|p| {
         p.starts_with("diagnostics://") || p == "search://project"
     });
     let max_line_digits = buffer.len().to_string().len().max(3);
@@ -1054,15 +1047,14 @@ fn handle_tab_drag_reorder(
             current_tab_x += tab_w;
         }
 
-        if let Some(h_idx) = hovered_idx {
-            if h_idx != dragged_idx {
+        if let Some(h_idx) = hovered_idx
+            && h_idx != dragged_idx {
                 let tab = state.tabs.remove(dragged_idx);
                 state.tabs.insert(h_idx, tab);
                 state.dragged_tab_idx = Some(h_idx);
                 state.active_tab_idx = h_idx;
                 window.request_redraw();
             }
-        }
     }
 }
 
@@ -1163,7 +1155,7 @@ fn handle_drag_selection(
     let is_diagnostics = state.tabs[state.active_tab_idx]
         .path
         .as_deref()
-        .map_or(false, |p| {
+        .is_some_and(|p| {
             p.starts_with("diagnostics://") || p == "search://project"
         });
     let max_line_digits = if is_diagnostics {
@@ -1307,8 +1299,8 @@ pub fn handle_mouse_input(
         size.height as f32 - ui.status_height
     };
 
-    if input_state == ElementState::Pressed {
-        if !state.inactive_panes.is_empty() {
+    if input_state == ElementState::Pressed
+        && !state.inactive_panes.is_empty() {
             // Switch focus only if click is inside the editor area and outside sidebar
             if state.mouse_x >= sidebar_original
                 && state.mouse_y >= main_y
@@ -1353,7 +1345,6 @@ pub fn handle_mouse_input(
                 }
             }
         }
-    }
 
     if !state.inactive_panes.is_empty() && !state.is_split_horizontal {
         let editor_area_width = size.width as f32 - sidebar_original;
@@ -1791,8 +1782,8 @@ pub fn handle_mouse_input(
                                         if let Ok(re) = builder.build() {
                                             let mut found_in_tab = false;
                                             for tab in &mut state.tabs {
-                                                if let Some(ref tab_path) = tab.path {
-                                                    if crate::editor::get_absolute_path(tab_path)
+                                                if let Some(ref tab_path) = tab.path
+                                                    && crate::editor::get_absolute_path(tab_path)
                                                         == crate::editor::get_absolute_path(
                                                             &path.to_string_lossy(),
                                                         )
@@ -1823,13 +1814,12 @@ pub fn handle_mouse_input(
                                                         found_in_tab = true;
                                                         break;
                                                     }
-                                                }
                                             }
                                             if !found_in_tab {
                                                 for pane in &mut state.inactive_panes {
                                                     for tab in &mut pane.tabs {
-                                                        if let Some(ref tab_path) = tab.path {
-                                                            if crate::editor::get_absolute_path(
+                                                        if let Some(ref tab_path) = tab.path
+                                                            && crate::editor::get_absolute_path(
                                                                 tab_path,
                                                             ) == crate::editor::get_absolute_path(
                                                                 &path.to_string_lossy(),
@@ -1859,7 +1849,6 @@ pub fn handle_mouse_input(
                                                                 found_in_tab = true;
                                                                 break;
                                                             }
-                                                        }
                                                     }
                                                     if found_in_tab {
                                                         break;
@@ -1953,8 +1942,8 @@ pub fn handle_mouse_input(
                                             for path in files_to_process {
                                                 let mut found_in_tab = false;
                                                 for tab in &mut state.tabs {
-                                                    if let Some(ref tab_path) = tab.path {
-                                                        if crate::editor::get_absolute_path(
+                                                    if let Some(ref tab_path) = tab.path
+                                                        && crate::editor::get_absolute_path(
                                                             tab_path,
                                                         ) == crate::editor::get_absolute_path(
                                                             &path.to_string_lossy(),
@@ -1988,13 +1977,12 @@ pub fn handle_mouse_input(
                                                             found_in_tab = true;
                                                             break;
                                                         }
-                                                    }
                                                 }
                                                 if !found_in_tab {
                                                     for pane in &mut state.inactive_panes {
                                                         for tab in &mut pane.tabs {
-                                                            if let Some(ref tab_path) = tab.path {
-                                                                if crate::editor::get_absolute_path(tab_path) == crate::editor::get_absolute_path(&path.to_string_lossy()) {
+                                                            if let Some(ref tab_path) = tab.path
+                                                                && crate::editor::get_absolute_path(tab_path) == crate::editor::get_absolute_path(&path.to_string_lossy()) {
                                                                     tab.buffer.commit_transaction();
                                                                     tab.buffer.start_transaction();
                                                                     for line_idx in 0..tab.buffer.len() {
@@ -2009,7 +1997,6 @@ pub fn handle_mouse_input(
                                                                     found_in_tab = true;
                                                                     break;
                                                                 }
-                                                            }
                                                         }
                                                         if found_in_tab {
                                                             break;
@@ -2199,11 +2186,7 @@ pub fn handle_mouse_input(
             }
 
             // Check if focus changes
-            if ui.show_dock && state.mouse_x >= ui.sidebar_width && state.mouse_y >= dock_start_y {
-                state.terminal_focus = true;
-            } else {
-                state.terminal_focus = false;
-            }
+            state.terminal_focus = ui.show_dock && state.mouse_x >= ui.sidebar_width && state.mouse_y >= dock_start_y;
 
             // Check if click is on dock resize border
             let on_dock_border = ui.show_dock && (state.mouse_y - dock_start_y).abs() <= 4.0;
@@ -2324,7 +2307,7 @@ pub fn handle_mouse_input(
                             let is_diagnostics = state.tabs[active_tab_idx]
                                 .path
                                 .as_deref()
-                                .map_or(false, |p| {
+                                .is_some_and(|p| {
                                     p.starts_with("diagnostics://") || p == "search://project"
                                 });
                             let active_tab_len = state.tabs[active_tab_idx].buffer.len();
@@ -2444,8 +2427,7 @@ pub fn handle_mouse_input(
                                 {
                                     if state.tabs[active_tab_idx].path.as_deref()
                                         == Some("search://project")
-                                    {
-                                        if handle_project_search_click(
+                                        && handle_project_search_click(
                                             ui,
                                             state,
                                             window,
@@ -2459,13 +2441,11 @@ pub fn handle_mouse_input(
                                         ) {
                                             return;
                                         }
-                                    }
 
                                     // 2. Check if virtual diagnostics tab item was clicked
                                     if state.tabs[active_tab_idx].path.as_deref()
                                         == Some("diagnostics://project")
-                                    {
-                                        if handle_diagnostics_click(
+                                        && handle_diagnostics_click(
                                             ui,
                                             state,
                                             window,
@@ -2479,7 +2459,6 @@ pub fn handle_mouse_input(
                                         ) {
                                             return;
                                         }
-                                    }
 
                                     // Normal click
                                     handle_text_area_cursor_click(
@@ -2554,11 +2533,9 @@ pub fn handle_mouse_input(
 
             if let Some((s_l, s_c, e_l, e_c)) =
                 state.tabs[state.active_tab_idx].cursor.selection_range()
-            {
-                if s_l == e_l && s_c == e_c {
+                && s_l == e_l && s_c == e_c {
                     state.tabs[state.active_tab_idx].cursor.clear_selection();
                 }
-            }
         }
         update_cursor_icon(window, ui, state);
         window.request_redraw();
@@ -3061,8 +3038,8 @@ fn handle_project_search_code_click(
                 entry.0 += 10;
                 ui.invalidate_search_render_items();
             }
-        } else if is_last_in_range {
-            if let Some(pos) = ui.global_search_results.iter().rposition(|(p, l, _)| {
+        } else if is_last_in_range
+            && let Some(pos) = ui.global_search_results.iter().rposition(|(p, l, _)| {
                 p == path && *l >= start_line_of_range && *l <= end_line_of_range
             }) {
                 let match_line = ui.global_search_results[pos].1;
@@ -3073,7 +3050,6 @@ fn handle_project_search_code_click(
                 entry.1 += 10;
                 ui.invalidate_search_render_items();
             }
-        }
     } else {
         // Open the file at this line
         if let Some(res_idx) = result_idx {
@@ -3265,7 +3241,7 @@ fn handle_tab_release(
     size: winit::dpi::PhysicalSize<u32>,
 ) {
     let drag_start = state.drag_start_pos.take();
-    let was_dragged = drag_start.map_or(false, |(sx, sy)| {
+    let was_dragged = drag_start.is_some_and(|(sx, sy)| {
         let dx = state.mouse_x - sx;
         let dy = state.mouse_y - sy;
         (dx * dx + dy * dy).sqrt() >= 8.0
@@ -3354,8 +3330,8 @@ fn handle_tab_drag_outside_window(
     sidebar_original: f32,
 ) {
     let mut removed = false;
-    if let Some(ref path_str) = state.tabs[dragged_idx].path.clone() {
-        if !path_str.starts_with("diagnostics://") {
+    if let Some(ref path_str) = state.tabs[dragged_idx].path.clone()
+        && !path_str.starts_with("diagnostics://") {
             if state.tabs[dragged_idx].buffer.is_modified {
                 let _ = state.tabs[dragged_idx].buffer.save_file(path_str);
             }
@@ -3365,15 +3341,13 @@ fn handle_tab_drag_outside_window(
             let global_x = inner_pos.x + state.mouse_x as i32;
             let global_y = inner_pos.y + state.mouse_y as i32;
 
-            if !crate::app::ipc::try_drop_to_other_window(global_x, global_y, path_str) {
-                if let Ok(exe_path) = std::env::current_exe() {
+            if !crate::app::ipc::try_drop_to_other_window(global_x, global_y, path_str)
+                && let Ok(exe_path) = std::env::current_exe() {
                     let _ = std::process::Command::new(exe_path).arg(path_str).spawn();
                 }
-            }
             state.tabs.remove(dragged_idx);
             removed = true;
         }
-    }
 
     if removed {
         collapse_or_restore_empty_pane(ui, state, sidebar_original, size);
@@ -3687,7 +3661,7 @@ pub fn handle_mouse_wheel(
     if ui.active_modal == Some(crate::machkit::ModalType::CommandPalette) {
         let scroll_lines = match delta {
             MouseScrollDelta::LineDelta(_, dy) => -dy as isize,
-            MouseScrollDelta::PixelDelta(pos) => (pos.y / 15.0) as isize * -1,
+            MouseScrollDelta::PixelDelta(pos) => -((pos.y / 15.0) as isize),
         };
         let filtered_len = ui.get_filtered_commands().len();
         let max_visible_items = 10;
@@ -3887,7 +3861,7 @@ fn scroll_sidebar(ui: &mut UiState, window: &Window, delta: MouseScrollDelta, ma
     let scroll_lines = match delta {
         MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
         MouseScrollDelta::PixelDelta(pos) => {
-            ((pos.y / (ui.ui_line_height as f64)) * 3.0) as isize * -1
+            -(((pos.y / (ui.ui_line_height as f64)) * 3.0) as isize)
         }
     };
     let total_rows = 1 + ui.visible_nodes.len();
@@ -3914,7 +3888,7 @@ fn scroll_horizontal_buffer(
             } else {
                 pos.y
             };
-            ((val / (ui.buffer_char_width as f64)) * 3.0) as isize * -1
+            -(((val / (ui.buffer_char_width as f64)) * 3.0) as isize)
         }
     };
     let max_line_digits = state.tabs[state.active_tab_idx]
@@ -3956,7 +3930,7 @@ fn scroll_vertical_buffer(
     let scroll_lines = match delta {
         MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
         MouseScrollDelta::PixelDelta(pos) => {
-            ((pos.y / (ui.buffer_line_height as f64)) * 3.0) as isize * -1
+            -(((pos.y / (ui.buffer_line_height as f64)) * 3.0) as isize)
         }
     };
 

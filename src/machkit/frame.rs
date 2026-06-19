@@ -13,9 +13,9 @@ impl UiState {
         cursor_line: usize,
     ) -> usize {
         let mut raw_max = buffer.max_line_len();
-        if self.config.show_git_blame {
-            if let Some(blame_str) = self.get_or_update_blame(active_file_path, cursor_line) {
-                if blame_str != "Loading blame..." && !blame_str.is_empty() {
+        if self.config.show_git_blame
+            && let Some(blame_str) = self.get_or_update_blame(active_file_path, cursor_line)
+                && blame_str != "Loading blame..." && !blame_str.is_empty() {
                     let cursor_line_len = buffer
                         .lines()
                         .get(cursor_line)
@@ -26,8 +26,6 @@ impl UiState {
                         raw_max = cursor_line_len;
                     }
                 }
-            }
-        }
         raw_max
     }
 
@@ -290,8 +288,8 @@ impl UiState {
                     .build();
 
                 for result in walker {
-                    if let Ok(entry) = result {
-                        if entry.file_type().map_or(false, |t| t.is_file()) {
+                    if let Ok(entry) = result
+                        && entry.file_type().is_some_and(|t| t.is_file()) {
                             let path = entry.path().to_path_buf();
                             if let Ok(content) = std::fs::read_to_string(&path) {
                                 let mut has_match = false;
@@ -315,7 +313,6 @@ impl UiState {
                                 }
                             }
                         }
-                    }
                     if results.len() >= 100 {
                         break;
                     }
@@ -662,21 +659,18 @@ impl UiState {
                 self.update_git_branch();
             }
             self.update_git_statuses();
-            if active_tab_idx < tab_paths.len() {
-                if let Some(ref file_path) = tab_paths[active_tab_idx] {
+            if active_tab_idx < tab_paths.len()
+                && let Some(ref file_path) = tab_paths[active_tab_idx] {
                     self.update_git_diff(Some(file_path));
                 }
-            }
             self.last_branch_check = Some(std::time::Instant::now());
         }
 
-        if active_tab_idx < tab_paths.len() {
-            if let Some(ref file_path) = tab_paths[active_tab_idx] {
-                if !self.git_file_blames.contains_key(file_path) {
+        if active_tab_idx < tab_paths.len()
+            && let Some(ref file_path) = tab_paths[active_tab_idx]
+                && !self.git_file_blames.contains_key(file_path) {
                     self.update_git_file_blame(Some(file_path));
                 }
-            }
-        }
         let main_y = self.titlebar_height;
         let main_height = height - self.titlebar_height - self.status_height;
 

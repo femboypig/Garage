@@ -10,6 +10,12 @@ pub struct Input<'a> {
     right_padding: Option<f32>,
 }
 
+impl<'a> Default for Input<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> Input<'a> {
     pub fn new() -> Self {
         Self {

@@ -17,7 +17,7 @@ pub fn update_git_diff(
 ) {
     thread::spawn(move || {
         let output = Command::new("git")
-            .args(&["diff", "--no-ext-diff", "-U0", "--", &file_path])
+            .args(["diff", "--no-ext-diff", "-U0", "--", &file_path])
             .output();
 
         if let Ok(out) = output {
@@ -32,8 +32,7 @@ pub fn update_git_diff(
                         let specs: Vec<&str> = header.split_whitespace().collect();
                         if specs.len() >= 2 {
                             let new_spec = specs[1];
-                            if new_spec.starts_with('+') {
-                                let content = &new_spec[1..];
+                            if let Some(content) = new_spec.strip_prefix('+') {
                                 let subparts: Vec<&str> = content.split(',').collect();
                                 if !subparts.is_empty() {
                                     let line_idx =
@@ -45,8 +44,7 @@ pub fn update_git_diff(
                                     };
 
                                     let old_spec = specs[0];
-                                    let old_count = if old_spec.starts_with('-') {
-                                        let old_content = &old_spec[1..];
+                                    let old_count = if let Some(old_content) = old_spec.strip_prefix('-') {
                                         let old_subparts: Vec<&str> =
                                             old_content.split(',').collect();
                                         if old_subparts.len() >= 2 {

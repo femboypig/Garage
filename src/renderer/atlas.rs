@@ -20,9 +20,9 @@ fn find_nerd_fonts_recursive(dir: &std::path::Path, fonts: &mut Vec<fontdue::Fon
             let path = entry.path();
             if path.is_dir() {
                 find_nerd_fonts_recursive(&path, fonts);
-            } else if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if ext == "ttf" || ext == "otf" {
+            } else if path.is_file()
+                && let Some(ext) = path.extension()
+                    && (ext == "ttf" || ext == "otf") {
                         let filename = path.file_name().unwrap_or_default().to_string_lossy();
                         if filename.contains("Nerd")
                             || filename.contains("NF")
@@ -30,8 +30,8 @@ fn find_nerd_fonts_recursive(dir: &std::path::Path, fonts: &mut Vec<fontdue::Fon
                             || filename.contains("Powerline")
                         {
                             // Avoid adding duplicates (e.g. if we already loaded it or one with the same name)
-                            if let Ok(bytes) = std::fs::read(&path) {
-                                if let Ok(font) = fontdue::Font::from_bytes(
+                            if let Ok(bytes) = std::fs::read(&path)
+                                && let Ok(font) = fontdue::Font::from_bytes(
                                     bytes,
                                     fontdue::FontSettings::default(),
                                 ) {
@@ -44,11 +44,8 @@ fn find_nerd_fonts_recursive(dir: &std::path::Path, fonts: &mut Vec<fontdue::Fon
                                         return;
                                     }
                                 }
-                            }
                         }
                     }
-                }
-            }
         }
     }
 }
@@ -63,12 +60,11 @@ fn load_fallback_nerd_fonts() -> Vec<fontdue::Font> {
     ];
 
     for path in &preferred {
-        if let Ok(bytes) = std::fs::read(path) {
-            if let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
+        if let Ok(bytes) = std::fs::read(path)
+            && let Ok(font) = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
                 log::info!("Loaded preferred fallback font from {}", path);
                 fonts.push(font);
             }
-        }
     }
 
     // Standard system and user font paths to scan recursively
@@ -267,8 +263,8 @@ impl FontAtlas {
         let (metrics, bitmap) = {
             let mut found_fb = None;
             let fb_lock = self.fallback_fonts.lock().ok();
-            if self.font.lookup_glyph_index(c) == 0 {
-                if let Some(ref lock) = fb_lock {
+            if self.font.lookup_glyph_index(c) == 0
+                && let Some(ref lock) = fb_lock {
                     for fb_font in &**lock {
                         if fb_font.lookup_glyph_index(c) != 0 {
                             found_fb = Some(fb_font);
@@ -276,7 +272,6 @@ impl FontAtlas {
                         }
                     }
                 }
-            }
             if let Some(fb) = found_fb {
                 fb.rasterize(c, size)
             } else {

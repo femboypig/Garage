@@ -236,12 +236,11 @@ impl Buffer {
 
     /// Commit the current group of edits.
     pub fn commit_transaction(&mut self) {
-        if let Some(tx) = self.current_transaction.take() {
-            if !tx.is_empty() {
+        if let Some(tx) = self.current_transaction.take()
+            && !tx.is_empty() {
                 self.push_undo(tx);
                 self.redo_stack.clear();
             }
-        }
     }
 
     /// Insert text at a specific line and column.
@@ -407,7 +406,7 @@ impl Buffer {
                         let end_col = if lines_count == 1 {
                             col + text.chars().count()
                         } else {
-                            text.split('\n').last().unwrap().chars().count()
+                            text.split('\n').next_back().unwrap().chars().count()
                         };
                         self.delete_raw(*line, *col, end_line, end_col);
                         redo_tx.push(Action::Delete {
@@ -450,7 +449,7 @@ impl Buffer {
                         let end_col = if lines_count == 1 {
                             col + text.chars().count()
                         } else {
-                            text.split('\n').last().unwrap().chars().count()
+                            text.split('\n').next_back().unwrap().chars().count()
                         };
                         self.delete_raw(*line, *col, end_line, end_col);
                         undo_tx.push(Action::Delete {
@@ -480,11 +479,10 @@ impl Buffer {
     }
 
     fn push_undo(&mut self, tx: Vec<Action>) {
-        if let Some(saved_len) = self.saved_undo_len {
-            if self.undo_stack.len() < saved_len {
+        if let Some(saved_len) = self.saved_undo_len
+            && self.undo_stack.len() < saved_len {
                 self.saved_undo_len = None;
             }
-        }
         self.undo_stack.push(tx);
         if self.undo_stack.len() > 1000 {
             if let Some(saved_len) = self.saved_undo_len {

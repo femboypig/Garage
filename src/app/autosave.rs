@@ -62,11 +62,10 @@ pub fn save_session_and_dirty_buffers(state: &AppState) {
 
     // Save dirty buffers
     for (i, tab) in state.tabs.iter().enumerate() {
-        if let Some(ref path) = tab.path {
-            if path.starts_with("diagnostics://") {
+        if let Some(ref path) = tab.path
+            && path.starts_with("diagnostics://") {
                 continue;
             }
-        }
         let autosave_file = get_autosave_path(tab.path.as_deref(), i);
         if tab.buffer.is_modified {
             let content = tab.buffer.lines().join("\n");
@@ -81,11 +80,10 @@ pub fn save_session_and_dirty_buffers(state: &AppState) {
     // Save session
     let mut tab_sessions = Vec::new();
     for tab in &state.tabs {
-        if let Some(ref path) = tab.path {
-            if path.starts_with("diagnostics://") {
+        if let Some(ref path) = tab.path
+            && path.starts_with("diagnostics://") {
                 continue;
             }
-        }
         tab_sessions.push(TabSession {
             path: tab.path.clone(),
             cursor: tab.cursor,
@@ -136,13 +134,12 @@ pub fn load_session_and_restore_buffers() -> Option<(Vec<Tab>, usize)> {
 
         let autosave_file = get_autosave_path(ts.path.as_deref(), i);
         let mut is_modified = false;
-        if autosave_file.exists() {
-            if let Ok(autosave_content) = fs::read_to_string(&autosave_file) {
+        if autosave_file.exists()
+            && let Ok(autosave_content) = fs::read_to_string(&autosave_file) {
                 buffer = Buffer::from_text(&autosave_content);
                 is_modified = true;
                 load_success = true;
             }
-        }
 
         if ts.path.is_none() && !autosave_file.exists() {
             load_success = true;

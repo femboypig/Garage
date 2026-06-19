@@ -44,7 +44,7 @@ pub fn draw_dropdown(
             menu_x = current_x;
             break;
         }
-        current_x = current_x + item_w;
+        current_x += item_w;
     }
 
     let item_height = (ui.ui_line_height * 1.6).round().max(26.0);

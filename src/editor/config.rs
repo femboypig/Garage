@@ -165,13 +165,11 @@ impl AppConfig {
 
     pub fn load() -> Self {
         let path = Self::config_path();
-        if path.exists() {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(config) = serde_json::from_str::<AppConfig>(&content) {
+        if path.exists()
+            && let Ok(content) = fs::read_to_string(&path)
+                && let Ok(config) = serde_json::from_str::<AppConfig>(&content) {
                     return config;
                 }
-            }
-        }
 
         // Return default if file doesn't exist or is corrupted
         let default_config = Self::default();

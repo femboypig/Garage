@@ -584,8 +584,8 @@ fn draw_selection_and_search_highlights(
     white_uv: [f32; 2],
 ) {
     // Selection Range Highlight
-    if let Some((s_line, s_col, e_line, e_col)) = cursor.selection_range() {
-        if line_idx >= s_line && line_idx <= e_line {
+    if let Some((s_line, s_col, e_line, e_col)) = cursor.selection_range()
+        && line_idx >= s_line && line_idx <= e_line {
             let line_chars_count = buffer.lines()[line_idx].chars().count();
             let col_start = if line_idx == s_line { s_col } else { 0_usize };
             let col_end = if line_idx == e_line {
@@ -618,7 +618,6 @@ fn draw_selection_and_search_highlights(
                 }
             }
         }
-    }
 
     // Search Match Highlights
     if ui.show_search_panel && !ui.search_query.is_empty() {
@@ -905,9 +904,9 @@ pub fn draw_text_area(
         let inline_diag_w = 0.0f32;
 
         // 2. Draw Git Blame inline annotation at the end of the active line
-        if ui.config.show_git_blame && line_idx == cursor.line {
-            if let Some(blame_str) = ui.get_or_update_blame(active_file_path, line_idx) {
-                if blame_str != "Loading blame..." && !blame_str.is_empty() {
+        if ui.config.show_git_blame && line_idx == cursor.line
+            && let Some(blame_str) = ui.get_or_update_blame(active_file_path, line_idx)
+                && blame_str != "Loading blame..." && !blame_str.is_empty() {
                     let annotation_x = pen_x + 30.0 + inline_diag_w;
                     if annotation_x < minimap_x {
                         let max_w = (minimap_x - annotation_x - 10.0).max(0.0);
@@ -942,8 +941,6 @@ pub fn draw_text_area(
                         }
                     }
                 }
-            }
-        }
     }
 
     draw_text_cursors(

@@ -51,8 +51,8 @@ pub fn draw_statusbar(
     let mut pen_x = 10.0;
 
     // 1. Draw Git Branch Info
-    if ui.config.show_git_branch {
-        if let Some(ref branch) = ui.git_branch {
+    if ui.config.show_git_branch
+        && let Some(ref branch) = ui.git_branch {
             let icon_sz = (ui.ui_font_size * 1.15).round().max(15.0);
             let icon_y = (status_y + (ui.status_height - icon_sz) / 2.0).round();
             ui.push_icon(
@@ -75,7 +75,6 @@ pub fn draw_statusbar(
 
             pen_x += 15.0; // spacing after branch name
         }
-    }
 
     // 2. Draw Diagnostics Indicators
     let mut err_count = 0;
@@ -222,11 +221,10 @@ pub fn draw_statusbar(
         .unwrap_or("")
         .to_string();
 
-    if let Some(path) = active_path {
-        if let Some(forced_ext) = ui.forced_languages.get(path) {
+    if let Some(path) = active_path
+        && let Some(forced_ext) = ui.forced_languages.get(path) {
             extension = forced_ext.clone();
         }
-    }
 
     let language = ui
         .languages

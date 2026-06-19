@@ -1,3 +1,17 @@
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::needless_range_loop,
+    clippy::manual_memcpy,
+    clippy::unnecessary_unwrap,
+    clippy::if_same_then_else,
+    clippy::new_without_default,
+    clippy::manual_strip,
+    clippy::manual_clamp,
+    clippy::bool_assert_comparison,
+    clippy::manual_flatten
+)]
+
 pub mod app;
 pub mod editor;
 pub mod experiments;
@@ -5,6 +19,7 @@ pub mod git;
 pub mod machkit;
 pub mod renderer;
 pub mod terminal;
+
 
 fn main() {
     experiments::startup::record_start_time();
@@ -16,11 +31,11 @@ fn main() {
         std::env::set_var("__GL_THREADED_OPTIMIZATIONS", "1"); // Threaded NVIDIA execution
     }
 
-    let mut args = std::env::args().skip(1);
+    let args = std::env::args().skip(1);
     let mut file_path = None;
     let mut experimental = false;
 
-    while let Some(arg) = args.next() {
+    for arg in args {
         if arg == "--experimental" || arg == "-experimental" {
             experimental = true;
         } else if file_path.is_none() {

@@ -364,8 +364,8 @@ pub fn draw_sidebar(
             }
 
             // Draw Git status badge if space permits
-            if let Some(badge) = git_badge {
-                if current_x + 12.0 < max_x {
+            if let Some(badge) = git_badge
+                && current_x + 12.0 < max_x {
                     ui.push_str(
                         vertices,
                         indices,
@@ -379,7 +379,6 @@ pub fn draw_sidebar(
                         ui.ui_char_width * 0.85,
                     );
                 }
-            }
         }
     }
 
