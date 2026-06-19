@@ -1070,24 +1070,7 @@ pub fn handle_mouse_input(
     if button == MouseButton::Right && input_state == ElementState::Pressed {
         ui.active_menu = None;
         ui.sidebar_context_menu = None;
-        let size = window.inner_size();
-        let main_y = ui.titlebar_height;
-        if ui.sidebar_width > 0.0 && state.mouse_x >= 0.0 && state.mouse_x < ui.sidebar_width && state.mouse_y > main_y && state.mouse_y < size.height as f32 - ui.status_height {
-            let tree_y = state.mouse_y - main_y;
-            let row_idx = (tree_y / ui.ui_line_height).floor() as usize;
-            let r = row_idx + ui.sidebar_scroll;
-            
-            let mut target_path = std::path::PathBuf::from(".");
-            let mut is_dir = true;
-            if r >= 1 {
-                let node_idx = r - 1;
-                if node_idx < ui.visible_nodes.len() {
-                    target_path = ui.visible_nodes[node_idx].path.clone();
-                    is_dir = ui.visible_nodes[node_idx].is_dir;
-                }
-            }
-            ui.sidebar_context_menu = Some((state.mouse_x, state.mouse_y, target_path, is_dir));
-            window.request_redraw();
+        if handle_right_click_sidebar(ui, state, window) {
             return;
         }
     }
@@ -1098,114 +1081,12 @@ pub fn handle_mouse_input(
             ui.search_focused = false;
             ui.global_search_focused = false;
             // Check sidebar context menu click
-            if let Some((menu_x, menu_y, target_path, _is_dir)) = ui.sidebar_context_menu.clone() {
-                ui.sidebar_context_menu = None;
-                let menu_w = 120.0f32;
-                let item_height = ui.ui_line_height;
-                let menu_h = 4.0 * item_height;
-                
-                if state.mouse_x >= menu_x && state.mouse_x < menu_x + menu_w && state.mouse_y >= menu_y && state.mouse_y < menu_y + menu_h {
-                    let idx = ((state.mouse_y - menu_y) / item_height).floor() as usize;
-                    match idx {
-                        0 => { // New File
-                            ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
-                            ui.sidebar_input_type = "new_file".to_string();
-                            ui.sidebar_input_target = target_path;
-                            ui.sidebar_input_value.clear();
-                            window.request_redraw();
-                            return;
-                        }
-                        1 => { // New Folder
-                            ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
-                            ui.sidebar_input_type = "new_folder".to_string();
-                            ui.sidebar_input_target = target_path;
-                            ui.sidebar_input_value.clear();
-                            window.request_redraw();
-                            return;
-                        }
-                        2 => { // Rename
-                            ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
-                            ui.sidebar_input_type = "rename".to_string();
-                            ui.sidebar_input_target = target_path.clone();
-                            ui.sidebar_input_value = target_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                            window.request_redraw();
-                            return;
-                        }
-                        3 => { // Delete
-                            if target_path.is_dir() {
-                                let _ = std::fs::remove_dir_all(&target_path);
-                            } else {
-                                let _ = std::fs::remove_file(&target_path);
-                            }
-                            ui.rebuild_tree();
-                            window.request_redraw();
-                            return;
-                        }
-                        _ => {}
-                    }
-                }
-                window.request_redraw();
+            if handle_sidebar_context_menu_click(ui, state, window) {
                 return;
             }
 
             // Check SidebarInput modal click
-            if ui.active_modal == Some(crate::machkit::ModalType::SidebarInput) {
-                let modal_w = 400.0f32;
-                let modal_h = 150.0f32;
-                let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
-                let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
-                
-                let title_y = modal_y + 20.0;
-                let input_y = title_y + ui.ui_line_height + 15.0;
-                let input_h = ui.ui_line_height + 8.0;
-                
-                let btn_w = 80.0f32;
-                let btn_h = 24.0f32;
-                let cancel_x = modal_x + modal_w - 20.0 - btn_w * 2.0 - 10.0;
-                let confirm_x = modal_x + modal_w - 20.0 - btn_w;
-                let btn_y = input_y + input_h + 15.0;
-                
-                if state.mouse_x >= cancel_x && state.mouse_x <= cancel_x + btn_w && state.mouse_y >= btn_y && state.mouse_y <= btn_y + btn_h {
-                    ui.active_modal = None;
-                    window.request_redraw();
-                    return;
-                }
-                
-                if state.mouse_x >= confirm_x && state.mouse_x <= confirm_x + btn_w && state.mouse_y >= btn_y && state.mouse_y <= btn_y + btn_h {
-                    let target = &ui.sidebar_input_target;
-                    let val = &ui.sidebar_input_value;
-                    if !val.is_empty() {
-                        match ui.sidebar_input_type.as_str() {
-                            "new_file" => {
-                                let parent = if target.is_dir() { target.clone() } else { target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")) };
-                                let new_path = parent.join(val);
-                                let _ = std::fs::File::create(new_path);
-                            }
-                            "new_folder" => {
-                                let parent = if target.is_dir() { target.clone() } else { target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")) };
-                                let new_path = parent.join(val);
-                                let _ = std::fs::create_dir_all(new_path);
-                            }
-                            "rename" => {
-                                if let Some(parent) = target.parent() {
-                                    let new_path = parent.join(val);
-                                    let _ = std::fs::rename(target, new_path);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    ui.active_modal = None;
-                    ui.rebuild_tree();
-                    window.request_redraw();
-                    return;
-                }
-                
-                let clicked_outside = state.mouse_x < modal_x || state.mouse_x > modal_x + modal_w || state.mouse_y < modal_y || state.mouse_y > modal_y + modal_h;
-                if clicked_outside {
-                    ui.active_modal = None;
-                    window.request_redraw();
-                }
+            if handle_sidebar_input_modal_click(ui, state, window, size) {
                 return;
             }
 
@@ -1989,295 +1870,30 @@ pub fn handle_mouse_input(
                             };
                             
                             // 1. Check if click is on minimap
-                            if !is_diagnostics && state.mouse_x >= minimap_x && state.mouse_x < sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit {
-                                state.is_dragging_minimap = true;
-                                let total_editor_height = editor_bottom_limit - editor_top;
-                                let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-                                let max_scroll = (active_tab_len as isize - visible_lines as isize).max(0) as f32;
-                                let relative_y = state.mouse_y - editor_top;
-                                
-                                let minimap_line_height = (ui.buffer_font_size * 0.22).round().max(2.0);
-                                let minimap_total_h = active_tab_len as f32 * minimap_line_height;
-                                
-                                let clicked_line = if minimap_total_h > total_editor_height {
-                                    let scroll_ratio = (relative_y / total_editor_height).clamp(0.0, 1.0);
-                                    (scroll_ratio * (active_tab_len - 1) as f32).round() as usize
-                                } else {
-                                    (relative_y / minimap_line_height).floor() as usize
-                                };
-                                let clicked_line = clicked_line.min(active_tab_len - 1);
-                                
-                                let active_tab = &mut state.tabs[active_tab_idx];
-                                active_tab.cursor.line = clicked_line;
-                                let line_chars = active_tab.buffer.lines()[clicked_line].chars().count();
-                                active_tab.cursor.col = active_tab.cursor.col.min(line_chars);
-                                active_tab.cursor.intended_col = active_tab.cursor.col;
-                                
-                                ui.scroll_y = clicked_line.saturating_sub(visible_lines / 2).min(max_scroll as usize);
-                                window.request_redraw();
-                            }
+                            if !is_diagnostics && handle_minimap_click(ui, state, window, editor_top, editor_bottom_limit, editor_height, minimap_x, sb_x, active_tab_idx, active_tab_len) {}
                             // 2. Check if click is on scrollbar
-                            else if state.mouse_x >= sb_x && state.mouse_y >= editor_top && state.mouse_y < editor_bottom_limit && {
-                                let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-                                virtual_len > visible_lines
-                            } {
-                                state.is_dragging_scroll = true;
-                                let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
-                                let ratio = visible_lines as f32 / virtual_len as f32;
-                                let thumb_h = (editor_height * ratio).clamp(20.0_f32.min(editor_height), editor_height);
-                                let max_scroll = (virtual_len as isize - visible_lines as isize).max(0) as f32;
-                                
-                                let scroll_ratio = if max_scroll > 0.0 { ui.scroll_y as f32 / max_scroll } else { 0.0 };
-                                let thumb_y = editor_top + scroll_ratio * (editor_height - thumb_h);
-                                
-                                if state.mouse_y >= thumb_y && state.mouse_y < thumb_y + thumb_h {
-                                    state.scroll_drag_offset_y = state.mouse_y - thumb_y;
-                                } else {
-                                    state.scroll_drag_offset_y = thumb_h / 2.0;
-                                    let relative_y = state.mouse_y - editor_top - state.scroll_drag_offset_y;
-                                    let scroll_range = editor_height - thumb_h;
-                                    let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
-                                    ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
-                                }
-                            }
+                            else if handle_scrollbar_click(ui, state, editor_top, editor_bottom_limit, editor_height, sb_x, virtual_len) {}
                             // 3. Check if click is on horizontal scrollbar
-                            else if show_horizontal_scrollbar && state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_bottom_limit - 14.0 && state.mouse_y < editor_bottom_limit {
-                                state.is_dragging_horizontal_scroll = true;
-                                let active_tab = &mut state.tabs[active_tab_idx];
-                                let max_line_len = ui.get_max_line_len(&active_tab.buffer, active_tab.path.as_deref(), active_tab.cursor.line);
-                                let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
-                                let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
-                                let thumb_w = (text_viewport_w * ratio_x).clamp(20.0_f32.min(text_viewport_w), text_viewport_w);
-                                let max_scroll_x = (max_line_len as isize - visible_cols as isize).max(0) as f32;
-                                
-                                let scroll_ratio_x = if max_scroll_x > 0.0 { ui.scroll_x as f32 / max_scroll_x } else { 0.0 };
-                                let thumb_x = text_area_x + scroll_ratio_x * (text_viewport_w - thumb_w);
-                                
-                                if state.mouse_x >= thumb_x && state.mouse_x < thumb_x + thumb_w {
-                                    state.scroll_drag_offset_x = state.mouse_x - thumb_x;
-                                } else {
-                                    state.scroll_drag_offset_x = thumb_w / 2.0;
-                                    let relative_x = state.mouse_x - text_area_x - state.scroll_drag_offset_x;
-                                    let scroll_range = text_viewport_w - thumb_w;
-                                    let scroll_ratio = if scroll_range > 0.0 { (relative_x / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
-                                    ui.scroll_x = (scroll_ratio * max_scroll_x).round() as usize;
-                                }
-                            } else {
+                            else if show_horizontal_scrollbar && handle_horizontal_scrollbar_click(ui, state, editor_bottom_limit, text_area_x, text_viewport_w, minimap_x, active_tab_idx) {} else {
                                  // Click inside editor area
                                  let bottom_limit = if show_horizontal_scrollbar { editor_bottom_limit - 14.0 } else { editor_bottom_limit };
                                  if state.mouse_x >= text_area_x && state.mouse_x < minimap_x && state.mouse_y >= editor_top && state.mouse_y < bottom_limit {
                                          if state.tabs[active_tab_idx].path.as_deref() == Some("search://project") {
-                                               ui.global_search_focused = true;
-                                               let list_y = editor_top;
-                                               let item_height = ui.buffer_line_height;
-                                               if state.mouse_y >= list_y {
-                                                   let clicked_idx = ((state.mouse_y - list_y) / item_height).floor() as usize + ui.global_search_scroll;
-                                                   
-                                                     let render_items = crate::machkit::components::editor::project_search::build_search_render_items(ui);
-                                                     
-                                                     if clicked_idx < render_items.len() {
-                                                         match &render_items[clicked_idx] {
-                                                             crate::machkit::SearchRenderItem::FileHeader { path } => {
-                                                                 let selected_path = ui.global_search_results.get(ui.global_search_selected).map(|r| &r.0);
-                                                                 let is_file_selected = Some(path) == selected_path;
-                                                                 let row_hover = true;
-                                                                 let show_open_btn = row_hover || is_file_selected;
-
-                                                                let btn_text = "Open File Alt-Enter";
-                                                                let btn_chars = btn_text.chars().count();
-                                                                let btn_w = btn_chars as f32 * ui.ui_char_width + 16.0;
-                                                                let btn_x = text_area_x + text_viewport_w - btn_w - 15.0;
-
-                                                                if show_open_btn && state.mouse_x >= btn_x && state.mouse_x < btn_x + btn_w {
-                                                                    if let Some(pos) = ui.global_search_results.iter().position(|(p, _, _)| p == path) {
-                                                                        let (_, line_idx, _) = &ui.global_search_results[pos];
-                                                                        crate::app::handler::handle_action(
-                                                                            ui, state,
-                                                                            UiAction::OpenFileAt(path.clone(), *line_idx),
-                                                                            window, elwt, gpu, atlas, font_bytes,
-                                                                        );
-                                                                    }
-                                                                } else {
-                                                                    if ui.collapsed_search_files.contains(path) {
-                                                                        ui.collapsed_search_files.remove(path);
-                                                                    } else {
-                                                                        ui.collapsed_search_files.insert(path.clone());
-                                                                    }
-                                                                    ui.invalidate_search_render_items();
-                                                                }
-                                                                window.request_redraw();
-                                                                return;
-                                                            }
-                                                            crate::machkit::SearchRenderItem::CodeLine {
-                                                                path,
-                                                                line_idx,
-                                                                result_idx,
-                                                                is_first_in_range,
-                                                                is_last_in_range,
-                                                                start_line_of_range,
-                                                                end_line_of_range,
-                                                                ..
-                                                            } => {
-                                                                // Check if click is on expand buttons in the gutter
-                                                                if state.mouse_x >= text_area_x && state.mouse_x < text_area_x + 22.0 {
-                                                                    if *is_first_in_range {
-                                                                        if let Some(pos) = ui.global_search_results.iter().position(|(p, l, _)| p == path && *l >= *start_line_of_range && *l <= *end_line_of_range) {
-                                                                            let match_line = ui.global_search_results[pos].1;
-                                                                            let entry = ui.global_search_expanded_margins.entry((path.clone(), match_line)).or_insert((2, 2));
-                                                                            entry.0 += 10;
-                                                                            ui.invalidate_search_render_items();
-                                                                            window.request_redraw();
-                                                                        }
-                                                                    } else if *is_last_in_range {
-                                                                        if let Some(pos) = ui.global_search_results.iter().rposition(|(p, l, _)| p == path && *l >= *start_line_of_range && *l <= *end_line_of_range) {
-                                                                            let match_line = ui.global_search_results[pos].1;
-                                                                            let entry = ui.global_search_expanded_margins.entry((path.clone(), match_line)).or_insert((2, 2));
-                                                                            entry.1 += 10;
-                                                                            ui.invalidate_search_render_items();
-                                                                            window.request_redraw();
-                                                                        }
-                                                                    }
-                                                                } else {
-                                                                    if let Some(res_idx) = result_idx {
-                                                                        ui.global_search_selected = *res_idx;
-                                                                    }
-                                                                    crate::app::handler::handle_action(
-                                                                        ui, state,
-                                                                        UiAction::OpenFileAt(path.clone(), *line_idx),
-                                                                        window, elwt, gpu, atlas, font_bytes,
-                                                                    );
-                                                                    window.request_redraw();
-                                                                }
-                                                                return;
-                                                            }
-                                                            _ => {}
-                                                        }
-                                                    }
-                                                }
-                                                return;
-                                          }
-
-                                       // 2. Check if virtual diagnostics tab item was clicked
-                                       let mut clicked_info = None;
-                                       if state.tabs[active_tab_idx].path.as_deref() == Some("diagnostics://project") {
-                                           let clicked_target = ui.diagnostics_click_targets.iter().find(|t| {
-                                               state.mouse_x >= t.0 && state.mouse_x <= t.2 && state.mouse_y >= t.1 && state.mouse_y <= t.3
-                                           }).cloned();
-                                           if let Some((target_path, target_line, target_col, target_type)) = clicked_target.map(|t| (t.4, t.5, t.6, t.7)) {
-                                               if target_type == "header" {
-                                                   // Check if clicked the toggle arrow / left portion (e.g., mouse_x < text_area_x + 50.0)
-                                                   if state.mouse_x < text_area_x + 50.0 {
-                                                         if ui.collapsed_diagnostics.contains(&target_path) {
-                                                             ui.collapsed_diagnostics.remove(&target_path);
-                                                         } else {
-                                                             ui.collapsed_diagnostics.insert(target_path);
-                                                         }
-                                                         ui.diagnostics_changed = true;
-                                                         window.request_redraw();
-                                                         return;
-                                                   } else {
-                                                       clicked_info = Some((target_path, target_line, target_col));
-                                                   }
-                                               } else if target_type == "code" {
-                                                   // Place virtual cursor in diagnostics view
-                                                   let clicked_line = ((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y;
-                                                   let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
-                                                   if !visual_lines.is_empty() {
-                                                       let clicked_line = clicked_line.min(visual_lines.len() - 1);
-                                                       let code_start_x = text_area_x + 48.0; // gutter_w is 48.0
-                                                       let col_idx = ((state.mouse_x - code_start_x) / ui.buffer_char_width).round() as isize + ui.scroll_x as isize;
-                                                       let col_idx = col_idx.max(0) as usize;
-                                                       
-                                                       let active_tab = &mut state.tabs[active_tab_idx];
-                                                       if let Some(crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. }) = visual_lines.get(clicked_line) {
-                                                           let line_chars = line_content.chars().count();
-                                                           let col_idx = col_idx.min(line_chars);
-                                                           active_tab.cursor.line = clicked_line;
-                                                           active_tab.cursor.col = col_idx;
-                                                           active_tab.cursor.intended_col = col_idx;
-                                                           active_tab.cursor.selection_anchor = Some((clicked_line, col_idx));
-                                                           state.is_dragging = true;
-                                                       }
-                                                   }
-                                                   window.request_redraw();
+                                               if handle_project_search_click(ui, state, window, elwt, gpu, atlas, font_bytes, editor_top, text_area_x, text_viewport_w) {
                                                    return;
                                                }
-                                           }
-                                       }
-                                      if let Some((target_path, target_line, target_col)) = clicked_info {
-                                          // Open the file
-                                          let open_action = crate::machkit::UiAction::OpenFile(std::path::PathBuf::from(target_path));
-                                          crate::app::handler::handle_action(
-                                              ui,
-                                              state,
-                                              open_action,
-                                              window,
-                                              elwt,
-                                              gpu,
-                                              atlas,
-                                              font_bytes,
-                                          );
-                                          
-                                          // Set cursor on new active tab
-                                          let new_active_tab = &mut state.tabs[state.active_tab_idx];
-                                          new_active_tab.cursor.line = target_line;
-                                          new_active_tab.cursor.col = target_col;
-                                          new_active_tab.cursor.intended_col = target_col;
-                                          new_active_tab.cursor.selection_anchor = Some((target_line, target_col));
-                                          ui.scroll_to_cursor(&new_active_tab.cursor, new_active_tab.buffer.len(), size.width as f32, size.height as f32);
-                                          window.request_redraw();
-                                          return;
-                                      }
+                                         }
+
+                                        // 2. Check if virtual diagnostics tab item was clicked
+                                        if state.tabs[active_tab_idx].path.as_deref() == Some("diagnostics://project") {
+                                            if handle_diagnostics_click(ui, state, window, elwt, gpu, atlas, font_bytes, editor_top, text_area_x, active_tab_idx) {
+                                                return;
+                                            }
+                                        }
  
                                      // Normal click
-                                     let active_tab = &mut state.tabs[active_tab_idx];
-                                     active_tab.buffer.commit_transaction();
-                                     state.is_dragging = true;
- 
-                                     let line_idx = ((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y;
-                                     let line_idx = line_idx.min(active_tab.buffer.len() - 1);
- 
-                                     let col_idx = ((state.mouse_x - text_area_x) / ui.buffer_char_width).round() as usize + ui.scroll_x;
-                                     let line_chars = active_tab.buffer.lines()[line_idx].chars().count();
-                                     let col_idx = col_idx.min(line_chars);
- 
-                                     let alt = state.modifiers.alt_key();
-                                     if alt {
-                                         let clicked_pos = (line_idx, col_idx);
-                                         let mut found_idx = None;
-                                         for (idx, cur) in active_tab.secondary_cursors.iter().enumerate() {
-                                             if cur.line == clicked_pos.0 && cur.col == clicked_pos.1 {
-                                                 found_idx = Some(idx);
-                                                 break;
-                                             }
-                                         }
-                                         if let Some(idx) = found_idx {
-                                             active_tab.secondary_cursors.remove(idx);
-                                         } else {
-                                             let mut new_cur = crate::editor::cursor::Cursor::new();
-                                             new_cur.line = line_idx;
-                                             new_cur.col = col_idx;
-                                             new_cur.intended_col = col_idx;
-                                             new_cur.selection_anchor = Some((line_idx, col_idx));
-                                             active_tab.secondary_cursors.push(new_cur);
-                                         }
-                                     } else {
-                                         active_tab.secondary_cursors.clear();
- 
-                                         let extend_selection = state.modifiers.shift_key();
-                                         if extend_selection {
-                                             if active_tab.cursor.selection_anchor.is_none() {
-                                                 active_tab.cursor.selection_anchor = Some((active_tab.cursor.line, active_tab.cursor.col));
-                                             }
-                                         } else {
-                                             active_tab.cursor.selection_anchor = Some((line_idx, col_idx));
-                                         }
- 
-                                         active_tab.cursor.line = line_idx;
-                                         active_tab.cursor.col = col_idx;
-                                         active_tab.cursor.intended_col = col_idx;
-                                     }
- 
+                                     handle_text_area_cursor_click(ui, state, editor_top, text_area_x, active_tab_idx);
+                                     let active_tab = &state.tabs[active_tab_idx];
                                      ui.scroll_to_cursor(&active_tab.cursor, active_tab.buffer.len(), size.width as f32, size.height as f32);
                                  }
                              }
@@ -2313,257 +1929,8 @@ pub fn handle_mouse_input(
                    ui.config.save_in_background();
                }
                
-               if let Some(dragged_idx) = state.dragged_tab_idx.take() {
-                   let drag_start = state.drag_start_pos.take();
-                   let mut was_dragged = false;
-                   if let Some((sx, sy)) = drag_start {
-                       let dx = state.mouse_x - sx;
-                       let dy = state.mouse_y - sy;
-                       if (dx * dx + dy * dy).sqrt() >= 8.0 {
-                           was_dragged = true;
-                       }
-                   }
- 
-                    if was_dragged {
-                        let main_y = ui.titlebar_height;
-                        let sidebar_original = ui.config.sidebar_width;
-                        let mut dock_start_y = size.height as f32 - ui.status_height;
-                        if ui.show_dock {
-                            dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
-                        }
-                        let editor_bottom_limit = if ui.show_dock {
-                            dock_start_y
-                        } else {
-                            size.height as f32 - ui.status_height
-                        };
-
-                        let is_outside = state.mouse_x < 0.0 || state.mouse_x >= size.width as f32 || state.mouse_y < 0.0 || state.mouse_y >= size.height as f32;
-                        if is_outside {
-                            let mut removed = false;
-                            if let Some(ref path_str) = state.tabs[dragged_idx].path {
-                                if !path_str.starts_with("diagnostics://") {
-                                    if state.tabs[dragged_idx].buffer.is_modified {
-                                        let _ = state.tabs[dragged_idx].buffer.save_file(path_str);
-                                    }
-                                    let inner_pos = window.inner_position().unwrap_or(winit::dpi::PhysicalPosition::new(0, 0));
-                                    let global_x = inner_pos.x + state.mouse_x as i32;
-                                    let global_y = inner_pos.y + state.mouse_y as i32;
-                                    
-                                    if !crate::app::ipc::try_drop_to_other_window(global_x, global_y, path_str) {
-                                        if let Ok(exe_path) = std::env::current_exe() {
-                                            let _ = std::process::Command::new(exe_path)
-                                                .arg(path_str)
-                                                .spawn();
-                                        }
-                                    }
-                                    state.tabs.remove(dragged_idx);
-                                    removed = true;
-                                }
-                            }
-                            if removed {
-                                if state.tabs.is_empty() {
-                                    if !state.inactive_panes.is_empty() {
-                                        let target_pane = state.inactive_panes.remove(0);
-                                        state.tabs = target_pane.tabs;
-                                        state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
-                                        state.active_pane_idx = 0;
-                                        state.is_split_horizontal = false;
-                                    } else {
-                                        state.tabs.push(crate::app::state::Tab {
-                                            path: None,
-                                            buffer: crate::editor::buffer::Buffer::new(),
-                                            cursor: crate::editor::cursor::Cursor::new(),
-                                            secondary_cursors: Vec::new(),
-                                            scroll_x: 0,
-                                            scroll_y: 0,
-                                        });
-                                        state.active_tab_idx = 0;
-                                    }
-                                } else {
-                                    state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
-                                }
-                                if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
-                                    ui.scroll_x = active_tab.scroll_x;
-                                    ui.scroll_y = active_tab.scroll_y;
-                                }
-                            }
-                            window.request_redraw();
-                            update_cursor_icon(window, ui, state);
-                            return;
-                        }
-
-                        let editor_area_width = size.width as f32 - sidebar_original;
-                        let pane_width = editor_area_width / 2.0;
-                        
-                        let hovered_pane_idx = if state.inactive_panes.is_empty() {
-                            0
-                        } else {
-                            if state.is_split_horizontal {
-                                let editor_area_height = editor_bottom_limit - main_y;
-                                let pane_height = (editor_area_height / 2.0).round();
-                                if state.mouse_y < main_y + pane_height { 0 } else { 1 }
-                            } else {
-                                if state.mouse_x < sidebar_original + pane_width { 0 } else { 1 }
-                            }
-                        };
-                        
-                        let is_in_tabbar = if !state.inactive_panes.is_empty() && state.is_split_horizontal {
-                            let editor_area_height = editor_bottom_limit - main_y;
-                            let pane_height = (editor_area_height / 2.0).round();
-                            let pane_top = if hovered_pane_idx == 0 { main_y } else { main_y + pane_height };
-                            state.mouse_y >= pane_top && state.mouse_y < pane_top + ui.tabbar_height
-                        } else {
-                            state.mouse_y >= main_y && state.mouse_y < main_y + ui.tabbar_height
-                        };
-                        
-                        if is_in_tabbar {
-                            if hovered_pane_idx != state.active_pane_idx {
-                                // Move tab to the other pane!
-                                let tab_to_move = state.tabs.remove(dragged_idx);
-                                state.inactive_panes[0].tabs.push(tab_to_move);
-                                state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
-                                
-                                // If active pane became empty, collapse the split
-                                if state.tabs.is_empty() {
-                                    let target_pane = state.inactive_panes.remove(0);
-                                    state.tabs = target_pane.tabs;
-                                    state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
-                                    state.active_pane_idx = 0;
-                                    state.is_split_horizontal = false;
-                                    
-                                    let visible_width = size.width as f32 - sidebar_original;
-                                    let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
-                                    state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
-                                } else {
-                                    state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
-                                    let target_pane = 1 - state.active_pane_idx;
-                                    state.switch_pane(target_pane);
-                                    
-                                    let visible_width = if state.is_split_horizontal {
-                                        size.width as f32 - sidebar_original
-                                    } else {
-                                        ((size.width as f32 - sidebar_original) / 2.0).round()
-                                    };
-                                    let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
-                                    state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
-                                }
-                                if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
-                                    ui.scroll_x = active_tab.scroll_x;
-                                    ui.scroll_y = active_tab.scroll_y;
-                                }
-                            }
-                        } else {
-                            if state.inactive_panes.is_empty() {
-                                // Split editor
-                                let tab_to_move = if state.tabs.len() > 1 {
-                                    state.tabs.remove(dragged_idx)
-                                } else {
-                                    state.tabs[dragged_idx].clone()
-                                };
-                                if !state.tabs.is_empty() {
-                                    state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
-                                }
-                                
-                                let editor_area_width = size.width as f32 - sidebar_original;
-                                let editor_area_height = editor_bottom_limit - (main_y + ui.tabbar_height);
-                                
-                                if state.mouse_y < main_y + ui.tabbar_height + editor_area_height * 0.25 {
-                                    // Top Split
-                                    state.is_split_horizontal = true;
-                                    let existing_pane = crate::app::state::Pane {
-                                        tabs: std::mem::take(&mut state.tabs),
-                                        active_tab_idx: state.active_tab_idx,
-                                        tab_scroll_x: state.tab_scroll_x,
-                                    };
-                                    state.inactive_panes.push(existing_pane);
-                                    state.tabs = vec![tab_to_move];
-                                    state.active_tab_idx = 0;
-                                    state.active_pane_idx = 0;
-                                    state.tab_scroll_x = 0.0;
-                                } else if state.mouse_y >= main_y + ui.tabbar_height + editor_area_height * 0.75 {
-                                    // Bottom Split
-                                    state.is_split_horizontal = true;
-                                    state.inactive_panes.push(crate::app::state::Pane {
-                                        tabs: vec![tab_to_move],
-                                        active_tab_idx: 0,
-                                        tab_scroll_x: 0.0,
-                                    });
-                                    state.switch_pane(1);
-                                } else if state.mouse_x < sidebar_original + editor_area_width * 0.5 {
-                                    // Left Split
-                                    state.is_split_horizontal = false;
-                                    let mut existing_pane = crate::app::state::Pane {
-                                        tabs: std::mem::take(&mut state.tabs),
-                                        active_tab_idx: state.active_tab_idx,
-                                        tab_scroll_x: state.tab_scroll_x,
-                                    };
-                                    let visible_width = ((size.width as f32 - sidebar_original) / 2.0).round();
-                                    let existing_paths: Vec<Option<String>> = existing_pane.tabs.iter().map(|t| t.path.clone()).collect();
-                                    existing_pane.tab_scroll_x = ui.scroll_to_tab(existing_pane.active_tab_idx, &existing_paths, visible_width, existing_pane.tab_scroll_x);
-                                    state.inactive_panes.push(existing_pane);
-                                    state.tabs = vec![tab_to_move];
-                                    state.active_tab_idx = 0;
-                                    state.active_pane_idx = 0;
-                                    state.tab_scroll_x = 0.0;
-                                } else {
-                                    // Right Split
-                                    state.is_split_horizontal = false;
-                                    state.inactive_panes.push(crate::app::state::Pane {
-                                        tabs: vec![tab_to_move],
-                                        active_tab_idx: 0,
-                                        tab_scroll_x: 0.0,
-                                    });
-                                    state.switch_pane(1);
-                                    let visible_width = ((size.width as f32 - sidebar_original) / 2.0).round();
-                                    let existing_paths: Vec<Option<String>> = state.inactive_panes[0].tabs.iter().map(|t| t.path.clone()).collect();
-                                    state.inactive_panes[0].tab_scroll_x = ui.scroll_to_tab(state.inactive_panes[0].active_tab_idx, &existing_paths, visible_width, state.inactive_panes[0].tab_scroll_x);
-                                }
-                                
-                                if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
-                                    ui.scroll_x = active_tab.scroll_x;
-                                    ui.scroll_y = active_tab.scroll_y;
-                                }
-                            } else {
-                                if hovered_pane_idx != state.active_pane_idx {
-                                    // Move to the other pane
-                                    let tab_to_move = state.tabs.remove(dragged_idx);
-                                    state.inactive_panes[0].tabs.push(tab_to_move);
-                                    state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
-                                    
-                                    // If active pane became empty, collapse the split
-                                    if state.tabs.is_empty() {
-                                        let target_pane = state.inactive_panes.remove(0);
-                                        state.tabs = target_pane.tabs;
-                                        state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
-                                        state.active_pane_idx = 0;
-                                        state.is_split_horizontal = false;
-                                        
-                                        let visible_width = size.width as f32 - sidebar_original;
-                                        let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
-                                        state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
-                                    } else {
-                                        state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
-                                        let target_pane = 1 - state.active_pane_idx;
-                                        state.switch_pane(target_pane);
-                                        
-                                        let visible_width = if state.is_split_horizontal {
-                                            size.width as f32 - sidebar_original
-                                        } else {
-                                            ((size.width as f32 - sidebar_original) / 2.0).round()
-                                        };
-                                        let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
-                                        state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
-                                    }
-                                    if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
-                                        ui.scroll_x = active_tab.scroll_x;
-                                        ui.scroll_y = active_tab.scroll_y;
-                                    }
-                                }
-                            }
-                        }    
-                    } else {
-                        state.drag_start_pos = None;
-                    }
+                if let Some(dragged_idx) = state.dragged_tab_idx.take() {
+                    handle_tab_release(ui, state, window, dragged_idx, size);
                 }
 
 
@@ -2578,6 +1945,884 @@ pub fn handle_mouse_input(
          window.request_redraw();
      }
  }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Private helper functions extracted from handle_mouse_input
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Handles a right-click on the sidebar file tree to open a context menu.
+/// Returns true if the click was consumed.
+fn handle_right_click_sidebar(
+    ui: &mut UiState,
+    state: &AppState,
+    window: &Arc<Window>,
+) -> bool {
+    let size = window.inner_size();
+    let main_y = ui.titlebar_height;
+    if ui.sidebar_width > 0.0
+        && state.mouse_x >= 0.0
+        && state.mouse_x < ui.sidebar_width
+        && state.mouse_y > main_y
+        && state.mouse_y < size.height as f32 - ui.status_height
+    {
+        let tree_y = state.mouse_y - main_y;
+        let row_idx = (tree_y / ui.ui_line_height).floor() as usize;
+        let r = row_idx + ui.sidebar_scroll;
+
+        let mut target_path = std::path::PathBuf::from(".");
+        let mut is_dir = true;
+        if r >= 1 {
+            let node_idx = r - 1;
+            if node_idx < ui.visible_nodes.len() {
+                target_path = ui.visible_nodes[node_idx].path.clone();
+                is_dir = ui.visible_nodes[node_idx].is_dir;
+            }
+        }
+        ui.sidebar_context_menu = Some((state.mouse_x, state.mouse_y, target_path, is_dir));
+        window.request_redraw();
+        true
+    } else {
+        false
+    }
+}
+
+/// Handles a left-click on an open sidebar context menu.
+/// Returns true if the click was consumed (even if nothing actionable was hit,
+/// the context menu is always dismissed).
+fn handle_sidebar_context_menu_click(
+    ui: &mut UiState,
+    state: &AppState,
+    window: &Arc<Window>,
+) -> bool {
+    let (menu_x, menu_y, target_path, _is_dir) = match ui.sidebar_context_menu.clone() {
+        Some(m) => m,
+        None => return false,
+    };
+    ui.sidebar_context_menu = None;
+
+    let item_height = ui.ui_line_height;
+    let menu_w = 120.0f32;
+    let menu_h = 4.0 * item_height;
+
+    if state.mouse_x >= menu_x
+        && state.mouse_x < menu_x + menu_w
+        && state.mouse_y >= menu_y
+        && state.mouse_y < menu_y + menu_h
+    {
+        let idx = ((state.mouse_y - menu_y) / item_height).floor() as usize;
+        match idx {
+            0 => { // New File
+                ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
+                ui.sidebar_input_type = "new_file".to_string();
+                ui.sidebar_input_target = target_path;
+                ui.sidebar_input_value.clear();
+            }
+            1 => { // New Folder
+                ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
+                ui.sidebar_input_type = "new_folder".to_string();
+                ui.sidebar_input_target = target_path;
+                ui.sidebar_input_value.clear();
+            }
+            2 => { // Rename
+                ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
+                ui.sidebar_input_type = "rename".to_string();
+                ui.sidebar_input_value = target_path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                ui.sidebar_input_target = target_path;
+            }
+            3 => { // Delete
+                if target_path.is_dir() {
+                    let _ = std::fs::remove_dir_all(&target_path);
+                } else {
+                    let _ = std::fs::remove_file(&target_path);
+                }
+                ui.rebuild_tree();
+            }
+            _ => {}
+        }
+    }
+    window.request_redraw();
+    true
+}
+
+/// Handles a left-click while the SidebarInput modal (file/folder creation) is active.
+/// Returns true if the click was consumed.
+fn handle_sidebar_input_modal_click(
+    ui: &mut UiState,
+    state: &AppState,
+    window: &Arc<Window>,
+    size: winit::dpi::PhysicalSize<u32>,
+) -> bool {
+    if ui.active_modal != Some(crate::machkit::ModalType::SidebarInput) {
+        return false;
+    }
+    let modal_w = 400.0f32;
+    let modal_h = 150.0f32;
+    let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
+    let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
+
+    let title_y = modal_y + 20.0;
+    let input_y = title_y + ui.ui_line_height + 15.0;
+    let input_h = ui.ui_line_height + 8.0;
+
+    let btn_w = 80.0f32;
+    let btn_h = 24.0f32;
+    let cancel_x = modal_x + modal_w - 20.0 - btn_w * 2.0 - 10.0;
+    let confirm_x = modal_x + modal_w - 20.0 - btn_w;
+    let btn_y = input_y + input_h + 15.0;
+
+    // Cancel button
+    if state.mouse_x >= cancel_x
+        && state.mouse_x <= cancel_x + btn_w
+        && state.mouse_y >= btn_y
+        && state.mouse_y <= btn_y + btn_h
+    {
+        ui.active_modal = None;
+        window.request_redraw();
+        return true;
+    }
+
+    // Confirm button
+    if state.mouse_x >= confirm_x
+        && state.mouse_x <= confirm_x + btn_w
+        && state.mouse_y >= btn_y
+        && state.mouse_y <= btn_y + btn_h
+    {
+        let target = ui.sidebar_input_target.clone();
+        let val = ui.sidebar_input_value.clone();
+        if !val.is_empty() {
+            match ui.sidebar_input_type.as_str() {
+                "new_file" => {
+                    let parent = if target.is_dir() {
+                        target.clone()
+                    } else {
+                        target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."))
+                    };
+                    let _ = std::fs::File::create(parent.join(&val));
+                }
+                "new_folder" => {
+                    let parent = if target.is_dir() {
+                        target.clone()
+                    } else {
+                        target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."))
+                    };
+                    let _ = std::fs::create_dir_all(parent.join(&val));
+                }
+                "rename" => {
+                    if let Some(parent) = target.parent() {
+                        let _ = std::fs::rename(&target, parent.join(&val));
+                    }
+                }
+                _ => {}
+            }
+        }
+        ui.active_modal = None;
+        ui.rebuild_tree();
+        window.request_redraw();
+        return true;
+    }
+
+    // Click outside modal dismisses it
+    let clicked_outside = state.mouse_x < modal_x
+        || state.mouse_x > modal_x + modal_w
+        || state.mouse_y < modal_y
+        || state.mouse_y > modal_y + modal_h;
+    if clicked_outside {
+        ui.active_modal = None;
+        window.request_redraw();
+    }
+    true
+}
+
+/// Handles minimap click. Returns true if the click was consumed.
+fn handle_minimap_click(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &Arc<Window>,
+    editor_top: f32,
+    editor_bottom_limit: f32,
+    editor_height: f32,
+    minimap_x: f32,
+    sb_x: f32,
+    active_tab_idx: usize,
+    active_tab_len: usize,
+) -> bool {
+    if state.mouse_x < minimap_x
+        || state.mouse_x >= sb_x
+        || state.mouse_y < editor_top
+        || state.mouse_y >= editor_bottom_limit
+    {
+        return false;
+    }
+    state.is_dragging_minimap = true;
+    let total_editor_height = editor_bottom_limit - editor_top;
+    let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
+    let max_scroll = (active_tab_len as isize - visible_lines as isize).max(0) as f32;
+    let relative_y = state.mouse_y - editor_top;
+    let minimap_line_height = (ui.buffer_font_size * 0.22).round().max(2.0);
+    let minimap_total_h = active_tab_len as f32 * minimap_line_height;
+
+    let clicked_line = if minimap_total_h > total_editor_height {
+        let scroll_ratio = (relative_y / total_editor_height).clamp(0.0, 1.0);
+        (scroll_ratio * (active_tab_len - 1) as f32).round() as usize
+    } else {
+        (relative_y / minimap_line_height).floor() as usize
+    };
+    let clicked_line = clicked_line.min(active_tab_len - 1);
+
+    let active_tab = &mut state.tabs[active_tab_idx];
+    active_tab.cursor.line = clicked_line;
+    let line_chars = active_tab.buffer.lines()[clicked_line].chars().count();
+    active_tab.cursor.col = active_tab.cursor.col.min(line_chars);
+    active_tab.cursor.intended_col = active_tab.cursor.col;
+    ui.scroll_y = clicked_line.saturating_sub(visible_lines / 2).min(max_scroll as usize);
+    window.request_redraw();
+    true
+}
+
+/// Handles vertical scrollbar click. Returns true if the click was consumed.
+fn handle_scrollbar_click(
+    ui: &mut UiState,
+    state: &mut AppState,
+    editor_top: f32,
+    editor_bottom_limit: f32,
+    editor_height: f32,
+    sb_x: f32,
+    virtual_len: usize,
+) -> bool {
+    let visible_lines = (editor_height / ui.buffer_line_height).floor() as usize;
+    if state.mouse_x < sb_x
+        || state.mouse_y < editor_top
+        || state.mouse_y >= editor_bottom_limit
+        || virtual_len <= visible_lines
+    {
+        return false;
+    }
+    state.is_dragging_scroll = true;
+    let ratio = visible_lines as f32 / virtual_len as f32;
+    let thumb_h = (editor_height * ratio).clamp(20.0_f32.min(editor_height), editor_height);
+    let max_scroll = (virtual_len as isize - visible_lines as isize).max(0) as f32;
+    let scroll_ratio = if max_scroll > 0.0 { ui.scroll_y as f32 / max_scroll } else { 0.0 };
+    let thumb_y = editor_top + scroll_ratio * (editor_height - thumb_h);
+
+    if state.mouse_y >= thumb_y && state.mouse_y < thumb_y + thumb_h {
+        state.scroll_drag_offset_y = state.mouse_y - thumb_y;
+    } else {
+        state.scroll_drag_offset_y = thumb_h / 2.0;
+        let relative_y = state.mouse_y - editor_top - state.scroll_drag_offset_y;
+        let scroll_range = editor_height - thumb_h;
+        let scroll_ratio = if scroll_range > 0.0 { (relative_y / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
+        ui.scroll_y = (scroll_ratio * max_scroll).round() as usize;
+    }
+    true
+}
+
+/// Handles horizontal scrollbar click. Returns true if the click was consumed.
+fn handle_horizontal_scrollbar_click(
+    ui: &mut UiState,
+    state: &mut AppState,
+    editor_bottom_limit: f32,
+    text_area_x: f32,
+    text_viewport_w: f32,
+    minimap_x: f32,
+    active_tab_idx: usize,
+) -> bool {
+    if state.mouse_y < editor_bottom_limit - 14.0
+        || state.mouse_y >= editor_bottom_limit
+        || state.mouse_x < text_area_x
+        || state.mouse_x >= minimap_x
+    {
+        return false;
+    }
+    state.is_dragging_horizontal_scroll = true;
+    let active_tab = &state.tabs[active_tab_idx];
+    let max_line_len = ui.get_max_line_len(&active_tab.buffer, active_tab.path.as_deref(), active_tab.cursor.line);
+    let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
+    let ratio_x = visible_cols as f32 / max_line_len.max(1) as f32;
+    let thumb_w = (text_viewport_w * ratio_x).clamp(20.0_f32.min(text_viewport_w), text_viewport_w);
+    let max_scroll_x = (max_line_len as isize - visible_cols as isize).max(0) as f32;
+    let scroll_ratio_x = if max_scroll_x > 0.0 { ui.scroll_x as f32 / max_scroll_x } else { 0.0 };
+    let thumb_x = text_area_x + scroll_ratio_x * (text_viewport_w - thumb_w);
+
+    if state.mouse_x >= thumb_x && state.mouse_x < thumb_x + thumb_w {
+        state.scroll_drag_offset_x = state.mouse_x - thumb_x;
+    } else {
+        state.scroll_drag_offset_x = thumb_w / 2.0;
+        let relative_x = state.mouse_x - text_area_x - state.scroll_drag_offset_x;
+        let scroll_range = text_viewport_w - thumb_w;
+        let scroll_ratio = if scroll_range > 0.0 { (relative_x / scroll_range).clamp(0.0, 1.0) } else { 0.0 };
+        ui.scroll_x = (scroll_ratio * max_scroll_x).round() as usize;
+    }
+    true
+}
+
+/// Handles a click inside the project search result list.
+/// Returns true if the click was consumed.
+fn handle_project_search_click(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &mut Arc<Window>,
+    elwt: &EventLoopWindowTarget<()>,
+    gpu: &mut Option<GpuContext>,
+    atlas: &mut FontAtlas,
+    font_bytes: &[u8],
+    editor_top: f32,
+    text_area_x: f32,
+    text_viewport_w: f32,
+) -> bool {
+    ui.global_search_focused = true;
+    let list_y = editor_top;
+    let item_height = ui.buffer_line_height;
+    if state.mouse_y < list_y {
+        return true;
+    }
+    let clicked_idx = ((state.mouse_y - list_y) / item_height).floor() as usize + ui.global_search_scroll;
+    let render_items = crate::machkit::components::editor::project_search::build_search_render_items(ui);
+    if clicked_idx >= render_items.len() {
+        return true;
+    }
+    match &render_items[clicked_idx] {
+        crate::machkit::SearchRenderItem::FileHeader { path } => {
+            handle_project_search_header_click(ui, state, window, elwt, gpu, atlas, font_bytes, path, text_area_x, text_viewport_w);
+        }
+        crate::machkit::SearchRenderItem::CodeLine { path, line_idx, result_idx, is_first_in_range, is_last_in_range, start_line_of_range, end_line_of_range, .. } => {
+            handle_project_search_code_click(ui, state, window, elwt, gpu, atlas, font_bytes, path, *line_idx, *result_idx, *is_first_in_range, *is_last_in_range, *start_line_of_range, *end_line_of_range, text_area_x);
+        }
+        _ => {}
+    }
+    true
+}
+
+/// Handles click on a file-header row in the project search results.
+fn handle_project_search_header_click(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &mut Arc<Window>,
+    elwt: &EventLoopWindowTarget<()>,
+    gpu: &mut Option<GpuContext>,
+    atlas: &mut FontAtlas,
+    font_bytes: &[u8],
+    path: &std::path::PathBuf,
+    text_area_x: f32,
+    text_viewport_w: f32,
+) {
+    let btn_text = "Open File Alt-Enter";
+    let btn_w = btn_text.chars().count() as f32 * ui.ui_char_width + 16.0;
+    let btn_x = text_area_x + text_viewport_w - btn_w - 15.0;
+
+    if state.mouse_x >= btn_x && state.mouse_x < btn_x + btn_w {
+        // Open-file button clicked
+        if let Some(pos) = ui.global_search_results.iter().position(|(p, _, _)| p == path) {
+            let (_, line_idx, _) = &ui.global_search_results[pos];
+            crate::app::handler::handle_action(
+                ui, state, UiAction::OpenFileAt(path.clone(), *line_idx),
+                window, elwt, gpu, atlas, font_bytes,
+            );
+        }
+    } else {
+        // Toggle collapse
+        if ui.collapsed_search_files.contains(path) {
+            ui.collapsed_search_files.remove(path);
+        } else {
+            ui.collapsed_search_files.insert(path.clone());
+        }
+        ui.invalidate_search_render_items();
+    }
+    window.request_redraw();
+}
+
+/// Handles click on a code-line row in the project search results.
+#[allow(clippy::too_many_arguments)]
+fn handle_project_search_code_click(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &mut Arc<Window>,
+    elwt: &EventLoopWindowTarget<()>,
+    gpu: &mut Option<GpuContext>,
+    atlas: &mut FontAtlas,
+    font_bytes: &[u8],
+    path: &std::path::PathBuf,
+    line_idx: usize,
+    result_idx: Option<usize>,
+    is_first_in_range: bool,
+    is_last_in_range: bool,
+    start_line_of_range: usize,
+    end_line_of_range: usize,
+    text_area_x: f32,
+) {
+    // Gutter expand/contract buttons
+    if state.mouse_x >= text_area_x && state.mouse_x < text_area_x + 22.0 {
+        if is_first_in_range {
+            if let Some(pos) = ui.global_search_results.iter().position(|(p, l, _)| p == path && *l >= start_line_of_range && *l <= end_line_of_range) {
+                let match_line = ui.global_search_results[pos].1;
+                let entry = ui.global_search_expanded_margins.entry((path.clone(), match_line)).or_insert((2, 2));
+                entry.0 += 10;
+                ui.invalidate_search_render_items();
+            }
+        } else if is_last_in_range {
+            if let Some(pos) = ui.global_search_results.iter().rposition(|(p, l, _)| p == path && *l >= start_line_of_range && *l <= end_line_of_range) {
+                let match_line = ui.global_search_results[pos].1;
+                let entry = ui.global_search_expanded_margins.entry((path.clone(), match_line)).or_insert((2, 2));
+                entry.1 += 10;
+                ui.invalidate_search_render_items();
+            }
+        }
+    } else {
+        // Open the file at this line
+        if let Some(res_idx) = result_idx {
+            ui.global_search_selected = res_idx;
+        }
+        crate::app::handler::handle_action(
+            ui, state, UiAction::OpenFileAt(path.clone(), line_idx),
+            window, elwt, gpu, atlas, font_bytes,
+        );
+    }
+    window.request_redraw();
+}
+
+/// Handles a click inside the diagnostics virtual view.
+/// Returns `Some((path, line, col))` if the user opened a file, `None` otherwise.
+fn handle_diagnostics_click(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &mut Arc<Window>,
+    elwt: &EventLoopWindowTarget<()>,
+    gpu: &mut Option<GpuContext>,
+    atlas: &mut FontAtlas,
+    font_bytes: &[u8],
+    editor_top: f32,
+    text_area_x: f32,
+    active_tab_idx: usize,
+) -> bool {
+    let clicked_target = ui.diagnostics_click_targets.iter().find(|t| {
+        state.mouse_x >= t.0 && state.mouse_x <= t.2 && state.mouse_y >= t.1 && state.mouse_y <= t.3
+    }).cloned();
+
+    let (target_path, target_line, target_col, target_type) = match clicked_target.map(|t| (t.4, t.5, t.6, t.7)) {
+        Some(t) => t,
+        None => return false,
+    };
+
+    if target_type == "header" {
+        if state.mouse_x < text_area_x + 50.0 {
+            // Toggle collapse
+            if ui.collapsed_diagnostics.contains(&target_path) {
+                ui.collapsed_diagnostics.remove(&target_path);
+            } else {
+                ui.collapsed_diagnostics.insert(target_path);
+            }
+            ui.diagnostics_changed = true;
+            window.request_redraw();
+            return true;
+        }
+        // Navigate to file
+        let open_action = crate::machkit::UiAction::OpenFile(std::path::PathBuf::from(&target_path));
+        crate::app::handler::handle_action(ui, state, open_action, window, elwt, gpu, atlas, font_bytes);
+        let new_active_tab = &mut state.tabs[state.active_tab_idx];
+        new_active_tab.cursor.line = target_line;
+        new_active_tab.cursor.col = target_col;
+        new_active_tab.cursor.intended_col = target_col;
+        new_active_tab.cursor.selection_anchor = Some((target_line, target_col));
+        let size = window.inner_size();
+        ui.scroll_to_cursor(&new_active_tab.cursor, new_active_tab.buffer.len(), size.width as f32, size.height as f32);
+        window.request_redraw();
+        return true;
+    }
+
+    if target_type == "code" {
+        // Place virtual cursor in the diagnostics view
+        let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui);
+        if !visual_lines.is_empty() {
+            let clicked_line = (((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y).min(visual_lines.len() - 1);
+            let code_start_x = text_area_x + 48.0;
+            let col_idx = ((state.mouse_x - code_start_x) / ui.buffer_char_width).round() as isize + ui.scroll_x as isize;
+            let col_idx = col_idx.max(0) as usize;
+
+            let active_tab = &mut state.tabs[active_tab_idx];
+            if let Some(crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. }) = visual_lines.get(clicked_line) {
+                let col_idx = col_idx.min(line_content.chars().count());
+                active_tab.cursor.line = clicked_line;
+                active_tab.cursor.col = col_idx;
+                active_tab.cursor.intended_col = col_idx;
+                active_tab.cursor.selection_anchor = Some((clicked_line, col_idx));
+                state.is_dragging = true;
+            }
+        }
+        window.request_redraw();
+        return true;
+    }
+    false
+}
+
+/// Handles the normal text-area cursor placement click.
+fn handle_text_area_cursor_click(
+    ui: &mut UiState,
+    state: &mut AppState,
+    editor_top: f32,
+    text_area_x: f32,
+    active_tab_idx: usize,
+) {
+    let active_tab = &mut state.tabs[active_tab_idx];
+    active_tab.buffer.commit_transaction();
+    state.is_dragging = true;
+
+    let line_idx = ((state.mouse_y - editor_top) / ui.buffer_line_height).floor() as usize + ui.scroll_y;
+    let line_idx = line_idx.min(active_tab.buffer.len() - 1);
+    let col_idx = {
+        let raw = ((state.mouse_x - text_area_x) / ui.buffer_char_width).round() as usize + ui.scroll_x;
+        let line_chars = active_tab.buffer.lines()[line_idx].chars().count();
+        raw.min(line_chars)
+    };
+
+    if state.modifiers.alt_key() {
+        // Multi-cursor: add or remove cursor at clicked position
+        let clicked_pos = (line_idx, col_idx);
+        if let Some(idx) = active_tab.secondary_cursors.iter().position(|c| c.line == clicked_pos.0 && c.col == clicked_pos.1) {
+            active_tab.secondary_cursors.remove(idx);
+        } else {
+            let mut new_cur = crate::editor::cursor::Cursor::new();
+            new_cur.line = line_idx;
+            new_cur.col = col_idx;
+            new_cur.intended_col = col_idx;
+            new_cur.selection_anchor = Some((line_idx, col_idx));
+            active_tab.secondary_cursors.push(new_cur);
+        }
+    } else {
+        active_tab.secondary_cursors.clear();
+        if state.modifiers.shift_key() {
+            if active_tab.cursor.selection_anchor.is_none() {
+                active_tab.cursor.selection_anchor = Some((active_tab.cursor.line, active_tab.cursor.col));
+            }
+        } else {
+            active_tab.cursor.selection_anchor = Some((line_idx, col_idx));
+        }
+        active_tab.cursor.line = line_idx;
+        active_tab.cursor.col = col_idx;
+        active_tab.cursor.intended_col = col_idx;
+    }
+}
+
+/// Handles tab drag release — moves tabs between panes or spawns a new window.
+fn handle_tab_release(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &mut Arc<Window>,
+    dragged_idx: usize,
+    size: winit::dpi::PhysicalSize<u32>,
+) {
+    let drag_start = state.drag_start_pos.take();
+    let was_dragged = drag_start.map_or(false, |(sx, sy)| {
+        let dx = state.mouse_x - sx;
+        let dy = state.mouse_y - sy;
+        (dx * dx + dy * dy).sqrt() >= 8.0
+    });
+
+    if !was_dragged {
+        state.drag_start_pos = None;
+        return;
+    }
+
+    let sidebar_original = ui.config.sidebar_width;
+    let main_y = ui.titlebar_height;
+    let mut dock_start_y = size.height as f32 - ui.status_height;
+    if ui.show_dock {
+        dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height)
+            .max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
+    }
+    let editor_bottom_limit = if ui.show_dock { dock_start_y } else { size.height as f32 - ui.status_height };
+
+    let is_outside = state.mouse_x < 0.0 || state.mouse_x >= size.width as f32 || state.mouse_y < 0.0 || state.mouse_y >= size.height as f32;
+    if is_outside {
+        handle_tab_drag_outside_window(ui, state, window, dragged_idx, size, sidebar_original);
+        return;
+    }
+
+    let editor_area_width = size.width as f32 - sidebar_original;
+    let pane_width = editor_area_width / 2.0;
+    let hovered_pane_idx = compute_hovered_pane_idx(state, sidebar_original, pane_width, main_y, editor_bottom_limit);
+    let is_in_tabbar = compute_is_in_tabbar(state, main_y, ui.tabbar_height, hovered_pane_idx, editor_bottom_limit);
+
+    if is_in_tabbar {
+        handle_tab_move_to_pane(ui, state, dragged_idx, hovered_pane_idx, size, sidebar_original);
+    } else if state.inactive_panes.is_empty() {
+        handle_tab_create_split(ui, state, dragged_idx, size, sidebar_original, main_y, editor_bottom_limit);
+    } else if hovered_pane_idx != state.active_pane_idx {
+        handle_tab_move_to_other_pane(ui, state, dragged_idx, size, sidebar_original);
+    }
+
+    if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+        ui.scroll_x = active_tab.scroll_x;
+        ui.scroll_y = active_tab.scroll_y;
+    }
+}
+
+/// Handles a tab dragged completely outside the window (spawn new instance or IPC transfer).
+fn handle_tab_drag_outside_window(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &mut Arc<Window>,
+    dragged_idx: usize,
+    size: winit::dpi::PhysicalSize<u32>,
+    sidebar_original: f32,
+) {
+    let mut removed = false;
+    if let Some(ref path_str) = state.tabs[dragged_idx].path.clone() {
+        if !path_str.starts_with("diagnostics://") {
+            if state.tabs[dragged_idx].buffer.is_modified {
+                let _ = state.tabs[dragged_idx].buffer.save_file(path_str);
+            }
+            let inner_pos = window.inner_position().unwrap_or(winit::dpi::PhysicalPosition::new(0, 0));
+            let global_x = inner_pos.x + state.mouse_x as i32;
+            let global_y = inner_pos.y + state.mouse_y as i32;
+
+            if !crate::app::ipc::try_drop_to_other_window(global_x, global_y, path_str) {
+                if let Ok(exe_path) = std::env::current_exe() {
+                    let _ = std::process::Command::new(exe_path).arg(path_str).spawn();
+                }
+            }
+            state.tabs.remove(dragged_idx);
+            removed = true;
+        }
+    }
+
+    if removed {
+        collapse_or_restore_empty_pane(ui, state, sidebar_original, size);
+        if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+            ui.scroll_x = active_tab.scroll_x;
+            ui.scroll_y = active_tab.scroll_y;
+        }
+    }
+    window.request_redraw();
+    update_cursor_icon(window, ui, state);
+}
+
+/// Collapses the split if the active pane became empty, otherwise adjusts active_tab_idx.
+fn collapse_or_restore_empty_pane(
+    ui: &mut UiState,
+    state: &mut AppState,
+    sidebar_original: f32,
+    size: winit::dpi::PhysicalSize<u32>,
+) {
+    if state.tabs.is_empty() {
+        if !state.inactive_panes.is_empty() {
+            let target_pane = state.inactive_panes.remove(0);
+            state.tabs = target_pane.tabs;
+            state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
+            state.active_pane_idx = 0;
+            state.is_split_horizontal = false;
+        } else {
+            state.tabs.push(crate::app::state::Tab {
+                path: None,
+                buffer: crate::editor::buffer::Buffer::new(),
+                cursor: crate::editor::cursor::Cursor::new(),
+                secondary_cursors: Vec::new(),
+                scroll_x: 0,
+                scroll_y: 0,
+            });
+            state.active_tab_idx = 0;
+        }
+    } else {
+        state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+    }
+    let visible_width = size.width as f32 - sidebar_original;
+    let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+    state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
+}
+
+/// Returns the hovered pane index based on mouse position.
+fn compute_hovered_pane_idx(
+    state: &AppState,
+    sidebar_original: f32,
+    pane_width: f32,
+    main_y: f32,
+    editor_bottom_limit: f32,
+) -> usize {
+    if state.inactive_panes.is_empty() {
+        return 0;
+    }
+    if state.is_split_horizontal {
+        let editor_area_height = editor_bottom_limit - main_y;
+        let pane_height = (editor_area_height / 2.0).round();
+        if state.mouse_y < main_y + pane_height { 0 } else { 1 }
+    } else {
+        if state.mouse_x < sidebar_original + pane_width { 0 } else { 1 }
+    }
+}
+
+/// Returns true if the mouse is hovering over the tab bar of the hovered pane.
+fn compute_is_in_tabbar(
+    state: &AppState,
+    main_y: f32,
+    tabbar_height: f32,
+    hovered_pane_idx: usize,
+    editor_bottom_limit: f32,
+) -> bool {
+    if !state.inactive_panes.is_empty() && state.is_split_horizontal {
+        let editor_area_height = editor_bottom_limit - main_y;
+        let pane_height = (editor_area_height / 2.0).round();
+        let pane_top = if hovered_pane_idx == 0 { main_y } else { main_y + pane_height };
+        state.mouse_y >= pane_top && state.mouse_y < pane_top + tabbar_height
+    } else {
+        state.mouse_y >= main_y && state.mouse_y < main_y + tabbar_height
+    }
+}
+
+/// Moves a tab to another pane (reorder/merge when dragging to tab bar).
+fn handle_tab_move_to_pane(
+    ui: &mut UiState,
+    state: &mut AppState,
+    dragged_idx: usize,
+    hovered_pane_idx: usize,
+    size: winit::dpi::PhysicalSize<u32>,
+    sidebar_original: f32,
+) {
+    if hovered_pane_idx == state.active_pane_idx {
+        return;
+    }
+    let tab_to_move = state.tabs.remove(dragged_idx);
+    state.inactive_panes[0].tabs.push(tab_to_move);
+    state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
+
+    if state.tabs.is_empty() {
+        let target_pane = state.inactive_panes.remove(0);
+        state.tabs = target_pane.tabs;
+        state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
+        state.active_pane_idx = 0;
+        state.is_split_horizontal = false;
+        let visible_width = size.width as f32 - sidebar_original;
+        let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+        state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
+    } else {
+        state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+        let target_pane = 1 - state.active_pane_idx;
+        state.switch_pane(target_pane);
+        let visible_width = if state.is_split_horizontal {
+            size.width as f32 - sidebar_original
+        } else {
+            ((size.width as f32 - sidebar_original) / 2.0).round()
+        };
+        let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+        state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
+    }
+    if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+        ui.scroll_x = active_tab.scroll_x;
+        ui.scroll_y = active_tab.scroll_y;
+    }
+}
+
+/// Moves a tab to the other existing pane (not via tab bar).
+fn handle_tab_move_to_other_pane(
+    ui: &mut UiState,
+    state: &mut AppState,
+    dragged_idx: usize,
+    size: winit::dpi::PhysicalSize<u32>,
+    sidebar_original: f32,
+) {
+    let tab_to_move = state.tabs.remove(dragged_idx);
+    state.inactive_panes[0].tabs.push(tab_to_move);
+    state.inactive_panes[0].active_tab_idx = state.inactive_panes[0].tabs.len() - 1;
+
+    if state.tabs.is_empty() {
+        let target_pane = state.inactive_panes.remove(0);
+        state.tabs = target_pane.tabs;
+        state.active_tab_idx = target_pane.active_tab_idx.min(state.tabs.len().saturating_sub(1));
+        state.active_pane_idx = 0;
+        state.is_split_horizontal = false;
+        let visible_width = size.width as f32 - sidebar_original;
+        let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+        state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
+    } else {
+        state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+        let target_pane = 1 - state.active_pane_idx;
+        state.switch_pane(target_pane);
+        let visible_width = if state.is_split_horizontal {
+            size.width as f32 - sidebar_original
+        } else {
+            ((size.width as f32 - sidebar_original) / 2.0).round()
+        };
+        let tab_paths: Vec<Option<String>> = state.tabs.iter().map(|t| t.path.clone()).collect();
+        state.tab_scroll_x = ui.scroll_to_tab(state.active_tab_idx, &tab_paths, visible_width, state.tab_scroll_x);
+    }
+    if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+        ui.scroll_x = active_tab.scroll_x;
+        ui.scroll_y = active_tab.scroll_y;
+    }
+}
+
+/// Creates a new split when a tab is dropped into the editor area without an existing split.
+#[allow(clippy::too_many_arguments)]
+fn handle_tab_create_split(
+    ui: &mut UiState,
+    state: &mut AppState,
+    dragged_idx: usize,
+    size: winit::dpi::PhysicalSize<u32>,
+    sidebar_original: f32,
+    main_y: f32,
+    editor_bottom_limit: f32,
+) {
+    let tab_to_move = if state.tabs.len() > 1 {
+        state.tabs.remove(dragged_idx)
+    } else {
+        state.tabs[dragged_idx].clone()
+    };
+    if !state.tabs.is_empty() {
+        state.active_tab_idx = state.active_tab_idx.min(state.tabs.len() - 1);
+    }
+
+    let editor_area_width = size.width as f32 - sidebar_original;
+    let editor_area_height = editor_bottom_limit - (main_y + ui.tabbar_height);
+
+    if state.mouse_y < main_y + ui.tabbar_height + editor_area_height * 0.25 {
+        // Top split
+        state.is_split_horizontal = true;
+        let existing_pane = crate::app::state::Pane {
+            tabs: std::mem::take(&mut state.tabs),
+            active_tab_idx: state.active_tab_idx,
+            tab_scroll_x: state.tab_scroll_x,
+        };
+        state.inactive_panes.push(existing_pane);
+        state.tabs = vec![tab_to_move];
+        state.active_tab_idx = 0;
+        state.active_pane_idx = 0;
+        state.tab_scroll_x = 0.0;
+    } else if state.mouse_y >= main_y + ui.tabbar_height + editor_area_height * 0.75 {
+        // Bottom split
+        state.is_split_horizontal = true;
+        state.inactive_panes.push(crate::app::state::Pane { tabs: vec![tab_to_move], active_tab_idx: 0, tab_scroll_x: 0.0 });
+        state.switch_pane(1);
+    } else if state.mouse_x < sidebar_original + editor_area_width * 0.5 {
+        // Left split
+        state.is_split_horizontal = false;
+        let visible_width = ((size.width as f32 - sidebar_original) / 2.0).round();
+        let mut existing_pane = crate::app::state::Pane {
+            tabs: std::mem::take(&mut state.tabs),
+            active_tab_idx: state.active_tab_idx,
+            tab_scroll_x: state.tab_scroll_x,
+        };
+        let existing_paths: Vec<Option<String>> = existing_pane.tabs.iter().map(|t| t.path.clone()).collect();
+        existing_pane.tab_scroll_x = ui.scroll_to_tab(existing_pane.active_tab_idx, &existing_paths, visible_width, existing_pane.tab_scroll_x);
+        state.inactive_panes.push(existing_pane);
+        state.tabs = vec![tab_to_move];
+        state.active_tab_idx = 0;
+        state.active_pane_idx = 0;
+        state.tab_scroll_x = 0.0;
+    } else {
+        // Right split
+        state.is_split_horizontal = false;
+        state.inactive_panes.push(crate::app::state::Pane { tabs: vec![tab_to_move], active_tab_idx: 0, tab_scroll_x: 0.0 });
+        state.switch_pane(1);
+        let visible_width = ((size.width as f32 - sidebar_original) / 2.0).round();
+        let existing_paths: Vec<Option<String>> = state.inactive_panes[0].tabs.iter().map(|t| t.path.clone()).collect();
+        state.inactive_panes[0].tab_scroll_x = ui.scroll_to_tab(state.inactive_panes[0].active_tab_idx, &existing_paths, visible_width, state.inactive_panes[0].tab_scroll_x);
+    }
+
+    if let Some(active_tab) = state.tabs.get(state.active_tab_idx) {
+        ui.scroll_x = active_tab.scroll_x;
+        ui.scroll_y = active_tab.scroll_y;
+    }
+}
+
 
 pub fn handle_mouse_wheel(
     ui: &mut UiState,
