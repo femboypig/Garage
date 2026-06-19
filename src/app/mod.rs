@@ -479,14 +479,29 @@ pub fn run_editor(file_path: Option<String>, experimental: bool) -> Result<(), B
                         );
 
                         // Render to swapchain
-                        if let Err(e) = gpu_ref.render(&vertices, &indices) {
-                            log::error!("Rendering error: {:?}", e);
-                        } else {
-                            if !first_frame_rendered {
-                                first_frame_rendered = true;
-                                window.set_visible(true);
-                                crate::experiments::startup::record_step("Window Visibility Set");
-                                crate::experiments::startup::report_startup_complete();
+                        match gpu_ref.render(&vertices, &indices) {
+                            Ok(_) => {
+                                if !first_frame_rendered {
+                                    first_frame_rendered = true;
+                                    window.set_visible(true);
+                                    crate::experiments::startup::record_step("Window Visibility Set");
+                                    crate::experiments::startup::report_startup_complete();
+                                }
+                            }
+                            Err(wgpu::SurfaceError::Timeout) => {
+                                // A timeout occurs when the frame takes too long to acquire.
+                                // Log as warning to prevent noise, and skip drawing this frame.
+                                log::warn!("Rendering error: Timeout");
+                            }
+                            Err(wgpu::SurfaceError::Outdated) | Err(wgpu::SurfaceError::Lost) => {
+                                // Reconfigure the surface if it's outdated or lost.
+                                let size = window.inner_size();
+                                gpu_ref.resize(size);
+                                window.request_redraw();
+                            }
+                            Err(wgpu::SurfaceError::OutOfMemory) => {
+                                log::error!("Rendering error: Out of memory! Exiting event loop.");
+                                elwt.exit();
                             }
                         }
                     }
