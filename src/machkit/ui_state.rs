@@ -148,6 +148,8 @@ pub struct UiState {
     pub search_focused: bool,
     pub global_search_focused: bool,
     pub global_search_col: usize,
+    pub last_frame_time: Option<std::time::Instant>,
+    pub current_fps: f32,
 }
 
 
@@ -329,6 +331,8 @@ impl UiState {
             search_focused: false,
             global_search_focused: false,
             global_search_col: 0,
+            last_frame_time: None,
+            current_fps: 0.0,
         };
 
 
