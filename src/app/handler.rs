@@ -279,7 +279,7 @@ pub fn handle_action(
                 *atlas = new_atlas;
                 new_gpu.update_bind_group(&atlas.texture, &atlas.sampler);
 
-                let mut new_ui = UiState::new(atlas, &new_gpu.queue, new_config, ui.event_loop_proxy.clone());
+                let mut new_ui = UiState::new(atlas, &new_gpu.queue, new_config, ui.event_loop_proxy.clone(), ui.experimental);
                 new_ui.active_device_name = new_gpu.device_name.clone();
 
                 let old_expanded = ui.expanded_dirs.clone();

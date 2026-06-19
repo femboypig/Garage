@@ -62,7 +62,250 @@ pub struct GpuContext {
     index_buffer_capacity: usize,
 }
 
+pub struct PreInitGpu {
+    pub adapter: wgpu::Adapter,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub bind_group_layout: wgpu::BindGroupLayout,
+    pub render_pipeline: wgpu::RenderPipeline,
+    pub surface_format: wgpu::TextureFormat,
+}
+
 impl GpuContext {
+    pub async fn pre_initialize(
+        instance: Arc<wgpu::Instance>,
+        surface: &wgpu::Surface<'static>,
+        forced_backend: Option<wgpu::Backends>,
+    ) -> Option<PreInitGpu> {
+        // If OpenGL/GL is forced, we can't pre-initialize without a window context on Linux.
+        if forced_backend == Some(wgpu::Backends::GL) {
+            return None;
+        }
+
+        let mut adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::LowPower,
+            compatible_surface: Some(surface),
+            force_fallback_adapter: false,
+        }).await;
+
+        if adapter.is_none() && forced_backend.is_none() {
+            adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                compatible_surface: Some(surface),
+                force_fallback_adapter: false,
+            }).await;
+        }
+
+        let adapter = adapter?;
+        let required_limits = wgpu::Limits::default();
+
+        let (device, queue) = adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                required_features: wgpu::Features::empty(),
+                required_limits,
+                label: None,
+                memory_hints: Default::default(),
+            },
+            None,
+        ).await.ok()?;
+
+        let surface_caps = surface.get_capabilities(&adapter);
+        let surface_format = surface_caps.formats.iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(surface_caps.formats[0]);
+
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+
+        // Create Bind Group Layout
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Main Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Render Pipeline Layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        // Precompile pipeline with the exact format needed by the surface
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[Vertex::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        Some(PreInitGpu {
+            adapter,
+            device,
+            queue,
+            bind_group_layout,
+            render_pipeline,
+            surface_format,
+        })
+    }
+
+    pub async fn complete_initialization(
+        window: Arc<Window>,
+        surface: wgpu::Surface<'static>,
+        pre_init: Option<PreInitGpu>,
+        forced_backend: Option<wgpu::Backends>,
+        instance: Arc<wgpu::Instance>,
+    ) -> Self {
+        let size = window.inner_size();
+
+        if let Some(pre) = pre_init {
+            let adapter_info = pre.adapter.get_info();
+            log::warn!("Selected Graphics Backend (Pre-initialized): {:?}, Device: {}", adapter_info.backend, adapter_info.name);
+
+            let surface_caps = surface.get_capabilities(&pre.adapter);
+            let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+                wgpu::PresentMode::Mailbox
+            } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
+                wgpu::PresentMode::Immediate
+            } else {
+                wgpu::PresentMode::Fifo
+            };
+
+            let config = wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: pre.surface_format,
+                width: size.width,
+                height: size.height,
+                present_mode,
+                alpha_mode: surface_caps.alpha_modes[0],
+                view_formats: vec![],
+                desired_maximum_frame_latency: 1,
+            };
+            surface.configure(&pre.device, &config);
+
+            // Globals uniform buffer (screen size)
+            let globals = Globals {
+                screen_size: [size.width as f32, size.height as f32],
+            };
+            let globals_buffer = pre.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Globals Buffer"),
+                size: std::mem::size_of::<Globals>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            pre.queue.write_buffer(&globals_buffer, 0, bytemuck::bytes_of(&globals));
+
+            // Create Dummy texture and sampler
+            let dummy_texture = pre.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Dummy Texture"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let dummy_sampler = pre.device.create_sampler(&wgpu::SamplerDescriptor::default());
+
+            let atlas_view = dummy_texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group = pre.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Main Bind Group"),
+                layout: &pre.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: globals_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&atlas_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&dummy_sampler),
+                    },
+                ],
+            });
+
+            Self {
+                surface,
+                device: pre.device,
+                queue: pre.queue,
+                config,
+                size,
+                render_pipeline: pre.render_pipeline,
+                backend: adapter_info.backend,
+                device_name: adapter_info.name,
+                globals_buffer,
+                bind_group_layout: pre.bind_group_layout,
+                bind_group,
+                vertex_buffer: None,
+                vertex_buffer_capacity: 0,
+                index_buffer: None,
+                index_buffer_capacity: 0,
+            }
+        } else {
+            Self::new_with_instance(window, forced_backend, Some(instance)).await
+        }
+    }
+
     pub async fn new(window: Arc<Window>, forced_backend: Option<wgpu::Backends>) -> Self {
         Self::new_with_instance(window, forced_backend, None).await
     }
@@ -99,7 +342,7 @@ impl GpuContext {
             };
 
             let mut adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: wgpu::PowerPreference::LowPower,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             }).await;
@@ -107,7 +350,7 @@ impl GpuContext {
             if adapter.is_none() {
                 log::warn!("try_create (backend={:?}): request_adapter with compatible_surface returned None, retrying without compatible_surface...", backends);
                 adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    power_preference: wgpu::PowerPreference::LowPower,
                     compatible_surface: None,
                     force_fallback_adapter: false,
                 }).await;
@@ -327,7 +570,7 @@ impl GpuContext {
             present_mode,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: 1,
         };
         surface.configure(&device, &config);
 

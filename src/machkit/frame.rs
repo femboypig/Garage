@@ -449,6 +449,16 @@ impl UiState {
         queue: &wgpu::Queue,
         input: FrameInput,
     ) {
+        // FPS calculation
+        let now = std::time::Instant::now();
+        if let Some(last) = self.last_frame_time {
+            let elapsed = now.duration_since(last).as_secs_f32();
+            if elapsed > 0.0 {
+                let instant_fps = 1.0 / elapsed;
+                self.current_fps = self.current_fps * 0.9 + instant_fps * 0.1;
+            }
+        }
+        self.last_frame_time = Some(now);
         let FrameInput {
             buffer,
             cursor,
@@ -1180,6 +1190,57 @@ impl UiState {
                     is_modified,
                 );
             }
+        }
+
+        // Draw FPS counter badge at the top right of the titlebar if experimental flag is active
+        if self.experimental {
+            let fps_text = format!("{:.0} FPS", self.current_fps);
+            let fps_len = fps_text.chars().count() as f32;
+            let fps_w = fps_len * self.ui_char_width;
+            let pad_x = 8.0;
+            let pad_y = 3.0;
+            let badge_w = fps_w + pad_x * 2.0;
+            let badge_h = self.ui_line_height + pad_y * 2.0;
+            
+            let badge_x = width - badge_w - 10.0;
+            let badge_y = ((self.titlebar_height - badge_h) / 2.0).round();
+            
+            let white_uv = atlas.white_pixel_uv();
+            
+            // Dark translucent background card
+            self.push_quad(
+                vertices,
+                indices,
+                badge_x,
+                badge_y,
+                badge_w,
+                badge_h,
+                white_uv,
+                [0.1, 0.1, 0.1, 0.75],
+            );
+            
+            // Subtle outline border
+            let border_color = self.config.theme.titlebar_border;
+            self.push_quad(vertices, indices, badge_x, badge_y, badge_w, 1.0, white_uv, border_color); // top
+            self.push_quad(vertices, indices, badge_x, badge_y + badge_h - 1.0, badge_w, 1.0, white_uv, border_color); // bottom
+            self.push_quad(vertices, indices, badge_x, badge_y, 1.0, badge_h, white_uv, border_color); // left
+            self.push_quad(vertices, indices, badge_x + badge_w - 1.0, badge_y, 1.0, badge_h, white_uv, border_color); // right
+            
+            // Text colored in a nice neon green
+            let text_x = badge_x + pad_x;
+            let text_y = (badge_y + badge_h / 2.0 + self.ui_font_ascent / 2.0 - 2.0).round();
+            self.push_str(
+                vertices,
+                indices,
+                atlas,
+                queue,
+                &fps_text,
+                text_x,
+                text_y,
+                [0.2, 0.9, 0.2, 1.0], // Neon green
+                self.ui_font_size,
+                self.ui_char_width,
+            );
         }
     }
 }

@@ -148,6 +148,9 @@ pub struct UiState {
     pub search_focused: bool,
     pub global_search_focused: bool,
     pub global_search_col: usize,
+    pub last_frame_time: Option<std::time::Instant>,
+    pub current_fps: f32,
+    pub experimental: bool,
 }
 
 
@@ -158,6 +161,7 @@ impl UiState {
         _queue: &wgpu::Queue,
         config: crate::editor::config::AppConfig,
         event_loop_proxy: winit::event_loop::EventLoopProxy<()>,
+        experimental: bool,
     ) -> Self {
         let ui_font_size = config.ui_font_size;
         let buffer_font_size = config.buffer_font_size;
@@ -329,6 +333,9 @@ impl UiState {
             search_focused: false,
             global_search_focused: false,
             global_search_col: 0,
+            last_frame_time: None,
+            current_fps: 0.0,
+            experimental,
         };
 
 
