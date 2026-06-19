@@ -215,13 +215,7 @@ impl GpuContext {
             log::warn!("Selected Graphics Backend (Pre-initialized): {:?}, Device: {}", adapter_info.backend, adapter_info.name);
 
             let surface_caps = surface.get_capabilities(&pre.adapter);
-            let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
-                wgpu::PresentMode::Mailbox
-            } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
-                wgpu::PresentMode::Immediate
-            } else {
-                wgpu::PresentMode::Fifo
-            };
+            let present_mode = wgpu::PresentMode::Fifo;
 
             let config = wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -554,13 +548,7 @@ impl GpuContext {
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
 
-        let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
-            wgpu::PresentMode::Mailbox
-        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
-            wgpu::PresentMode::Immediate
-        } else {
-            wgpu::PresentMode::Fifo
-        };
+        let present_mode = wgpu::PresentMode::Fifo;
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
