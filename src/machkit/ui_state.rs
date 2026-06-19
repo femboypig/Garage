@@ -230,9 +230,9 @@ impl UiState {
         if let Ok(content) = std::fs::read_to_string("assets/languages.json")
             && let Ok(map) =
                 serde_json::from_str::<std::collections::HashMap<String, String>>(&content)
-            {
-                languages = map;
-            }
+        {
+            languages = map;
+        }
         if languages.is_empty() {
             languages.insert("rs".to_string(), "Rust".to_string());
             languages.insert("json".to_string(), "JSON".to_string());

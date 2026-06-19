@@ -204,9 +204,10 @@ pub fn try_drop_to_other_window(global_x: i32, global_y: i32, file_path: &str) -
         if inside_x && inside_y {
             // Attempt to connect to other window's IPC socket and send the path
             if let Ok(mut stream) = UnixStream::connect(&w.socket_path)
-                && stream.write_all(file_path.as_bytes()).is_ok() {
-                    return true;
-                }
+                && stream.write_all(file_path.as_bytes()).is_ok()
+            {
+                return true;
+            }
         }
     }
 

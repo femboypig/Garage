@@ -463,11 +463,12 @@ pub fn build_search_render_items(ui: &mut UiState) -> Vec<SearchRenderItem> {
             let end = (line_idx + extra_after).min(file_len - 1);
 
             if let Some(last) = ranges.last_mut()
-                && start <= last.1 + 1 {
-                    last.1 = last.1.max(end);
-                    last.2.push((line_idx, res_idx));
-                    continue;
-                }
+                && start <= last.1 + 1
+            {
+                last.1 = last.1.max(end);
+                last.2.push((line_idx, res_idx));
+                continue;
+            }
             ranges.push((start, end, vec![(line_idx, res_idx)]));
         }
 

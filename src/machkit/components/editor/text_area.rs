@@ -585,39 +585,40 @@ fn draw_selection_and_search_highlights(
 ) {
     // Selection Range Highlight
     if let Some((s_line, s_col, e_line, e_col)) = cursor.selection_range()
-        && line_idx >= s_line && line_idx <= e_line {
-            let line_chars_count = buffer.lines()[line_idx].chars().count();
-            let col_start = if line_idx == s_line { s_col } else { 0_usize };
-            let col_end = if line_idx == e_line {
-                e_col
-            } else {
-                line_chars_count
-            };
+        && line_idx >= s_line
+        && line_idx <= e_line
+    {
+        let line_chars_count = buffer.lines()[line_idx].chars().count();
+        let col_start = if line_idx == s_line { s_col } else { 0_usize };
+        let col_end = if line_idx == e_line {
+            e_col
+        } else {
+            line_chars_count
+        };
 
-            let visible_start = col_start.saturating_sub(ui.scroll_x);
-            let visible_end = col_end.saturating_sub(ui.scroll_x);
+        let visible_start = col_start.saturating_sub(ui.scroll_x);
+        let visible_end = col_end.saturating_sub(ui.scroll_x);
 
-            if visible_start < visible_end {
-                let sel_x = text_area_x + visible_start as f32 * ui.buffer_char_width;
-                let mut sel_w =
-                    ((visible_end - visible_start) as f32).max(0.5) * ui.buffer_char_width;
-                if sel_x < minimap_x {
-                    if sel_x + sel_w > minimap_x {
-                        sel_w = minimap_x - sel_x;
-                    }
-                    ui.push_quad(
-                        vertices,
-                        indices,
-                        sel_x,
-                        row_y,
-                        sel_w,
-                        ui.buffer_line_height,
-                        white_uv,
-                        ui.config.theme.selection_bg,
-                    );
+        if visible_start < visible_end {
+            let sel_x = text_area_x + visible_start as f32 * ui.buffer_char_width;
+            let mut sel_w = ((visible_end - visible_start) as f32).max(0.5) * ui.buffer_char_width;
+            if sel_x < minimap_x {
+                if sel_x + sel_w > minimap_x {
+                    sel_w = minimap_x - sel_x;
                 }
+                ui.push_quad(
+                    vertices,
+                    indices,
+                    sel_x,
+                    row_y,
+                    sel_w,
+                    ui.buffer_line_height,
+                    white_uv,
+                    ui.config.theme.selection_bg,
+                );
             }
         }
+    }
 
     // Search Match Highlights
     if ui.show_search_panel && !ui.search_query.is_empty() {
@@ -904,43 +905,46 @@ pub fn draw_text_area(
         let inline_diag_w = 0.0f32;
 
         // 2. Draw Git Blame inline annotation at the end of the active line
-        if ui.config.show_git_blame && line_idx == cursor.line
+        if ui.config.show_git_blame
+            && line_idx == cursor.line
             && let Some(blame_str) = ui.get_or_update_blame(active_file_path, line_idx)
-                && blame_str != "Loading blame..." && !blame_str.is_empty() {
-                    let annotation_x = pen_x + 30.0 + inline_diag_w;
-                    if annotation_x < minimap_x {
-                        let max_w = (minimap_x - annotation_x - 10.0).max(0.0);
-                        let available_chars = (max_w / ui.buffer_char_width).floor() as usize;
-                        if available_chars > 3 {
-                            let final_blame = if blame_str.chars().count() > available_chars {
-                                format!(
-                                    "{}...",
-                                    &blame_str
-                                        .chars()
-                                        .take(available_chars - 3)
-                                        .collect::<String>()
-                                )
-                            } else {
-                                blame_str
-                            };
-                            let mut annotation_color = ui.config.theme.syntax_comment;
-                            annotation_color[3] *= 0.5; // Make it extra faint
+            && blame_str != "Loading blame..."
+            && !blame_str.is_empty()
+        {
+            let annotation_x = pen_x + 30.0 + inline_diag_w;
+            if annotation_x < minimap_x {
+                let max_w = (minimap_x - annotation_x - 10.0).max(0.0);
+                let available_chars = (max_w / ui.buffer_char_width).floor() as usize;
+                if available_chars > 3 {
+                    let final_blame = if blame_str.chars().count() > available_chars {
+                        format!(
+                            "{}...",
+                            &blame_str
+                                .chars()
+                                .take(available_chars - 3)
+                                .collect::<String>()
+                        )
+                    } else {
+                        blame_str
+                    };
+                    let mut annotation_color = ui.config.theme.syntax_comment;
+                    annotation_color[3] *= 0.5; // Make it extra faint
 
-                            ui.push_str(
-                                vertices,
-                                indices,
-                                atlas,
-                                queue,
-                                &final_blame,
-                                annotation_x,
-                                baseline_y,
-                                annotation_color,
-                                ui.buffer_font_size,
-                                ui.buffer_char_width,
-                            );
-                        }
-                    }
+                    ui.push_str(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        &final_blame,
+                        annotation_x,
+                        baseline_y,
+                        annotation_color,
+                        ui.buffer_font_size,
+                        ui.buffer_char_width,
+                    );
                 }
+            }
+        }
     }
 
     draw_text_cursors(

@@ -44,17 +44,18 @@ pub fn update_git_diff(
                                     };
 
                                     let old_spec = specs[0];
-                                    let old_count = if let Some(old_content) = old_spec.strip_prefix('-') {
-                                        let old_subparts: Vec<&str> =
-                                            old_content.split(',').collect();
-                                        if old_subparts.len() >= 2 {
-                                            old_subparts[1].parse::<usize>().unwrap_or(1)
+                                    let old_count =
+                                        if let Some(old_content) = old_spec.strip_prefix('-') {
+                                            let old_subparts: Vec<&str> =
+                                                old_content.split(',').collect();
+                                            if old_subparts.len() >= 2 {
+                                                old_subparts[1].parse::<usize>().unwrap_or(1)
+                                            } else {
+                                                1
+                                            }
                                         } else {
                                             1
-                                        }
-                                    } else {
-                                        1
-                                    };
+                                        };
 
                                     if old_count == 0 {
                                         hunks.push(GitDiffHunk::Added {

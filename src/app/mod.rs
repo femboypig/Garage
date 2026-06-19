@@ -71,9 +71,10 @@ pub fn run_editor(
     let surface = match instance.create_surface(window.clone()) {
         Ok(s) => s,
         Err(e) => {
-            return Err(Box::new(std::io::Error::other(
-                format!("Failed to create surface: {:?}", e),
-            )));
+            return Err(Box::new(std::io::Error::other(format!(
+                "Failed to create surface: {:?}",
+                e
+            ))));
         }
     };
 
@@ -203,13 +204,14 @@ pub fn run_editor(
             let mut buffer = Buffer::new();
             let save_path = if let Some(ref path) = file_path {
                 if !path.starts_with("diagnostics://")
-                    && let Err(e) = buffer.load_file(path) {
-                        log::warn!(
-                            "Failed to load file '{}': {}. Starting with empty buffer.",
-                            path,
-                            e
-                        );
-                    }
+                    && let Err(e) = buffer.load_file(path)
+                {
+                    log::warn!(
+                        "Failed to load file '{}': {}. Starting with empty buffer.",
+                        path,
+                        e
+                    );
+                }
                 if path.starts_with("diagnostics://") {
                     Some(path.clone())
                 } else {

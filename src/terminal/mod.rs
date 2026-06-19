@@ -388,12 +388,12 @@ impl vte::Perform for TerminalGrid {
                                 } else if mode == 2
                                     && let (Some(r_p), Some(g_p), Some(b_p)) =
                                         (params_iter.next(), params_iter.next(), params_iter.next())
-                                    {
-                                        let r = r_p.first().copied().unwrap_or(0) as f32 / 255.0;
-                                        let g = g_p.first().copied().unwrap_or(0) as f32 / 255.0;
-                                        let b = b_p.first().copied().unwrap_or(0) as f32 / 255.0;
-                                        self.current_bg = [r, g, b, 1.0];
-                                    }
+                                {
+                                    let r = r_p.first().copied().unwrap_or(0) as f32 / 255.0;
+                                    let g = g_p.first().copied().unwrap_or(0) as f32 / 255.0;
+                                    let b = b_p.first().copied().unwrap_or(0) as f32 / 255.0;
+                                    self.current_bg = [r, g, b, 1.0];
+                                }
                             }
                         }
                         49 => {
@@ -715,25 +715,26 @@ impl vte::Perform for TerminalGrid {
                     self.title = title.to_string();
                 }
             } else if action == b"7"
-                && let Ok(url_str) = std::str::from_utf8(params[1]) {
-                    // OSC 7: file://hostname/path — extract path component
-                    let path_str = if let Some(path_part) = url_str.strip_prefix("file://") {
-                        // Skip hostname part to get the path
-                        path_part.find('/').map(|slash_idx| &path_part[slash_idx..])
-                    } else {
-                        // Treat as raw path
-                        Some(url_str)
-                    };
-                    if let Some(path) = path_str {
-                        let path_buf = std::path::Path::new(path);
-                        // Use the directory name as the tab title (like "src" or "Garage")
-                        if let Some(dir_name) = path_buf.file_name().and_then(|f| f.to_str()) {
-                            self.title = dir_name.to_string();
-                        } else if path == "/" {
-                            self.title = "/".to_string();
-                        }
+                && let Ok(url_str) = std::str::from_utf8(params[1])
+            {
+                // OSC 7: file://hostname/path — extract path component
+                let path_str = if let Some(path_part) = url_str.strip_prefix("file://") {
+                    // Skip hostname part to get the path
+                    path_part.find('/').map(|slash_idx| &path_part[slash_idx..])
+                } else {
+                    // Treat as raw path
+                    Some(url_str)
+                };
+                if let Some(path) = path_str {
+                    let path_buf = std::path::Path::new(path);
+                    // Use the directory name as the tab title (like "src" or "Garage")
+                    if let Some(dir_name) = path_buf.file_name().and_then(|f| f.to_str()) {
+                        self.title = dir_name.to_string();
+                    } else if path == "/" {
+                        self.title = "/".to_string();
                     }
                 }
+            }
         }
     }
 
@@ -870,21 +871,21 @@ impl TerminalInstance {
         {
             if let Some(pid) = self.child.process_id() {
                 if let Ok(stat_content) = std::fs::read_to_string(format!("/proc/{}/stat", pid))
-                    && let Some(last_paren) = stat_content.rfind(')') {
-                        let post_paren = &stat_content[last_paren + 1..];
-                        let parts: Vec<&str> = post_paren.split_whitespace().collect();
-                        if parts.len() > 5
-                            && let Ok(tpgid) = parts[5].parse::<i32>()
-                                && tpgid > 0
-                                    && let Ok(comm) =
-                                        std::fs::read_to_string(format!("/proc/{}/comm", tpgid))
-                                    {
-                                        let name = comm.trim().to_string();
-                                        if !name.is_empty() {
-                                            return Some(name);
-                                        }
-                                    }
+                    && let Some(last_paren) = stat_content.rfind(')')
+                {
+                    let post_paren = &stat_content[last_paren + 1..];
+                    let parts: Vec<&str> = post_paren.split_whitespace().collect();
+                    if parts.len() > 5
+                        && let Ok(tpgid) = parts[5].parse::<i32>()
+                        && tpgid > 0
+                        && let Ok(comm) = std::fs::read_to_string(format!("/proc/{}/comm", tpgid))
+                    {
+                        let name = comm.trim().to_string();
+                        if !name.is_empty() {
+                            return Some(name);
+                        }
                     }
+                }
                 if let Ok(comm) = std::fs::read_to_string(format!("/proc/{}/comm", pid)) {
                     let name = comm.trim().to_string();
                     if !name.is_empty() {

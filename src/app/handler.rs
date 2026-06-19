@@ -74,9 +74,7 @@ pub fn handle_action(
                         } else {
                             p_buf
                         };
-                        crate::editor::normalize_path(&p_norm)
-                            .to_string_lossy()
-                            == path_str
+                        crate::editor::normalize_path(&p_norm).to_string_lossy() == path_str
                     }
                 })
             }) {
@@ -88,10 +86,12 @@ pub fn handle_action(
                 false
             } else {
                 let mut new_buf = Buffer::new();
-                if !path_str.starts_with("diagnostics://") && !path_str.starts_with("search://")
-                    && let Err(e) = new_buf.load_file(&path_str) {
-                        log::warn!("Failed to load file '{}': {}", path_str, e);
-                    }
+                if !path_str.starts_with("diagnostics://")
+                    && !path_str.starts_with("search://")
+                    && let Err(e) = new_buf.load_file(&path_str)
+                {
+                    log::warn!("Failed to load file '{}': {}", path_str, e);
+                }
                 state.tabs[state.active_tab_idx].scroll_x = ui.scroll_x;
                 state.tabs[state.active_tab_idx].scroll_y = ui.scroll_y;
                 state.tabs.push(Tab {
@@ -123,7 +123,7 @@ pub fn handle_action(
                     ui.update_git_diff(Some(active_path));
                     ui.update_git_file_blame(Some(active_path));
                     ui.update_git_statuses();
-                } 
+                }
             } else {
                 ui.selected_file = None;
             }
@@ -698,16 +698,16 @@ pub fn handle_action(
     }
 
     if let (Some(start_path), Some(old_rev)) = (active_path_start, old_revision)
-        && state.active_tab_idx < state.tabs.len() {
-            let active_tab = &state.tabs[state.active_tab_idx];
-            if active_tab.path.as_ref() == Some(&start_path)
-                && old_rev != active_tab.buffer.revision {
-                    let abs_path = crate::editor::get_absolute_path(&start_path);
-                    ui.diagnostics_file_cache
-                        .insert(abs_path.clone(), active_tab.buffer.lines().to_vec());
-                    ui.synced_revisions
-                        .insert(abs_path, active_tab.buffer.revision);
-                    ui.diagnostics_changed = true;
-                }
+        && state.active_tab_idx < state.tabs.len()
+    {
+        let active_tab = &state.tabs[state.active_tab_idx];
+        if active_tab.path.as_ref() == Some(&start_path) && old_rev != active_tab.buffer.revision {
+            let abs_path = crate::editor::get_absolute_path(&start_path);
+            ui.diagnostics_file_cache
+                .insert(abs_path.clone(), active_tab.buffer.lines().to_vec());
+            ui.synced_revisions
+                .insert(abs_path, active_tab.buffer.revision);
+            ui.diagnostics_changed = true;
         }
+    }
 }

@@ -365,20 +365,21 @@ pub fn draw_sidebar(
 
             // Draw Git status badge if space permits
             if let Some(badge) = git_badge
-                && current_x + 12.0 < max_x {
-                    ui.push_str(
-                        vertices,
-                        indices,
-                        atlas,
-                        queue,
-                        badge,
-                        current_x + 8.0,
-                        text_baseline,
-                        text_color,
-                        ui.ui_font_size * 0.85,
-                        ui.ui_char_width * 0.85,
-                    );
-                }
+                && current_x + 12.0 < max_x
+            {
+                ui.push_str(
+                    vertices,
+                    indices,
+                    atlas,
+                    queue,
+                    badge,
+                    current_x + 8.0,
+                    text_baseline,
+                    text_color,
+                    ui.ui_font_size * 0.85,
+                    ui.ui_char_width * 0.85,
+                );
+            }
         }
     }
 

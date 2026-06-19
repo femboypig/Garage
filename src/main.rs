@@ -20,7 +20,6 @@ pub mod machkit;
 pub mod renderer;
 pub mod terminal;
 
-
 fn main() {
     experiments::startup::record_start_time();
 
