@@ -23,19 +23,17 @@ pub fn report_startup_complete() {
     if let Some(start) = START_TIME.get() {
         let duration = start.elapsed();
         println!("Startup complete! Total Time elapsed: {:.2?}", duration);
-        println!("Initialization breakdown:");
+        println!("Initialization timeline:");
         if let Ok(steps) = STEPS.lock() {
-            let mut last_time = *start;
             for (name, time) in steps.iter() {
                 if *name == "Start" {
                     continue;
                 }
-                let step_dur = time.duration_since(last_time);
-                println!("  - {}: {:.2?}", name, step_dur);
-                last_time = *time;
+                let elapsed = time.duration_since(*start);
+                println!("  - {}: {:.2?} absolute", name, elapsed);
             }
-            let first_frame_dur = Instant::now().duration_since(last_time);
-            println!("  - Event Loop to First Frame: {:.2?}", first_frame_dur);
+            let first_frame_elapsed = Instant::now().duration_since(*start);
+            println!("  - First Frame Rendered: {:.2?} absolute", first_frame_elapsed);
         }
     }
 }

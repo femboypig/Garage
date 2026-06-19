@@ -28,53 +28,89 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     }
     builder.init();
 
+    // 1. Load config immediately on main thread (fast, ~5ms)
+    let config = crate::editor::config::AppConfig::load();
+    crate::experiments::startup::record_step("Config Load");
+
+    // 2. Initialize Event Loop
     let event_loop = EventLoop::new()?;
-    
-    // Spawn background thread immediately to pre-load Vulkan / GL drivers and config/fonts
+
+    // 3. Pre-create the instance on the main thread (fast, <1ms)
+    let initial_backends = match config.backend.as_str() {
+        "Vulkan" => Some(wgpu::Backends::VULKAN),
+        "OpenGL" => Some(wgpu::Backends::GL),
+        _ => None,
+    };
+    let instance_backends = initial_backends.unwrap_or(wgpu::Backends::all());
+    let flags = (wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
+        & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
+    let instance = Arc::new(wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: instance_backends,
+        flags,
+        ..Default::default()
+    }));
+
+    // 4. Build the window with visibility initially FALSE
+    let window = Arc::new(
+        WindowBuilder::new()
+            .with_title("Garage")
+            .with_decorations(true)
+            .with_transparent(true)
+            .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
+            .with_visible(false) // Keep hidden on startup to prevent visual flashing and WM latency
+            .build(&event_loop)?,
+    );
+    crate::experiments::startup::record_step("Window Creation");
+
+    // 5. Create Surface on main thread (fast, ~1ms)
+    let surface = match instance.create_surface(window.clone()) {
+        Ok(s) => s,
+        Err(e) => {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to create surface: {:?}", e),
+            )));
+        }
+    };
+
+    // Spawn background thread immediately to do all heavy GPU init and precompilation
     let (init_tx, init_rx) = std::sync::mpsc::channel::<(GpuContext, FontAtlas, UiState)>();
-    let (window_tx, window_rx) = std::sync::mpsc::channel::<Arc<winit::window::Window>>();
-    
     let font_bytes = include_bytes!("../../assets/fonts/IBMPlexMono-Regular.ttf");
     let proxy = event_loop.create_proxy();
     let proxy_clone = proxy.clone();
-    
+
+    let window_for_bg = window.clone();
+    let instance_for_bg = instance.clone();
+    let config_clone = config.clone();
+
     std::thread::spawn(move || {
-        let mut config = crate::editor::config::AppConfig::load();
-        crate::experiments::startup::record_step("Config Load");
+        // Parallel pre-initialization of Adapter, Device, Queue, and compilation of Shader module
+        let pre_init = pollster::block_on(crate::renderer::wgpu::GpuContext::pre_initialize(
+            instance_for_bg.clone(),
+            &surface,
+            initial_backends,
+        ));
+        crate::experiments::startup::record_step("WGPU Context Pre-Init");
 
-        let initial_backends = match config.backend.as_str() {
-            "Vulkan" => Some(wgpu::Backends::VULKAN),
-            "OpenGL" => Some(wgpu::Backends::GL),
-            _ => None,
-        };
-
-        // Pre-create the instance (loads Vulkan shared library in parallel with winit Window creation!)
-        let instance_backends = initial_backends.unwrap_or(wgpu::Backends::all());
-        let flags = (wgpu::InstanceFlags::default() | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
-            & !wgpu::InstanceFlags::VALIDATION & !wgpu::InstanceFlags::DEBUG;
-        let instance = Arc::new(wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: instance_backends,
-            flags,
-            ..Default::default()
-        }));
-
-        // Wait for window to be created on the main thread
-        let window = match window_rx.recv() {
-            Ok(w) => w,
-            Err(_) => return,
-        };
-
-        let mut gpu = pollster::block_on(GpuContext::new_with_instance(window, initial_backends, Some(instance)));
-        crate::experiments::startup::record_step("WGPU Context Creation");
+        // Complete initialization, configure surface and create bind groups/buffers
+        let mut gpu = pollster::block_on(crate::renderer::wgpu::GpuContext::complete_initialization(
+            window_for_bg,
+            surface,
+            pre_init,
+            initial_backends,
+            instance_for_bg,
+        ));
+        crate::experiments::startup::record_step("WGPU Context Complete & Surface Creation");
 
         let actual_backend_str = match gpu.backend {
             wgpu::Backend::Vulkan => "Vulkan",
             wgpu::Backend::Gl => "OpenGL",
             _ => "Vulkan",
         };
-        if config.backend != actual_backend_str {
-            config.backend = actual_backend_str.to_string();
-            if let Err(e) = config.save() {
+        let mut saved_config = config_clone;
+        if saved_config.backend != actual_backend_str {
+            saved_config.backend = actual_backend_str.to_string();
+            if let Err(e) = saved_config.save() {
                 log::warn!("Failed to save config on startup fallback: {:?}", e);
             } else {
                 log::warn!("Successfully saved fallback backend '{}' to config.", actual_backend_str);
@@ -95,28 +131,13 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
         crate::experiments::startup::record_step("Font Atlas & Texture upload");
 
         // Initialize layout and state
-        let mut ui = UiState::new(&mut atlas, &gpu.queue, config, proxy_clone.clone());
+        let mut ui = UiState::new(&mut atlas, &gpu.queue, saved_config, proxy_clone.clone());
         ui.active_device_name = gpu.device_name.clone();
         crate::experiments::startup::record_step("UI State Initialization");
 
         let _ = init_tx.send((gpu, atlas, ui));
         let _ = proxy_clone.send_event(());
     });
-
-    // Build the window on the main thread in parallel with Vulkan driver loading
-    let window = Arc::new(
-        WindowBuilder::new()
-            .with_title("Garage")
-            .with_decorations(true)
-            .with_transparent(true)
-            .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
-            .with_visible(true)
-            .build(&event_loop)?,
-    );
-    crate::experiments::startup::record_step("Window Creation");
-
-    // Pass the window to the background thread
-    let _ = window_tx.send(window.clone());
 
     let mut state = if let Some((mut restored_tabs, active_tab_idx)) = autosave::load_session_and_restore_buffers() {
         if let Some(ref path) = file_path {
@@ -193,8 +214,13 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     };
     crate::experiments::startup::record_step("Initial File Load & State Setup");
 
-    let socket_path = ipc::start_ipc_server(state.pending_open_files.clone(), event_loop.create_proxy());
-    ipc::register_window(&window, &socket_path);
+    let window_clone = window.clone();
+    let pending_files_clone = state.pending_open_files.clone();
+    let proxy_clone_ipc = event_loop.create_proxy();
+    std::thread::spawn(move || {
+        let socket_path = ipc::start_ipc_server(pending_files_clone, proxy_clone_ipc);
+        ipc::register_window(&window_clone, &socket_path);
+    });
     struct IpcGuard;
     impl Drop for IpcGuard {
         fn drop(&mut self) {
@@ -212,36 +238,45 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
     let mut atlas: Option<FontAtlas> = None;
     let mut ui: Option<UiState> = None;
 
-    window.set_visible(true);
-    crate::experiments::startup::record_step("Window Visibility Set");
-
     let mut redraw_requested = false;
     let mut last_autosave = std::time::Instant::now();
 
     let (watcher_tx, watcher_rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
     let proxy_for_watcher = event_loop.create_proxy();
     
-    let mut watcher = match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if watcher_tx.send(res).is_ok() {
-            let _ = proxy_for_watcher.send_event(());
-        }
-    }) {
-        Ok(w) => Some(w),
-        Err(e) => {
-            log::warn!("Failed to initialize file watcher: {:?}", e);
-            None
-        }
-    };
+    // Spawn file watcher setup in a background thread to prevent disk/kernel API blocking the main thread
+    let (watcher_keepalive_tx, watcher_keepalive_rx) = std::sync::mpsc::channel::<Option<notify::RecommendedWatcher>>();
+    std::thread::spawn(move || {
+        let mut watcher = match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            if watcher_tx.send(res).is_ok() {
+                let _ = proxy_for_watcher.send_event(());
+            }
+        }) {
+            Ok(w) => Some(w),
+            Err(e) => {
+                log::warn!("Failed to initialize file watcher: {:?}", e);
+                None
+            }
+        };
 
-    if let Some(ref mut w) = watcher {
-        use notify::Watcher;
-        if let Err(e) = w.watch(std::path::Path::new("."), notify::RecursiveMode::Recursive) {
-            log::warn!("Failed to watch current directory: {:?}", e);
+        if let Some(ref mut w) = watcher {
+            use notify::Watcher;
+            if let Err(e) = w.watch(std::path::Path::new("."), notify::RecursiveMode::Recursive) {
+                log::warn!("Failed to watch current directory: {:?}", e);
+            }
         }
-    }
+        let _ = watcher_keepalive_tx.send(watcher);
+    });
+
+    let mut watcher: Option<notify::RecommendedWatcher> = None;
 
     // Run the event loop reactively to save power/CPU/GPU cycles when idle
     event_loop.run(move |event, elwt| {
+        if watcher.is_none() {
+            if let Ok(w) = watcher_keepalive_rx.try_recv() {
+                watcher = w;
+            }
+        }
         if !first_frame_rendered {
             elwt.set_control_flow(ControlFlow::Poll);
         } else {
@@ -303,10 +338,14 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         },
                     );
                     
-                    if let Err(e) = gpu_ref.render(&vertices, &indices) {
+                    let render_res = gpu_ref.render(&vertices, &indices);
+                    
+                    if let Err(e) = render_res {
                         log::error!("First frame rendering error: {:?}", e);
                     } else {
                         first_frame_rendered = true;
+                        window.set_visible(true);
+                        crate::experiments::startup::record_step("Window Visibility Set");
                         crate::experiments::startup::report_startup_complete();
                     }
                 }
