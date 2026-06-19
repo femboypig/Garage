@@ -2943,7 +2943,6 @@ pub fn handle_mouse_wheel(
         size.height as f32 - ui.status_height
     };
 
-    // Handle Tab Bar Scroll
     let hovered_pane_idx = if state.inactive_panes.is_empty() {
         0
     } else if state.is_split_horizontal {
@@ -2986,64 +2985,18 @@ pub fn handle_mouse_wheel(
         && state.mouse_y >= pane_tabbar_top
         && state.mouse_y < pane_tabbar_bottom
     {
-        let (hovered_tabs, current_scroll_x) = if hovered_pane_idx == state.active_pane_idx {
-            (&state.tabs, state.tab_scroll_x)
-        } else {
-            (&state.inactive_panes[0].tabs, state.inactive_panes[0].tab_scroll_x)
-        };
-
-        let mut total_tabs_width = 0.0f32;
-        let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
-        let close_reserved = 8.0f32 + tab_close_icon_sz;
-        let dot_reserved = 18.0f32;
-        for t in hovered_tabs {
-            let file_name = ui.get_tab_name(t.path.as_deref());
-            let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
-            let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
-            total_tabs_width += tab_w;
-        }
-
-        let visible_width = pane_tabbar_end_x - pane_tabbar_start_x;
-        let max_scroll_x = (total_tabs_width - visible_width).max(0.0);
-
-        let scroll_amount = match delta {
-            MouseScrollDelta::LineDelta(dx, dy) => {
-                let val = if dx.abs() > dy.abs() { dx } else { -dy };
-                val * 24.0
-            }
-            MouseScrollDelta::PixelDelta(pos) => {
-                let val = if pos.x.abs() > pos.y.abs() { pos.x } else { -pos.y };
-                val as f32
-            }
-        };
-
-        let new_scroll_x = (current_scroll_x + scroll_amount).clamp(0.0, max_scroll_x);
-        state.set_pane_scroll_x(hovered_pane_idx, new_scroll_x);
-        window.request_redraw();
+        scroll_tab_bar(ui, state, window, delta, hovered_pane_idx, pane_tabbar_start_x, pane_tabbar_end_x);
         return;
     }
 
     // Handle Terminal Dock Scroll
-    let main_y = ui.titlebar_height;
-    let mut dock_start_y = size.height as f32 - ui.status_height;
-    if ui.show_dock {
-        dock_start_y = (size.height as f32 - ui.status_height - ui.dock_height).max(main_y + ui.tabbar_height + ui.breadcrumb_height + 50.0);
-    }
     let is_mouse_over_terminal = ui.show_dock 
         && state.mouse_y >= dock_start_y + 28.0 
         && state.mouse_y < size.height as f32 - ui.status_height
         && state.mouse_x >= ui.sidebar_width;
 
     if is_mouse_over_terminal && !state.dock_terminals.is_empty() {
-        let scroll_lines = match delta {
-            MouseScrollDelta::LineDelta(_, dy) => dy as isize * 3,
-            MouseScrollDelta::PixelDelta(pos) => ((pos.y / 15.0) * 3.0) as isize,
-        };
-        let active_term = &mut state.dock_terminals[state.active_terminal_idx];
-        let max_scroll = active_term.grid.scrollback.len() as isize;
-        let new_offset = active_term.grid.scroll_offset as isize + scroll_lines;
-        active_term.grid.scroll_offset = new_offset.clamp(0, max_scroll) as usize;
-        window.request_redraw();
+        scroll_terminal_dock(state, window, delta);
         return;
     }
 
@@ -3051,54 +3004,143 @@ pub fn handle_mouse_wheel(
     let sidebar_top = ui.titlebar_height;
     let sidebar_bottom = size.height as f32 - ui.status_height;
     if ui.sidebar_width > 0.0 && state.mouse_x >= 0.0 && state.mouse_x < ui.sidebar_width && state.mouse_y >= sidebar_top && state.mouse_y < sidebar_bottom {
-        let scroll_lines = match delta {
-            MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
-            MouseScrollDelta::PixelDelta(pos) => ((pos.y / (ui.ui_line_height as f64)) * 3.0) as isize * -1,
-        };
-        let total_rows = 1 + ui.visible_nodes.len();
-        let main_height = sidebar_bottom - sidebar_top;
-        let visible_rows = (main_height / ui.ui_line_height).floor() as usize;
-        let max_scroll = (total_rows as isize - visible_rows as isize).max(0);
-        let new_scroll = ui.sidebar_scroll as isize + scroll_lines;
-        ui.sidebar_scroll = new_scroll.clamp(0, max_scroll) as usize;
-        window.request_redraw();
+        scroll_sidebar(ui, window, delta, sidebar_bottom - sidebar_top);
         return;
     }
  
     let is_shift = state.modifiers.shift_key();
     if is_shift {
-        let scroll_cols = match delta {
-            MouseScrollDelta::LineDelta(dx, _) if dx != 0.0 => -dx as isize * 3,
-            MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
-            MouseScrollDelta::PixelDelta(pos) => {
-                let val = if pos.x.abs() > pos.y.abs() { pos.x } else { pos.y };
-                ((val / (ui.buffer_char_width as f64)) * 3.0) as isize * -1
-            }
-        };
-        let max_line_digits = state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3);
-        let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
-        let text_area_x = ui.sidebar_width + gutter_width;
-        let scrollbar_width = ui.scrollbar_width();
-        let minimap_width = ui.minimap_width();
-        let sb_x = w_width - scrollbar_width;
-        let minimap_x = sb_x - minimap_width;
-        let text_viewport_w = (minimap_x - text_area_x).max(10.0);
-        let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
- 
-        let max_line_len = state.tabs[state.active_tab_idx].buffer.lines().iter().map(|l: &String| l.chars().count()).max().unwrap_or(0);
-        let max_scroll = (max_line_len as isize - visible_cols as isize).max(0);
-        let new_scroll = ui.scroll_x as isize + scroll_cols;
-        ui.scroll_x = new_scroll.clamp(0, max_scroll) as usize;
-        state.tabs[state.active_tab_idx].scroll_x = ui.scroll_x;
-        window.request_redraw();
+        scroll_horizontal_buffer(ui, state, window, delta, w_width);
         return;
     }
  
+    scroll_vertical_buffer(ui, state, window, delta, w_width);
+}
+
+fn scroll_tab_bar(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &Window,
+    delta: MouseScrollDelta,
+    hovered_pane_idx: usize,
+    pane_tabbar_start_x: f32,
+    pane_tabbar_end_x: f32,
+) {
+    let (hovered_tabs, current_scroll_x) = if hovered_pane_idx == state.active_pane_idx {
+        (&state.tabs, state.tab_scroll_x)
+    } else {
+        (&state.inactive_panes[0].tabs, state.inactive_panes[0].tab_scroll_x)
+    };
+
+    let mut total_tabs_width = 0.0f32;
+    let tab_close_icon_sz = (ui.ui_font_size * 0.8).round().max(10.0);
+    let close_reserved = 8.0f32 + tab_close_icon_sz;
+    let dot_reserved = 18.0f32;
+    for t in hovered_tabs {
+        let file_name = ui.get_tab_name(t.path.as_deref());
+        let name_w = file_name.chars().count() as f32 * ui.ui_char_width;
+        let tab_w = (12.0 + dot_reserved + name_w + close_reserved + 10.0).max(110.0);
+        total_tabs_width += tab_w;
+    }
+
+    let visible_width = pane_tabbar_end_x - pane_tabbar_start_x;
+    let max_scroll_x = (total_tabs_width - visible_width).max(0.0);
+
+    let scroll_amount = match delta {
+        MouseScrollDelta::LineDelta(dx, dy) => {
+            let val = if dx.abs() > dy.abs() { dx } else { -dy };
+            val * 24.0
+        }
+        MouseScrollDelta::PixelDelta(pos) => {
+            let val = if pos.x.abs() > pos.y.abs() { pos.x } else { -pos.y };
+            val as f32
+        }
+    };
+
+    let new_scroll_x = (current_scroll_x + scroll_amount).clamp(0.0, max_scroll_x);
+    state.set_pane_scroll_x(hovered_pane_idx, new_scroll_x);
+    window.request_redraw();
+}
+
+fn scroll_terminal_dock(
+    state: &mut AppState,
+    window: &Window,
+    delta: MouseScrollDelta,
+) {
+    let scroll_lines = match delta {
+        MouseScrollDelta::LineDelta(_, dy) => dy as isize * 3,
+        MouseScrollDelta::PixelDelta(pos) => ((pos.y / 15.0) * 3.0) as isize,
+    };
+    let active_term = &mut state.dock_terminals[state.active_terminal_idx];
+    let max_scroll = active_term.grid.scrollback.len() as isize;
+    let new_offset = active_term.grid.scroll_offset as isize + scroll_lines;
+    active_term.grid.scroll_offset = new_offset.clamp(0, max_scroll) as usize;
+    window.request_redraw();
+}
+
+fn scroll_sidebar(
+    ui: &mut UiState,
+    window: &Window,
+    delta: MouseScrollDelta,
+    main_height: f32,
+) {
+    let scroll_lines = match delta {
+        MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
+        MouseScrollDelta::PixelDelta(pos) => ((pos.y / (ui.ui_line_height as f64)) * 3.0) as isize * -1,
+    };
+    let total_rows = 1 + ui.visible_nodes.len();
+    let visible_rows = (main_height / ui.ui_line_height).floor() as usize;
+    let max_scroll = (total_rows as isize - visible_rows as isize).max(0);
+    let new_scroll = ui.sidebar_scroll as isize + scroll_lines;
+    ui.sidebar_scroll = new_scroll.clamp(0, max_scroll) as usize;
+    window.request_redraw();
+}
+
+fn scroll_horizontal_buffer(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &Window,
+    delta: MouseScrollDelta,
+    w_width: f32,
+) {
+    let scroll_cols = match delta {
+        MouseScrollDelta::LineDelta(dx, _) if dx != 0.0 => -dx as isize * 3,
+        MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
+        MouseScrollDelta::PixelDelta(pos) => {
+            let val = if pos.x.abs() > pos.y.abs() { pos.x } else { pos.y };
+            ((val / (ui.buffer_char_width as f64)) * 3.0) as isize * -1
+        }
+    };
+    let max_line_digits = state.tabs[state.active_tab_idx].buffer.len().to_string().len().max(3);
+    let gutter_width = (max_line_digits as f32 + 2.0) * ui.buffer_char_width;
+    let text_area_x = ui.sidebar_width + gutter_width;
+    let scrollbar_width = ui.scrollbar_width();
+    let minimap_width = ui.minimap_width();
+    let sb_x = w_width - scrollbar_width;
+    let minimap_x = sb_x - minimap_width;
+    let text_viewport_w = (minimap_x - text_area_x).max(10.0);
+    let visible_cols = (text_viewport_w / ui.buffer_char_width).floor() as usize;
+
+    let max_line_len = state.tabs[state.active_tab_idx].buffer.lines().iter().map(|l: &String| l.chars().count()).max().unwrap_or(0);
+    let max_scroll = (max_line_len as isize - visible_cols as isize).max(0);
+    let new_scroll = ui.scroll_x as isize + scroll_cols;
+    ui.scroll_x = new_scroll.clamp(0, max_scroll) as usize;
+    state.tabs[state.active_tab_idx].scroll_x = ui.scroll_x;
+    window.request_redraw();
+}
+
+fn scroll_vertical_buffer(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &Window,
+    delta: MouseScrollDelta,
+    w_width: f32,
+) {
     let scroll_lines = match delta {
         MouseScrollDelta::LineDelta(_, dy) => -dy as isize * 3,
         MouseScrollDelta::PixelDelta(pos) => ((pos.y / (ui.buffer_line_height as f64)) * 3.0) as isize * -1,
     };
- 
+
     let active_path = state.tabs[state.active_tab_idx].path.as_deref().unwrap_or("");
     if active_path == "search://project" {
         let render_items = crate::machkit::components::editor::project_search::build_search_render_items(ui);
@@ -3161,9 +3203,9 @@ pub fn handle_mouse_wheel(
     };
 
     let max_scroll = (virtual_len as isize - visible_lines as isize).max(0);
- 
+
     let new_scroll = ui.scroll_y as isize + scroll_lines;
     ui.scroll_y = new_scroll.clamp(0, max_scroll) as usize;
- 
+
     window.request_redraw();
 }
