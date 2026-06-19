@@ -1,8 +1,4 @@
-use std::fs;
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
@@ -19,7 +15,11 @@ pub struct WindowInfo {
 #[cfg(unix)]
 mod unix_impl {
     use super::*;
+    use std::fs;
+    use std::io::{Read, Write};
     use std::os::unix::net::{UnixListener, UnixStream};
+    use std::path::{Path, PathBuf};
+    use std::thread;
 
     fn get_secure_runtime_dir() -> PathBuf {
         if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {

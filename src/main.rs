@@ -9,7 +9,9 @@
     clippy::manual_strip,
     clippy::manual_clamp,
     clippy::bool_assert_comparison,
-    clippy::manual_flatten
+    clippy::manual_flatten,
+    clippy::collapsible_match,
+    clippy::unnecessary_sort_by
 )]
 
 pub mod app;
