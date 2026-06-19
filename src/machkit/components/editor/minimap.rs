@@ -1,4 +1,5 @@
-use crate::ui::{UiState, Vertex, FontAtlas};
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 use crate::editor::buffer::Buffer;
 
 pub fn draw_minimap(

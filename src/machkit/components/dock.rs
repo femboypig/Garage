@@ -1,7 +1,7 @@
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
 use crate::terminal::TerminalInstance;
-use crate::ui::UiState;
+use crate::machkit::UiState;
 
 pub fn draw_dock(
     ui: &UiState,

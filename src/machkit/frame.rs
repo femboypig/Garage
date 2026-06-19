@@ -2,8 +2,8 @@ use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
-use crate::terminal::TerminalInstance;
-use super::{UiState, UiAction, ModalType, CommandPaletteMode};
+use super::ui_state::{UiState, CommandPaletteMode};
+use super::types::{UiAction, ModalType, FrameInput};
 
 impl UiState {
     pub fn get_max_line_len(&mut self, buffer: &Buffer, active_file_path: Option<&str>, cursor_line: usize) -> usize {
@@ -62,34 +62,7 @@ impl UiState {
         white_uv: [f32; 2],
         color: [f32; 4],
     ) {
-        // Round panel coordinates to integer pixels for crisp borders
-        let rx = x.round();
-        let ry = y.round();
-        let rw = (x + w).round() - rx;
-        let rh = (y + h).round() - ry;
-
-        let start = vertices.len() as u16;
-        vertices.push(Vertex {
-            position: [rx, ry],
-            tex_coords: white_uv,
-            color,
-        });
-        vertices.push(Vertex {
-            position: [rx + rw, ry],
-            tex_coords: white_uv,
-            color,
-        });
-        vertices.push(Vertex {
-            position: [rx + rw, ry + rh],
-            tex_coords: white_uv,
-            color,
-        });
-        vertices.push(Vertex {
-            position: [rx, ry + rh],
-            tex_coords: white_uv,
-            color,
-        });
-        indices.extend_from_slice(&[start, start + 1, start + 2, start + 2, start + 3, start]);
+        crate::machkit::context::push_quad_raw(vertices, indices, white_uv, x, y, w, h, color);
     }
 
     /// Push a single text character glyph using the font atlas
@@ -107,101 +80,24 @@ impl UiState {
         char_width: f32,
     ) -> f32 {
         let white_uv = atlas.white_pixel_uv();
-        if let Some(info) = atlas.get_or_rasterize(queue, c, font_size) {
-            if info.width == 0.0 || info.height == 0.0 {
-                return char_width;
-            }
-
-            let cp = c as u32;
-            let is_box_drawing = c >= '\u{2500}' && c <= '\u{257f}';
-            let is_powerline = c >= '\u{e0b0}' && c <= '\u{e0d4}';
-            
-            let is_pua = (cp >= 0xE000 && cp <= 0xF8FF)
-                || (cp >= 0xF0000 && cp <= 0xFFFFF)
-                || (cp >= 0x100000 && cp <= 0x10FFFF);
-            let is_emoji = (cp >= 0x1F300 && cp <= 0x1F9FF)
-                || (cp >= 0x1F600 && cp <= 0x1F64F)
-                || (cp >= 0x2600 && cp <= 0x27BF);
-            let is_special_icon = (is_pua || is_emoji) && !is_powerline;
-
-            let (x, y, w, h) = if is_box_drawing || is_powerline {
-                let x_min = pen_x.round();
-                let x_max = (pen_x + char_width).round();
-                
-                let (ascent, line_h) = if (font_size - self.buffer_font_size).abs() < 0.1 {
-                    (self.buffer_font_ascent, self.buffer_line_height)
-                } else {
-                    (self.ui_font_ascent, self.ui_line_height)
-                };
-                
-                let y_min = (baseline_y - ascent).round();
-                let y_max = (baseline_y - ascent + line_h).round();
-                
-                (x_min, y_min, x_max - x_min, y_max - y_min)
-            } else if is_special_icon {
-                let (ascent, line_h) = if (font_size - self.buffer_font_size).abs() < 0.1 {
-                    (self.buffer_font_ascent, self.buffer_line_height)
-                } else {
-                    (self.ui_font_ascent, self.ui_line_height)
-                };
-
-                let max_w = char_width * 0.9;
-                let max_h = line_h * 0.9;
-
-                let scale_w = max_w / info.width;
-                let scale_h = max_h / info.height;
-                let scale = scale_w.min(scale_h).min(1.0);
-
-                let w_val = (info.width * scale).round();
-                let h_val = (info.height * scale).round();
-
-                let x_val = (pen_x + (char_width - w_val) / 2.0).round();
-                let y_val = (baseline_y - ascent + (line_h - h_val) / 2.0).round();
-
-                (x_val, y_val, w_val, h_val)
-            } else {
-                let x = (pen_x + info.bearing_x).round();
-                let y = (baseline_y - info.bearing_y - info.height).round();
-                let w = info.width.round();
-                let h = info.height.round();
-                (x, y, w, h)
-            };
-
-            // Draw under-fill solid quad for powerline solid separators to prevent any horizontal gaps
-            if is_powerline {
-                let cp = c as u32;
-                let sliver_w = 1.5;
-                if cp % 4 == 0 {
-                    self.push_quad(vertices, indices, x, y, sliver_w, h, white_uv, color);
-                } else if cp % 4 == 2 {
-                    self.push_quad(vertices, indices, x + w - sliver_w, y, sliver_w, h, white_uv, color);
-                }
-            }
-
-            let start = vertices.len() as u16;
-            vertices.push(Vertex {
-                position: [x, y],
-                tex_coords: info.uv_min,
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x + w, y],
-                tex_coords: [info.uv_max[0], info.uv_min[1]],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x + w, y + h],
-                tex_coords: info.uv_max,
-                color,
-            });
-            vertices.push(Vertex {
-                position: [x, y + h],
-                tex_coords: [info.uv_min[0], info.uv_max[1]],
-                color,
-            });
-            indices.extend_from_slice(&[start, start + 1, start + 2, start + 2, start + 3, start]);
-        }
-        char_width
+        let mut ctx = crate::machkit::UiContext {
+            vertices,
+            indices,
+            atlas,
+            queue,
+            mouse_x: 0.0,
+            mouse_y: 0.0,
+            theme: &self.config.theme,
+            white_uv,
+            ui_font_size: self.ui_font_size,
+            ui_char_width: self.ui_char_width,
+            ui_font_ascent: self.ui_font_ascent,
+            ui_line_height: self.ui_line_height,
+            buffer_font_size: self.buffer_font_size,
+            buffer_font_ascent: self.buffer_font_ascent,
+            buffer_line_height: self.buffer_line_height,
+        };
+        ctx.push_char(c, pen_x, baseline_y, color, font_size, char_width)
     }
 
     pub fn push_icon(
@@ -216,39 +112,25 @@ impl UiState {
         color: [f32; 4],
         size: f32,
     ) -> f32 {
-        if let Some(info) = atlas.get_or_rasterize_icon(queue, icon_path, size) {
-            let start = vertices.len() as u16;
-            let rx = x.round();
-            let ry = y.round();
-            let rw = info.width.round();
-            let rh = info.height.round();
-
-            vertices.push(Vertex {
-                position: [rx, ry],
-                tex_coords: [info.uv_min[0], info.uv_min[1]],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [rx + rw, ry],
-                tex_coords: [info.uv_max[0], info.uv_min[1]],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [rx + rw, ry + rh],
-                tex_coords: [info.uv_max[0], info.uv_max[1]],
-                color,
-            });
-            vertices.push(Vertex {
-                position: [rx, ry + rh],
-                tex_coords: [info.uv_min[0], info.uv_max[1]],
-                color,
-            });
-
-            indices.extend_from_slice(&[start, start + 1, start + 2, start + 2, start + 3, start]);
-            rw
-        } else {
-            0.0
-        }
+        let white_uv = atlas.white_pixel_uv();
+        let mut ctx = crate::machkit::UiContext {
+            vertices,
+            indices,
+            atlas,
+            queue,
+            mouse_x: 0.0,
+            mouse_y: 0.0,
+            theme: &self.config.theme,
+            white_uv,
+            ui_font_size: self.ui_font_size,
+            ui_char_width: self.ui_char_width,
+            ui_font_ascent: self.ui_font_ascent,
+            ui_line_height: self.ui_line_height,
+            buffer_font_size: self.buffer_font_size,
+            buffer_font_ascent: self.buffer_font_ascent,
+            buffer_line_height: self.buffer_line_height,
+        };
+        ctx.push_icon(icon_path, x, y, color, size)
     }
 
     pub fn push_str(
@@ -258,17 +140,31 @@ impl UiState {
         atlas: &mut FontAtlas,
         queue: &wgpu::Queue,
         text: &str,
-        mut x: f32,
+        x: f32,
         y: f32,
         color: [f32; 4],
         font_size: f32,
         char_width: f32,
     ) -> f32 {
-        let start_x = x;
-        for c in text.chars() {
-            x += self.push_char(vertices, indices, atlas, queue, c, x, y, color, font_size, char_width);
-        }
-        x - start_x
+        let white_uv = atlas.white_pixel_uv();
+        let mut ctx = crate::machkit::UiContext {
+            vertices,
+            indices,
+            atlas,
+            queue,
+            mouse_x: 0.0,
+            mouse_y: 0.0,
+            theme: &self.config.theme,
+            white_uv,
+            ui_font_size: self.ui_font_size,
+            ui_char_width: self.ui_char_width,
+            ui_font_ascent: self.ui_font_ascent,
+            ui_line_height: self.ui_line_height,
+            buffer_font_size: self.buffer_font_size,
+            buffer_font_ascent: self.buffer_font_ascent,
+            buffer_line_height: self.buffer_line_height,
+        };
+        ctx.push_str_spaced(text, x, y, color, font_size, char_width)
     }
 
     /// Parse enclosing function/struct backwards from cursor line
@@ -317,6 +213,8 @@ impl UiState {
     }
 
     pub fn run_global_search(&mut self, query: String) {
+        self.project_search_file_cache.clear();
+        self.invalidate_search_render_items();
         if query.is_empty() {
             self.global_search_results.clear();
             self.global_search_selected = 0;
@@ -334,6 +232,7 @@ impl UiState {
 
         std::thread::spawn(move || {
             let mut results = Vec::new();
+            let mut file_cache = std::collections::HashMap::new();
             
             let pattern = if is_regex {
                 query.clone()
@@ -362,13 +261,19 @@ impl UiState {
                         if entry.file_type().map_or(false, |t| t.is_file()) {
                             let path = entry.path().to_path_buf();
                             if let Ok(content) = std::fs::read_to_string(&path) {
-                                for (line_idx, line) in content.lines().enumerate() {
+                                let mut has_match = false;
+                                let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                                for (line_idx, line) in lines.iter().enumerate() {
                                     if re.is_match(line) {
                                         results.push((path.clone(), line_idx, line.trim().to_string()));
+                                        has_match = true;
                                         if results.len() >= 100 {
                                             break;
                                         }
                                     }
+                                }
+                                if has_match {
+                                    file_cache.insert(path, lines);
                                 }
                             }
                         }
@@ -378,7 +283,7 @@ impl UiState {
                     }
                 }
             }
-            let _ = tx.send(results);
+            let _ = tx.send((results, file_cache));
             let _ = proxy.send_event(());
         });
     }
@@ -542,35 +447,48 @@ impl UiState {
         indices: &mut Vec<u16>,
         atlas: &mut FontAtlas,
         queue: &wgpu::Queue,
-        buffer: &Buffer,
-        cursor: &Cursor,
-        secondary_cursors: &[Cursor],
-        width: f32,
-        height: f32,
-        mouse_x: f32,
-        mouse_y: f32,
-        current_backend: wgpu::Backend,
-        tab_paths: &[Option<String>],
-        tab_modified: &[bool],
-        active_tab_idx: usize,
-        dragged_tab_idx: Option<usize>,
-        inactive_panes: &[crate::app::state::Pane],
-        active_pane_idx: usize,
-        is_split_horizontal: bool,
-        terminals: &[TerminalInstance],
-        active_terminal_idx: usize,
-        terminal_focus: bool,
-        _is_window_maximized: bool,
-        tab_scroll_x: f32,
+        input: FrameInput,
     ) {
+        let FrameInput {
+            buffer,
+            cursor,
+            secondary_cursors,
+            width,
+            height,
+            mouse_x,
+            mouse_y,
+            current_backend,
+            tab_paths,
+            tab_modified,
+            active_tab_idx,
+            dragged_tab_idx,
+            inactive_panes,
+            active_pane_idx,
+            is_split_horizontal,
+            terminals,
+            active_terminal_idx,
+            terminal_focus,
+            is_window_maximized: _is_window_maximized,
+            tab_scroll_x,
+        } = input;
+
         self.tab_scroll_x = tab_scroll_x;
         self.active_dock_tab = active_terminal_idx;
 
         let active_file_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
         let is_project_search = active_file_path == Some("search://project");
-
-        if self.show_search_panel || is_project_search {
-            self.breadcrumb_height = (self.ui_line_height * 3.6).round().max(60.0);
+        if is_project_search {
+            if self.global_show_replace {
+                self.breadcrumb_height = 64.0;
+            } else {
+                self.breadcrumb_height = 34.0;
+            }
+        } else if self.show_search_panel {
+            if self.show_replace {
+                self.breadcrumb_height = 84.0;
+            } else {
+                self.breadcrumb_height = 52.0;
+            }
         } else {
             self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
         }
@@ -597,11 +515,17 @@ impl UiState {
         }
 
         // Drain global search channel
+        let mut got_search = None;
         if let Some(ref rx) = self.global_search_rx {
-            while let Ok(results) = rx.try_recv() {
-                self.global_search_results = results;
-                self.is_searching_globally = false;
+            while let Ok(res) = rx.try_recv() {
+                got_search = Some(res);
             }
+        }
+        if let Some((results, file_cache)) = got_search {
+            self.global_search_results = results;
+            self.project_search_file_cache.extend(file_cache);
+            self.invalidate_search_render_items();
+            self.is_searching_globally = false;
         }
 
         // Drain git diff channel
@@ -646,7 +570,7 @@ impl UiState {
         let dock_start_y = status_y;
 
         // --- 1. Draw Titlebar Menu Headers (Light Theme) ---
-        crate::ui::components::titlebar::draw_titlebar(
+        crate::machkit::components::titlebar::draw_titlebar(
             self,
             vertices,
             indices,
@@ -658,7 +582,7 @@ impl UiState {
         );
 
         // --- 2. Draw Sidebar Panel (Light Theme) ---
-        crate::ui::components::sidebar::draw_sidebar(
+        crate::machkit::components::sidebar::draw_sidebar(
             self,
             vertices,
             indices,
@@ -676,7 +600,7 @@ impl UiState {
         let sidebar_original = self.sidebar_width;
         
         if inactive_panes.is_empty() {
-            crate::ui::components::editor_view::draw_editor_view(
+            crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
                 indices,
@@ -723,7 +647,7 @@ impl UiState {
             }
             let p0_scroll_x = if active_pane_idx == 0 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
  
-            crate::ui::components::editor_view::draw_editor_view(
+            crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
                 indices,
@@ -774,7 +698,7 @@ impl UiState {
             let orig_titlebar_height = self.titlebar_height;
             self.titlebar_height = main_y + pane_height;
             
-            crate::ui::components::editor_view::draw_editor_view(
+            crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
                 indices,
@@ -841,7 +765,7 @@ impl UiState {
             }
             let p0_scroll_x = if active_pane_idx == 0 { self.tab_scroll_x } else { inactive_panes[0].tab_scroll_x };
  
-            crate::ui::components::editor_view::draw_editor_view(
+            crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
                 indices,
@@ -891,7 +815,7 @@ impl UiState {
             // Temporarily shift sidebar_width to start right pane at sidebar_original + pane_width
             self.sidebar_width = sidebar_original + pane_width;
             
-            crate::ui::components::editor_view::draw_editor_view(
+            crate::machkit::components::editor_view::draw_editor_view(
                 self,
                 vertices,
                 indices,
@@ -933,7 +857,7 @@ impl UiState {
         }
 
         // --- 4.5. Draw Bottom Dock ---
-        crate::ui::components::dock::draw_dock(
+        crate::machkit::components::dock::draw_dock(
             self,
             vertices,
             indices,
@@ -950,7 +874,7 @@ impl UiState {
 
         // --- 5. Draw Statusbar ---
         let active_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
-        crate::ui::components::statusbar::draw_statusbar(
+        crate::machkit::components::statusbar::draw_statusbar(
             self,
             vertices,
             indices,
@@ -966,7 +890,7 @@ impl UiState {
         );
 
         // --- 6. Draw Context Dropdown Menus & 7. Modal Dialogs ---
-        crate::ui::components::modals::draw_modals(
+        crate::machkit::components::modals::draw_modals(
             self,
             vertices,
             indices,
@@ -1244,7 +1168,7 @@ impl UiState {
             if let Some(dragged_idx) = dragged_tab_idx {
                 let path_str = tab_paths.get(dragged_idx).and_then(|p| p.as_deref());
                 let is_modified = tab_modified.get(dragged_idx).copied().unwrap_or(false);
-                crate::ui::components::editor::tab_bar::draw_floating_tab(
+                crate::machkit::components::editor::tab_bar::draw_floating_tab(
                     self,
                     vertices,
                     indices,

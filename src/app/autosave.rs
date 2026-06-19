@@ -183,7 +183,7 @@ pub fn should_save_on_close(autosave: &crate::editor::config::AutosaveSetting) -
     )
 }
 
-pub fn save_tab(ui: &mut crate::ui::UiState, tab: &mut Tab) {
+pub fn save_tab(ui: &mut crate::machkit::UiState, tab: &mut Tab) {
     if let Some(ref path_to_save) = tab.path {
         if path_to_save.starts_with("diagnostics://") || path_to_save.starts_with("search://") {
             return;
@@ -204,7 +204,7 @@ pub fn save_tab(ui: &mut crate::ui::UiState, tab: &mut Tab) {
 }
 
 pub fn run_autosave_if_needed(
-    ui: &mut crate::ui::UiState,
+    ui: &mut crate::machkit::UiState,
     state: &mut AppState,
     trigger: AutosaveTrigger,
 ) {

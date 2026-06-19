@@ -15,7 +15,7 @@ use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::{GpuContext, Vertex};
-use crate::ui::UiState;
+use crate::machkit::{UiState, FrameInput};
 
 use self::state::{AppState, Tab};
 
@@ -242,7 +242,11 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
 
     // Run the event loop reactively to save power/CPU/GPU cycles when idle
     event_loop.run(move |event, elwt| {
-        elwt.set_control_flow(ControlFlow::Wait);
+        if !first_frame_rendered {
+            elwt.set_control_flow(ControlFlow::Poll);
+        } else {
+            elwt.set_control_flow(ControlFlow::Wait);
+        }
 
         match event {
             Event::NewEvents(winit::event::StartCause::Init) => {
@@ -275,26 +279,28 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         &mut indices,
                         atlas_ref,
                         &gpu_ref.queue,
-                        &state.tabs[state.active_tab_idx].buffer,
-                        &state.tabs[state.active_tab_idx].cursor,
-                        &state.tabs[state.active_tab_idx].secondary_cursors,
-                        size.width as f32,
-                        size.height as f32,
-                        state.mouse_x,
-                        state.mouse_y,
-                        gpu_ref.backend,
-                        &tab_paths,
-                        &tab_modified,
-                        state.active_tab_idx,
-                        if state.is_actually_dragging_tab() { state.dragged_tab_idx } else { None },
-                        &state.inactive_panes,
-                        state.active_pane_idx,
-                        state.is_split_horizontal,
-                        &state.dock_terminals,
-                        state.active_terminal_idx,
-                        state.terminal_focus,
-                        window.is_maximized(),
-                        state.tab_scroll_x,
+                        FrameInput {
+                            buffer: &state.tabs[state.active_tab_idx].buffer,
+                            cursor: &state.tabs[state.active_tab_idx].cursor,
+                            secondary_cursors: &state.tabs[state.active_tab_idx].secondary_cursors,
+                            width: size.width as f32,
+                            height: size.height as f32,
+                            mouse_x: state.mouse_x,
+                            mouse_y: state.mouse_y,
+                            current_backend: gpu_ref.backend,
+                            tab_paths: &tab_paths,
+                            tab_modified: &tab_modified,
+                            active_tab_idx: state.active_tab_idx,
+                            dragged_tab_idx: if state.is_actually_dragging_tab() { state.dragged_tab_idx } else { None },
+                            inactive_panes: &state.inactive_panes,
+                            active_pane_idx: state.active_pane_idx,
+                            is_split_horizontal: state.is_split_horizontal,
+                            terminals: &state.dock_terminals,
+                            active_terminal_idx: state.active_terminal_idx,
+                            terminal_focus: state.terminal_focus,
+                            is_window_maximized: window.is_maximized(),
+                            tab_scroll_x: state.tab_scroll_x,
+                        },
                     );
                     
                     if let Err(e) = gpu_ref.render(&vertices, &indices) {
@@ -313,7 +319,7 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                     let atlas_ref = atlas.as_mut().unwrap();
                     let mut mut_window = window.clone();
                     for f in files {
-                        let open_action = crate::ui::UiAction::OpenFile(std::path::PathBuf::from(f));
+                        let open_action = crate::machkit::UiAction::OpenFile(std::path::PathBuf::from(f));
                         crate::app::handler::handle_action(
                             ui_ref,
                             &mut state,
@@ -675,17 +681,17 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                         if ui_ref.diagnostics_changed {
                             ui_ref.diagnostics_changed = false;
                             if let Some(diag_tab_idx) = state.tabs.iter().position(|t| t.path.as_deref() == Some("diagnostics://project")) {
-                                let visual_lines = crate::ui::components::editor::text_area::get_visual_diagnostic_lines(ui_ref);
+                                let visual_lines = crate::machkit::components::editor::text_area::get_visual_diagnostic_lines(ui_ref);
                                 let mut text_lines = Vec::new();
                                 for vl in &visual_lines {
                                     match vl {
-                                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Header { path, line, col } => {
+                                        crate::machkit::components::editor::text_area::VisualDiagnosticLine::Header { path, line, col } => {
                                             text_lines.push(format!("▶ {} (Line {}, Col {})", path, line + 1, col + 1));
                                         }
-                                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => {
+                                        crate::machkit::components::editor::text_area::VisualDiagnosticLine::Code { line_content, .. } => {
                                             text_lines.push(line_content.clone());
                                         }
-                                        crate::ui::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => {
+                                        crate::machkit::components::editor::text_area::VisualDiagnosticLine::Banner { diag, .. } => {
                                             text_lines.push(format!("  └─ [{}] {}", match diag.severity { 1 => "Error", 2 => "Warning", 3 => "Info", _ => "Hint" }, diag.message));
                                         }
                                     }
@@ -710,26 +716,28 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                             &mut indices,
                             atlas_ref,
                             &gpu_ref.queue,
-                            &state.tabs[state.active_tab_idx].buffer,
-                            &state.tabs[state.active_tab_idx].cursor,
-                            &state.tabs[state.active_tab_idx].secondary_cursors,
-                            size.width as f32,
-                            size.height as f32,
-                            state.mouse_x,
-                            state.mouse_y,
-                            gpu_ref.backend,
-                            &tab_paths,
-                            &tab_modified,
-                            state.active_tab_idx,
-                            if state.is_actually_dragging_tab() { state.dragged_tab_idx } else { None },
-                            &state.inactive_panes,
-                            state.active_pane_idx,
-                            state.is_split_horizontal,
-                            &state.dock_terminals,
-                            state.active_terminal_idx,
-                            state.terminal_focus,
-                            window.is_maximized(),
-                            state.tab_scroll_x,
+                            FrameInput {
+                                buffer: &state.tabs[state.active_tab_idx].buffer,
+                                cursor: &state.tabs[state.active_tab_idx].cursor,
+                                secondary_cursors: &state.tabs[state.active_tab_idx].secondary_cursors,
+                                width: size.width as f32,
+                                height: size.height as f32,
+                                mouse_x: state.mouse_x,
+                                mouse_y: state.mouse_y,
+                                current_backend: gpu_ref.backend,
+                                tab_paths: &tab_paths,
+                                tab_modified: &tab_modified,
+                                active_tab_idx: state.active_tab_idx,
+                                dragged_tab_idx: if state.is_actually_dragging_tab() { state.dragged_tab_idx } else { None },
+                                inactive_panes: &state.inactive_panes,
+                                active_pane_idx: state.active_pane_idx,
+                                is_split_horizontal: state.is_split_horizontal,
+                                terminals: &state.dock_terminals,
+                                active_terminal_idx: state.active_terminal_idx,
+                                terminal_focus: state.terminal_focus,
+                                is_window_maximized: window.is_maximized(),
+                                tab_scroll_x: state.tab_scroll_x,
+                            },
                         );
 
                         // Update cursor icon when screen redraws
@@ -756,7 +764,9 @@ pub fn run_editor(file_path: Option<String>) -> Result<(), Box<dyn std::error::E
                 let scheduled_wakeup = false;
 
                 if !scheduled_wakeup {
-                    if state.terminal_focus && gpu.is_some() {
+                    if !first_frame_rendered {
+                        elwt.set_control_flow(ControlFlow::Poll);
+                    } else if state.terminal_focus && gpu.is_some() {
                         elwt.set_control_flow(ControlFlow::WaitUntil(
                             std::time::Instant::now() + std::time::Duration::from_millis(15)
                         ));

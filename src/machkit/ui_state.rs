@@ -4,14 +4,7 @@ use std::path::PathBuf;
 use crate::renderer::atlas::FontAtlas;
 use crate::editor::cursor::Cursor;
 
-pub mod components;
-pub mod types;
-pub mod tree;
-pub mod click;
-pub mod frame;
-
-pub use types::{UiAction, MenuType, ModalType, FileNode};
-pub use crate::renderer::wgpu::Vertex;
+use super::types::{MenuType, ModalType, FileNode, GitDiffHunk, SearchRenderItem};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommandPaletteMode {
@@ -78,9 +71,9 @@ pub struct UiState {
     pub git_status_rx: Option<std::sync::mpsc::Receiver<std::collections::HashMap<PathBuf, String>>>,
     pub git_status_tx: std::sync::mpsc::Sender<std::collections::HashMap<PathBuf, String>>,
 
-    pub git_diffs: std::collections::HashMap<String, Vec<types::GitDiffHunk>>,
-    pub git_diff_rx: Option<std::sync::mpsc::Receiver<(String, Vec<types::GitDiffHunk>)>>,
-    pub git_diff_tx: std::sync::mpsc::Sender<(String, Vec<types::GitDiffHunk>)>,
+    pub git_diffs: std::collections::HashMap<String, Vec<GitDiffHunk>>,
+    pub git_diff_rx: Option<std::sync::mpsc::Receiver<(String, Vec<GitDiffHunk>)>>,
+    pub git_diff_tx: std::sync::mpsc::Sender<(String, Vec<GitDiffHunk>)>,
 
     pub languages: std::collections::HashMap<String, String>,
 
@@ -95,8 +88,8 @@ pub struct UiState {
     pub global_search_results: Vec<(std::path::PathBuf, usize, String)>,
     pub global_search_selected: usize,
     pub global_search_scroll: usize,
-    pub global_search_rx: Option<std::sync::mpsc::Receiver<Vec<(std::path::PathBuf, usize, String)>>>,
-    pub global_search_tx: std::sync::mpsc::Sender<Vec<(std::path::PathBuf, usize, String)>>,
+    pub global_search_rx: Option<std::sync::mpsc::Receiver<(Vec<(std::path::PathBuf, usize, String)>, std::collections::HashMap<std::path::PathBuf, Vec<String>>)>>,
+    pub global_search_tx: std::sync::mpsc::Sender<(Vec<(std::path::PathBuf, usize, String)>, std::collections::HashMap<std::path::PathBuf, Vec<String>>)>,
     pub is_searching_globally: bool,
     pub command_palette_selected: usize,
     pub command_palette_scroll: usize,
@@ -147,7 +140,16 @@ pub struct UiState {
     pub global_search_regex: bool,
     pub global_search_focus_replace: bool,
     pub global_replace_query: String,
+    pub project_search_file_cache: std::collections::HashMap<std::path::PathBuf, Vec<String>>,
+    pub project_search_render_items: Option<Vec<SearchRenderItem>>,
+    pub collapsed_search_files: std::collections::HashSet<std::path::PathBuf>,
+    pub last_searched_global_query: String,
+    pub global_search_expanded_margins: std::collections::HashMap<(std::path::PathBuf, usize), (usize, usize)>,
+    pub search_focused: bool,
+    pub global_search_focused: bool,
+    pub global_search_col: usize,
 }
+
 
 
 impl UiState {
@@ -296,6 +298,9 @@ impl UiState {
             diagnostics_click_targets: Vec::new(),
             diagnostics_file_cache: std::collections::HashMap::new(),
             collapsed_diagnostics: std::collections::HashSet::new(),
+            project_search_file_cache: std::collections::HashMap::new(),
+            project_search_render_items: None,
+            collapsed_search_files: std::collections::HashSet::new(),
             diagnostics_changed: true,
             synced_revisions: std::collections::HashMap::new(),
             keymap: crate::editor::keymap::Keymap::load(),
@@ -319,7 +324,13 @@ impl UiState {
             global_search_regex: false,
             global_search_focus_replace: false,
             global_replace_query: String::new(),
+            last_searched_global_query: String::new(),
+            global_search_expanded_margins: std::collections::HashMap::new(),
+            search_focused: false,
+            global_search_focused: false,
+            global_search_col: 0,
         };
+
 
         state.rebuild_tree();
         state
@@ -525,5 +536,9 @@ impl UiState {
 
     pub fn minimap_width(&self) -> f32 {
         (self.buffer_font_size * 7.5).round().max(60.0)
+    }
+
+    pub fn invalidate_search_render_items(&mut self) {
+        self.project_search_render_items = None;
     }
 }

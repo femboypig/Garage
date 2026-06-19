@@ -1,4 +1,5 @@
-use crate::ui::{UiState, Vertex, FontAtlas};
+use crate::machkit::{UiState, Vertex};
+use crate::renderer::atlas::FontAtlas;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 
@@ -75,19 +76,19 @@ pub fn draw_gutter(
         if let Some(hunks) = active_path.and_then(|p| ui.git_diffs.get(p)) {
             for hunk in hunks {
                 match hunk {
-                    crate::ui::types::GitDiffHunk::Added { line, count } => {
+                    crate::machkit::GitDiffHunk::Added { line, count } => {
                         if line_idx >= *line && line_idx < *line + *count {
                             line_status = Some("Added");
                             break;
                         }
                     }
-                    crate::ui::types::GitDiffHunk::Modified { line, count } => {
+                    crate::machkit::GitDiffHunk::Modified { line, count } => {
                         if line_idx >= *line && line_idx < *line + *count {
                             line_status = Some("Modified");
                             break;
                         }
                     }
-                    crate::ui::types::GitDiffHunk::Deleted { line } => {
+                    crate::machkit::GitDiffHunk::Deleted { line } => {
                         if line_idx == *line {
                             line_status = Some("Deleted");
                             break;

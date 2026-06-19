@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use winit::window::Window;
 use winit::event_loop::EventLoopWindowTarget;
-use crate::ui::{UiState, UiAction};
+use crate::machkit::{UiState, UiAction};
 use crate::renderer::wgpu::GpuContext;
 use crate::renderer::atlas::FontAtlas;
 use crate::editor::buffer::Buffer;
@@ -104,6 +104,9 @@ pub fn handle_action(
             };
             if let Some(ref active_path) = state.tabs[state.active_tab_idx].path {
                 ui.selected_file = Some(std::path::PathBuf::from(active_path));
+                if active_path == "search://project" {
+                    ui.global_search_focused = true;
+                }
                 if !active_path.starts_with("diagnostics://") && !active_path.starts_with("search://") {
                     let abs_path = crate::editor::get_absolute_path(active_path);
                     ui.diagnostics_file_cache.insert(abs_path, state.tabs[state.active_tab_idx].buffer.lines().to_vec());
@@ -177,6 +180,7 @@ pub fn handle_action(
         UiAction::Find => {
             ui.show_search_panel = true;
             ui.search_focus_replace = false;
+            ui.search_focused = true;
             if state.active_tab_idx < state.tabs.len() {
                 let active_tab = &state.tabs[state.active_tab_idx];
                 if let Some((s_l, s_c, e_l, e_c)) = active_tab.cursor.selection_range() {
@@ -201,13 +205,13 @@ pub fn handle_action(
             }
         }
         UiAction::ShowSettings => {
-            ui.active_modal = Some(crate::ui::ModalType::Settings);
+            ui.active_modal = Some(crate::machkit::ModalType::Settings);
         }
         UiAction::ShowAbout => {
-            ui.active_modal = Some(crate::ui::ModalType::About);
+            ui.active_modal = Some(crate::machkit::ModalType::About);
         }
         UiAction::ShowCommandPalette => {
-            ui.active_modal = Some(crate::ui::ModalType::CommandPalette);
+            ui.active_modal = Some(crate::machkit::ModalType::CommandPalette);
             ui.command_palette_query.clear();
             ui.command_palette_selected = 0;
         }
@@ -287,7 +291,7 @@ pub fn handle_action(
                 ui.selected_file = old_selected;
                 ui.sidebar_width = old_sidebar_w;
                 ui.target_sidebar_width = old_target_sidebar_w;
-                ui.active_modal = Some(crate::ui::ModalType::Settings);
+                ui.active_modal = Some(crate::machkit::ModalType::Settings);
                 ui.rebuild_tree();
             }
             *gpu = Some(new_gpu);
@@ -321,7 +325,7 @@ pub fn handle_action(
 
             if state.tabs[idx].buffer.is_modified {
                 ui.tab_to_close = Some(idx);
-                ui.active_modal = Some(crate::ui::ModalType::UnsavedChanges);
+                ui.active_modal = Some(crate::machkit::ModalType::UnsavedChanges);
             } else {
                 state.tabs.remove(idx);
                 if state.tabs.is_empty() {

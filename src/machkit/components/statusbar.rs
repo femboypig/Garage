@@ -2,7 +2,7 @@ use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::Vertex;
-use crate::ui::UiState;
+use crate::machkit::UiState;
 
 pub fn draw_statusbar(
     ui: &UiState,
