@@ -288,6 +288,9 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                                     && mouse_x < text_area_x + 22.0
                                 {
                                     is_pointer = true;
+                                } else {
+                                    window.set_cursor_icon(winit::window::CursorIcon::Text);
+                                    return;
                                 }
                             }
                             _ => {}
