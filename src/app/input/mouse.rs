@@ -1161,22 +1161,91 @@ fn handle_drag_selection(
     window_height: f32,
 ) {
     if state.tabs[state.active_tab_idx].path.as_deref() == Some("search://project") {
-        let results_len = ui.global_search_results.len();
-        if ui.global_search_selected < results_len {
-            let current_content = ui.global_search_results[ui.global_search_selected]
-                .2
-                .clone();
-            let display_content = current_content.replace('\t', "    ");
-            let char_count = display_content.chars().count();
+        let render_items =
+            crate::machkit::components::editor::project_search::build_search_render_items(ui);
+        if !render_items.is_empty() {
+            let list_y = pane_top + ui.tabbar_height + ui.breadcrumb_height;
+            let item_height = ui.buffer_line_height;
+            let clicked_row = if state.mouse_y >= list_y {
+                ((state.mouse_y - list_y) / item_height).floor() as usize + ui.scroll_y
+            } else {
+                ui.scroll_y
+            };
+            let clicked_row = clicked_row.min(render_items.len() - 1);
+
+            // Get content/text of this row
             let text_area_x = ui.sidebar_width;
             let snippet_x = text_area_x + 60.0;
-            let col_idx = if state.mouse_x >= snippet_x {
-                let raw = ((state.mouse_x - snippet_x) / ui.buffer_char_width).round() as usize;
-                raw.min(char_count)
-            } else {
-                0
+            let col_idx = match &render_items[clicked_row] {
+                crate::machkit::SearchRenderItem::CodeLine { content, .. } => {
+                    let display_content = content.replace('\t', "    ");
+                    let char_count = display_content.chars().count();
+                    if state.mouse_x >= snippet_x {
+                        let raw =
+                            ((state.mouse_x - snippet_x) / ui.buffer_char_width).round() as usize;
+                        raw.min(char_count)
+                    } else {
+                        0
+                    }
+                }
+                crate::machkit::SearchRenderItem::FileHeader { path } => {
+                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    let parent_dir = path
+                        .parent()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let parent_dir = parent_dir
+                        .strip_prefix("./")
+                        .unwrap_or(&parent_dir)
+                        .to_string();
+                    let header_text = if parent_dir.is_empty() {
+                        file_name.to_string()
+                    } else {
+                        format!("{} {}/", file_name, parent_dir)
+                    };
+                    let char_count = header_text.chars().count();
+                    if state.mouse_x >= text_area_x + 30.0 {
+                        let raw = ((state.mouse_x - (text_area_x + 30.0)) / ui.buffer_char_width)
+                            .round() as usize;
+                        raw.min(char_count)
+                    } else {
+                        0
+                    }
+                }
+                _ => 0,
             };
+
+            ui.global_search_cursor_row = clicked_row;
             ui.global_search_col = col_idx;
+
+            // Update ui.global_search_selected to the nearest match
+            let mut target_res_idx = None;
+            for i in (0..=clicked_row).rev() {
+                if let crate::machkit::SearchRenderItem::CodeLine {
+                    result_idx: Some(res_idx),
+                    ..
+                } = &render_items[i]
+                {
+                    target_res_idx = Some(*res_idx);
+                    break;
+                }
+            }
+            if target_res_idx.is_none() {
+                for i in clicked_row..render_items.len() {
+                    if let crate::machkit::SearchRenderItem::CodeLine {
+                        result_idx: Some(res_idx),
+                        ..
+                    } = &render_items[i]
+                    {
+                        target_res_idx = Some(*res_idx);
+                        break;
+                    }
+                }
+            }
+            if let Some(res_idx) = target_res_idx {
+                ui.global_search_selected = res_idx;
+                ui.last_global_search_selected = Some(res_idx);
+            }
         }
         return;
     }
@@ -3004,6 +3073,7 @@ fn handle_project_search_click(
                 *start_line_of_range,
                 *end_line_of_range,
                 text_area_x,
+                clicked_idx,
             );
         }
         _ => {}
@@ -3079,6 +3149,7 @@ fn handle_project_search_code_click(
     start_line_of_range: usize,
     end_line_of_range: usize,
     text_area_x: f32,
+    clicked_row: usize,
 ) {
     // Gutter expand/contract buttons
     if state.mouse_x >= text_area_x && state.mouse_x < text_area_x + 22.0 {
@@ -3139,14 +3210,16 @@ fn handle_project_search_code_click(
             0
         };
 
+        let old_row = ui.global_search_cursor_row;
         let old_col = ui.global_search_col;
+        ui.global_search_cursor_row = clicked_row;
         ui.global_search_col = col_idx;
         if state.modifiers.shift_key() {
             if ui.global_search_selection_anchor.is_none() {
-                ui.global_search_selection_anchor = Some(old_col);
+                ui.global_search_selection_anchor = Some((old_row, old_col));
             }
         } else {
-            ui.global_search_selection_anchor = Some(col_idx);
+            ui.global_search_selection_anchor = Some((clicked_row, col_idx));
         }
         state.is_dragging = true;
     }

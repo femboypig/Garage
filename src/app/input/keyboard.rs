@@ -2177,23 +2177,108 @@ fn sync_file_changes(
         }
     }
 
-    // 4. Write back to disk (Asynchronously on a background thread)
+    // 4. Mark as unsaved
+    ui.unsaved_project_search_files.insert(path);
     ui.invalidate_search_render_items();
-    let path_clone = path.clone();
-    let cache_lines = ui.project_search_file_cache.get(&path).cloned();
-    std::thread::spawn(move || {
-        if let Some(lines) = cache_lines {
-            let joined = lines.join("\n");
-            let _ = std::fs::write(&path_clone, joined);
-        } else if let Ok(content) = std::fs::read_to_string(&path_clone) {
-            let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-            if line_idx < lines.len() {
-                lines[line_idx] = new_line_content;
-                let joined = lines.join("\n");
-                let _ = std::fs::write(&path_clone, joined);
+}
+
+fn sync_global_search_selected(ui: &mut UiState, row: usize) {
+    let render_items =
+        crate::machkit::components::editor::project_search::build_search_render_items(ui);
+    if render_items.is_empty() {
+        return;
+    }
+    let mut target_res_idx = None;
+    for i in (0..=row).rev() {
+        if let crate::machkit::SearchRenderItem::CodeLine {
+            result_idx: Some(res_idx),
+            ..
+        } = &render_items[i]
+        {
+            target_res_idx = Some(*res_idx);
+            break;
+        }
+    }
+    if target_res_idx.is_none() {
+        for i in row..render_items.len() {
+            if let crate::machkit::SearchRenderItem::CodeLine {
+                result_idx: Some(res_idx),
+                ..
+            } = &render_items[i]
+            {
+                target_res_idx = Some(*res_idx);
+                break;
             }
         }
-    });
+    }
+    if let Some(res_idx) = target_res_idx {
+        ui.global_search_selected = res_idx;
+        ui.last_global_search_selected = Some(res_idx);
+    }
+}
+
+fn get_selection_content(ui: &mut UiState) -> Option<String> {
+    let anchor = ui.global_search_selection_anchor?;
+    let render_items =
+        crate::machkit::components::editor::project_search::build_search_render_items(ui);
+    if render_items.is_empty() {
+        return None;
+    }
+    let (row_a, col_a) = anchor;
+    let (row_b, col_b) = (ui.global_search_cursor_row, ui.global_search_col);
+    let (start_row, start_col, end_row, end_col) = if row_a < row_b {
+        (row_a, col_a, row_b, col_b)
+    } else if row_a > row_b {
+        (row_b, col_b, row_a, col_a)
+    } else if col_a < col_b {
+        (row_a, col_a, row_a, col_b)
+    } else {
+        (row_a, col_b, row_a, col_a)
+    };
+
+    let mut result_lines = Vec::new();
+    for r in start_row..=end_row {
+        if r >= render_items.len() {
+            break;
+        }
+        let line_text = match &render_items[r] {
+            crate::machkit::SearchRenderItem::CodeLine { content, .. } => {
+                content.replace('\t', "    ")
+            }
+            crate::machkit::SearchRenderItem::FileHeader { path } => {
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let parent_dir = path
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let parent_dir = parent_dir
+                    .strip_prefix("./")
+                    .unwrap_or(&parent_dir)
+                    .to_string();
+                if parent_dir.is_empty() {
+                    file_name.to_string()
+                } else {
+                    format!("{} {}/", file_name, parent_dir)
+                }
+            }
+            crate::machkit::SearchRenderItem::Separator { .. } => String::new(),
+        };
+
+        let chars: Vec<char> = line_text.chars().collect();
+        let s_col = if r == start_row {
+            start_col.min(chars.len())
+        } else {
+            0
+        };
+        let e_col = if r == end_row {
+            end_col.min(chars.len())
+        } else {
+            chars.len()
+        };
+        let segment: String = chars[s_col..e_col].iter().collect();
+        result_lines.push(segment);
+    }
+    Some(result_lines.join("\n"))
 }
 
 fn handle_project_search_action(
@@ -2208,19 +2293,21 @@ fn handle_project_search_action(
     _shift_key: bool,
 ) -> bool {
     use crate::editor::actions::Action;
-    let results_len = ui.global_search_results.len();
-    if ui.global_search_selected >= results_len {
+    let render_items =
+        crate::machkit::components::editor::project_search::build_search_render_items(ui);
+    if render_items.is_empty() {
         return false;
     }
-    let (path, line_idx, current_content) =
-        ui.global_search_results[ui.global_search_selected].clone();
-    let char_count = current_content.chars().count();
+    if ui.global_search_cursor_row >= render_items.len() {
+        return false;
+    }
+    let active_item = render_items[ui.global_search_cursor_row].clone();
 
     // Helper to update selection anchor
-    let update_selection = |ui: &mut UiState, select: bool, prev_col: usize| {
+    let update_selection = |ui: &mut UiState, select: bool, prev_row: usize, prev_col: usize| {
         if select {
             if ui.global_search_selection_anchor.is_none() {
-                ui.global_search_selection_anchor = Some(prev_col);
+                ui.global_search_selection_anchor = Some((prev_row, prev_col));
             }
         } else {
             ui.global_search_selection_anchor = None;
@@ -2229,9 +2316,15 @@ fn handle_project_search_action(
 
     match action {
         Action::MoveLeft { select, word } => {
+            let prev_row = ui.global_search_cursor_row;
             let prev_col = ui.global_search_col;
-            update_selection(ui, select, prev_col);
+            update_selection(ui, select, prev_row, prev_col);
             if word {
+                let current_content = match &active_item {
+                    crate::machkit::SearchRenderItem::CodeLine { content, .. } => content.clone(),
+                    _ => String::new(),
+                };
+                let char_count = current_content.chars().count();
                 let line_chars: Vec<char> = current_content.chars().collect();
                 let mut idx = ui.global_search_col.min(char_count);
                 while idx > 0 && idx - 1 < line_chars.len() && line_chars[idx - 1].is_whitespace() {
@@ -2250,14 +2343,72 @@ fn handle_project_search_action(
                 ui.global_search_col = idx;
             } else if ui.global_search_col > 0 {
                 ui.global_search_col -= 1;
+            } else if ui.global_search_cursor_row > 0 {
+                ui.global_search_cursor_row -= 1;
+                let prev_item = &render_items[ui.global_search_cursor_row];
+                let line_len = match prev_item {
+                    crate::machkit::SearchRenderItem::CodeLine { content, .. } => {
+                        content.replace('\t', "    ").chars().count()
+                    }
+                    crate::machkit::SearchRenderItem::FileHeader { path } => {
+                        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        let parent_dir = path
+                            .parent()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let parent_dir = parent_dir
+                            .strip_prefix("./")
+                            .unwrap_or(&parent_dir)
+                            .to_string();
+                        let header_text = if parent_dir.is_empty() {
+                            file_name.to_string()
+                        } else {
+                            format!("{} {}/", file_name, parent_dir)
+                        };
+                        header_text.chars().count()
+                    }
+                    _ => 0,
+                };
+                ui.global_search_col = line_len;
+                sync_global_search_selected(ui, ui.global_search_cursor_row);
             }
             window.request_redraw();
             true
         }
         Action::MoveRight { select, word } => {
+            let prev_row = ui.global_search_cursor_row;
             let prev_col = ui.global_search_col;
-            update_selection(ui, select, prev_col);
+            update_selection(ui, select, prev_row, prev_col);
+            let line_len = match &active_item {
+                crate::machkit::SearchRenderItem::CodeLine { content, .. } => {
+                    content.replace('\t', "    ").chars().count()
+                }
+                crate::machkit::SearchRenderItem::FileHeader { path } => {
+                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    let parent_dir = path
+                        .parent()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let parent_dir = parent_dir
+                        .strip_prefix("./")
+                        .unwrap_or(&parent_dir)
+                        .to_string();
+                    let header_text = if parent_dir.is_empty() {
+                        file_name.to_string()
+                    } else {
+                        format!("{} {}/", file_name, parent_dir)
+                    };
+                    header_text.chars().count()
+                }
+                _ => 0,
+            };
+
             if word {
+                let current_content = match &active_item {
+                    crate::machkit::SearchRenderItem::CodeLine { content, .. } => content.clone(),
+                    _ => String::new(),
+                };
+                let char_count = current_content.chars().count();
                 let line_chars: Vec<char> = current_content.chars().collect();
                 let mut idx = ui.global_search_col;
                 while idx < char_count && idx < line_chars.len() && line_chars[idx].is_whitespace()
@@ -2275,109 +2426,229 @@ fn handle_project_search_action(
                     }
                 }
                 ui.global_search_col = idx;
-            } else {
-                ui.global_search_col = (ui.global_search_col + 1).min(char_count);
+            } else if ui.global_search_col < line_len {
+                ui.global_search_col += 1;
+            } else if ui.global_search_cursor_row + 1 < render_items.len() {
+                ui.global_search_cursor_row += 1;
+                ui.global_search_col = 0;
+                sync_global_search_selected(ui, ui.global_search_cursor_row);
             }
             window.request_redraw();
             true
         }
         Action::MoveUp { select } => {
+            let prev_row = ui.global_search_cursor_row;
             let prev_col = ui.global_search_col;
-            update_selection(ui, select, prev_col);
-            let items_count = ui.global_search_results.len();
-            if items_count > 0 {
-                ui.global_search_selected =
-                    (ui.global_search_selected + items_count - 1) % items_count;
-                let new_content = &ui.global_search_results[ui.global_search_selected].2;
-                ui.global_search_col = ui.global_search_col.min(new_content.chars().count());
-                if !select {
-                    ui.global_search_selection_anchor = None;
-                }
+            update_selection(ui, select, prev_row, prev_col);
+            if ui.global_search_cursor_row > 0 {
+                ui.global_search_cursor_row -= 1;
+                let line_len = match &render_items[ui.global_search_cursor_row] {
+                    crate::machkit::SearchRenderItem::CodeLine { content, .. } => {
+                        content.replace('\t', "    ").chars().count()
+                    }
+                    crate::machkit::SearchRenderItem::FileHeader { path } => {
+                        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        let parent_dir = path
+                            .parent()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let parent_dir = parent_dir
+                            .strip_prefix("./")
+                            .unwrap_or(&parent_dir)
+                            .to_string();
+                        let header_text = if parent_dir.is_empty() {
+                            file_name.to_string()
+                        } else {
+                            format!("{} {}/", file_name, parent_dir)
+                        };
+                        header_text.chars().count()
+                    }
+                    _ => 0,
+                };
+                ui.global_search_col = ui.global_search_col.min(line_len);
+                sync_global_search_selected(ui, ui.global_search_cursor_row);
             }
             window.request_redraw();
             true
         }
         Action::MoveDown { select } => {
+            let prev_row = ui.global_search_cursor_row;
             let prev_col = ui.global_search_col;
-            update_selection(ui, select, prev_col);
-            let items_count = ui.global_search_results.len();
-            if items_count > 0 {
-                ui.global_search_selected = (ui.global_search_selected + 1) % items_count;
-                let new_content = &ui.global_search_results[ui.global_search_selected].2;
-                ui.global_search_col = ui.global_search_col.min(new_content.chars().count());
-                if !select {
-                    ui.global_search_selection_anchor = None;
-                }
+            update_selection(ui, select, prev_row, prev_col);
+            if ui.global_search_cursor_row + 1 < render_items.len() {
+                ui.global_search_cursor_row += 1;
+                let line_len = match &render_items[ui.global_search_cursor_row] {
+                    crate::machkit::SearchRenderItem::CodeLine { content, .. } => {
+                        content.replace('\t', "    ").chars().count()
+                    }
+                    crate::machkit::SearchRenderItem::FileHeader { path } => {
+                        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        let parent_dir = path
+                            .parent()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let parent_dir = parent_dir
+                            .strip_prefix("./")
+                            .unwrap_or(&parent_dir)
+                            .to_string();
+                        let header_text = if parent_dir.is_empty() {
+                            file_name.to_string()
+                        } else {
+                            format!("{} {}/", file_name, parent_dir)
+                        };
+                        header_text.chars().count()
+                    }
+                    _ => 0,
+                };
+                ui.global_search_col = ui.global_search_col.min(line_len);
+                sync_global_search_selected(ui, ui.global_search_cursor_row);
             }
             window.request_redraw();
             true
         }
         Action::MoveToLineStart { select } => {
+            let prev_row = ui.global_search_cursor_row;
             let prev_col = ui.global_search_col;
-            update_selection(ui, select, prev_col);
+            update_selection(ui, select, prev_row, prev_col);
             ui.global_search_col = 0;
             window.request_redraw();
             true
         }
         Action::MoveToLineEnd { select } => {
+            let prev_row = ui.global_search_cursor_row;
             let prev_col = ui.global_search_col;
-            update_selection(ui, select, prev_col);
-            ui.global_search_col = char_count;
+            update_selection(ui, select, prev_row, prev_col);
+            let line_len = match &active_item {
+                crate::machkit::SearchRenderItem::CodeLine { content, .. } => {
+                    content.replace('\t', "    ").chars().count()
+                }
+                crate::machkit::SearchRenderItem::FileHeader { path } => {
+                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    let parent_dir = path
+                        .parent()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let parent_dir = parent_dir
+                        .strip_prefix("./")
+                        .unwrap_or(&parent_dir)
+                        .to_string();
+                    let header_text = if parent_dir.is_empty() {
+                        file_name.to_string()
+                    } else {
+                        format!("{} {}/", file_name, parent_dir)
+                    };
+                    header_text.chars().count()
+                }
+                _ => 0,
+            };
+            ui.global_search_col = line_len;
             window.request_redraw();
             true
         }
         Action::SelectAll => {
-            ui.global_search_selection_anchor = Some(0);
-            ui.global_search_col = char_count;
+            ui.global_search_selection_anchor = Some((0, 0));
+            ui.global_search_cursor_row = render_items.len() - 1;
+            let line_len = match &render_items[ui.global_search_cursor_row] {
+                crate::machkit::SearchRenderItem::CodeLine { content, .. } => {
+                    content.replace('\t', "    ").chars().count()
+                }
+                crate::machkit::SearchRenderItem::FileHeader { path } => {
+                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    let parent_dir = path
+                        .parent()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let parent_dir = parent_dir
+                        .strip_prefix("./")
+                        .unwrap_or(&parent_dir)
+                        .to_string();
+                    let header_text = if parent_dir.is_empty() {
+                        file_name.to_string()
+                    } else {
+                        format!("{} {}/", file_name, parent_dir)
+                    };
+                    header_text.chars().count()
+                }
+                _ => 0,
+            };
+            ui.global_search_col = line_len;
             window.request_redraw();
             true
         }
         Action::Copy => {
-            if let Some(anchor) = ui.global_search_selection_anchor {
-                let start = anchor.min(ui.global_search_col).min(char_count);
-                let end = anchor.max(ui.global_search_col).min(char_count);
-                if start != end {
-                    let chars: Vec<char> = current_content.chars().collect();
-                    let selected_str: String = chars[start..end].iter().collect();
-                    state.copy_to_clipboard(selected_str);
-                }
+            if let Some(selected_str) = get_selection_content(ui)
+                && !selected_str.is_empty()
+            {
+                state.copy_to_clipboard(selected_str);
             }
             true
         }
         Action::Cut => {
-            if let Some(anchor) = ui.global_search_selection_anchor {
-                let start = anchor.min(ui.global_search_col).min(char_count);
-                let end = anchor.max(ui.global_search_col).min(char_count);
-                if start != end {
-                    let chars: Vec<char> = current_content.chars().collect();
-                    let selected_str: String = chars[start..end].iter().collect();
-                    state.copy_to_clipboard(selected_str);
-
-                    let mut new_chars = chars;
-                    new_chars.drain(start..end);
-                    let new_content: String = new_chars.into_iter().collect();
-                    ui.global_search_col = start;
-                    ui.global_search_selection_anchor = None;
-                    sync_file_changes(ui, state, path, line_idx, new_content);
-                    window.request_redraw();
+            if let Some(selected_str) = get_selection_content(ui)
+                && !selected_str.is_empty()
+            {
+                state.copy_to_clipboard(selected_str);
+            }
+            if let crate::machkit::SearchRenderItem::CodeLine {
+                path,
+                line_idx,
+                content,
+                ..
+            } = &active_item
+            {
+                let display_content = content.replace('\t', "    ");
+                let char_count = display_content.chars().count();
+                if let Some((anchor_row, anchor_col)) = ui.global_search_selection_anchor
+                    && anchor_row == ui.global_search_cursor_row
+                {
+                    let start = anchor_col.min(ui.global_search_col).min(char_count);
+                    let end = anchor_col.max(ui.global_search_col).min(char_count);
+                    if start != end {
+                        let chars: Vec<char> = display_content.chars().collect();
+                        let mut new_chars = chars;
+                        new_chars.drain(start..end);
+                        let new_content: String = new_chars.into_iter().collect();
+                        ui.global_search_col = start;
+                        ui.global_search_selection_anchor = None;
+                        sync_file_changes(ui, state, path.clone(), *line_idx, new_content);
+                        window.request_redraw();
+                    }
                 }
             }
             true
         }
         Action::Paste => {
             let pasted = state.paste_from_clipboard();
-            if !pasted.is_empty() {
-                let chars: Vec<char> = current_content.chars().collect();
-                let start = if let Some(anchor) = ui.global_search_selection_anchor {
-                    anchor.min(ui.global_search_col).min(char_count)
-                } else {
-                    ui.global_search_col.min(char_count)
-                };
-                let end = if let Some(anchor) = ui.global_search_selection_anchor {
-                    anchor.max(ui.global_search_col).min(char_count)
-                } else {
-                    ui.global_search_col.min(char_count)
-                };
+            if !pasted.is_empty()
+                && let crate::machkit::SearchRenderItem::CodeLine {
+                    path,
+                    line_idx,
+                    content,
+                    ..
+                } = &active_item
+            {
+                let display_content = content.replace('\t', "    ");
+                let char_count = display_content.chars().count();
+                let chars: Vec<char> = display_content.chars().collect();
+                let (start, end) =
+                    if let Some((anchor_row, anchor_col)) = ui.global_search_selection_anchor {
+                        if anchor_row == ui.global_search_cursor_row {
+                            (
+                                anchor_col.min(ui.global_search_col).min(char_count),
+                                anchor_col.max(ui.global_search_col).min(char_count),
+                            )
+                        } else {
+                            (
+                                ui.global_search_col.min(char_count),
+                                ui.global_search_col.min(char_count),
+                            )
+                        }
+                    } else {
+                        (
+                            ui.global_search_col.min(char_count),
+                            ui.global_search_col.min(char_count),
+                        )
+                    };
 
                 let mut new_chars = chars;
                 new_chars.drain(start..end);
@@ -2394,86 +2665,232 @@ fn handle_project_search_action(
                 let new_content: String = new_chars.into_iter().collect();
                 ui.global_search_col = start + paste_len;
                 ui.global_search_selection_anchor = None;
-                sync_file_changes(ui, state, path, line_idx, new_content);
+                sync_file_changes(ui, state, path.clone(), *line_idx, new_content);
                 window.request_redraw();
             }
             true
         }
         Action::DeleteLeft => {
-            let chars: Vec<char> = current_content.chars().collect();
-            if let Some(anchor) = ui.global_search_selection_anchor
-                && anchor != ui.global_search_col
+            if let crate::machkit::SearchRenderItem::CodeLine {
+                path,
+                line_idx,
+                content,
+                ..
+            } = &active_item
             {
-                let start = anchor.min(ui.global_search_col).min(char_count);
-                let end = anchor.max(ui.global_search_col).min(char_count);
-                let mut new_chars = chars;
-                new_chars.drain(start..end);
-                let new_content: String = new_chars.into_iter().collect();
-                ui.global_search_col = start;
-                ui.global_search_selection_anchor = None;
-                sync_file_changes(ui, state, path, line_idx, new_content);
-            } else if ui.global_search_col > 0 {
-                let new_content = remove_char_at(&current_content, ui.global_search_col - 1);
-                ui.global_search_col -= 1;
-                ui.global_search_selection_anchor = None;
-                sync_file_changes(ui, state, path, line_idx, new_content);
+                let display_content = content.replace('\t', "    ");
+                let char_count = display_content.chars().count();
+                let chars: Vec<char> = display_content.chars().collect();
+                if let Some((anchor_row, anchor_col)) = ui.global_search_selection_anchor
+                    && anchor_row == ui.global_search_cursor_row
+                    && anchor_col != ui.global_search_col
+                {
+                    let start = anchor_col.min(ui.global_search_col).min(char_count);
+                    let end = anchor_col.max(ui.global_search_col).min(char_count);
+                    let mut new_chars = chars;
+                    new_chars.drain(start..end);
+                    let new_content: String = new_chars.into_iter().collect();
+                    ui.global_search_col = start;
+                    ui.global_search_selection_anchor = None;
+                    sync_file_changes(ui, state, path.clone(), *line_idx, new_content);
+                } else if ui.global_search_col > 0 {
+                    let new_content = remove_char_at(&display_content, ui.global_search_col - 1);
+                    ui.global_search_col -= 1;
+                    ui.global_search_selection_anchor = None;
+                    sync_file_changes(ui, state, path.clone(), *line_idx, new_content);
+                }
+                window.request_redraw();
             }
-            window.request_redraw();
             true
         }
         Action::DeleteRight => {
-            let chars: Vec<char> = current_content.chars().collect();
-            if let Some(anchor) = ui.global_search_selection_anchor
-                && anchor != ui.global_search_col
+            if let crate::machkit::SearchRenderItem::CodeLine {
+                path,
+                line_idx,
+                content,
+                ..
+            } = &active_item
             {
-                let start = anchor.min(ui.global_search_col).min(char_count);
-                let end = anchor.max(ui.global_search_col).min(char_count);
-                let mut new_chars = chars;
-                new_chars.drain(start..end);
-                let new_content: String = new_chars.into_iter().collect();
-                ui.global_search_col = start;
-                ui.global_search_selection_anchor = None;
-                sync_file_changes(ui, state, path, line_idx, new_content);
-            } else if ui.global_search_col < char_count {
-                let new_content = remove_char_at(&current_content, ui.global_search_col);
-                ui.global_search_selection_anchor = None;
-                sync_file_changes(ui, state, path, line_idx, new_content);
+                let display_content = content.replace('\t', "    ");
+                let char_count = display_content.chars().count();
+                let chars: Vec<char> = display_content.chars().collect();
+                if let Some((anchor_row, anchor_col)) = ui.global_search_selection_anchor
+                    && anchor_row == ui.global_search_cursor_row
+                    && anchor_col != ui.global_search_col
+                {
+                    let start = anchor_col.min(ui.global_search_col).min(char_count);
+                    let end = anchor_col.max(ui.global_search_col).min(char_count);
+                    let mut new_chars = chars;
+                    new_chars.drain(start..end);
+                    let new_content: String = new_chars.into_iter().collect();
+                    ui.global_search_col = start;
+                    ui.global_search_selection_anchor = None;
+                    sync_file_changes(ui, state, path.clone(), *line_idx, new_content);
+                } else if ui.global_search_col < char_count {
+                    let new_content = remove_char_at(&display_content, ui.global_search_col);
+                    ui.global_search_selection_anchor = None;
+                    sync_file_changes(ui, state, path.clone(), *line_idx, new_content);
+                }
+                window.request_redraw();
             }
-            window.request_redraw();
             true
         }
         Action::InsertNewLine => true,
         Action::InsertChar(s) => {
-            let chars: Vec<char> = current_content.chars().collect();
-            let start = if let Some(anchor) = ui.global_search_selection_anchor {
-                anchor.min(ui.global_search_col).min(char_count)
-            } else {
-                ui.global_search_col.min(char_count)
-            };
-            let end = if let Some(anchor) = ui.global_search_selection_anchor {
-                anchor.max(ui.global_search_col).min(char_count)
-            } else {
-                ui.global_search_col.min(char_count)
-            };
+            if let crate::machkit::SearchRenderItem::CodeLine {
+                path,
+                line_idx,
+                content,
+                ..
+            } = &active_item
+            {
+                let display_content = content.replace('\t', "    ");
+                let char_count = display_content.chars().count();
+                let chars: Vec<char> = display_content.chars().collect();
+                let (start, end) =
+                    if let Some((anchor_row, anchor_col)) = ui.global_search_selection_anchor {
+                        if anchor_row == ui.global_search_cursor_row {
+                            (
+                                anchor_col.min(ui.global_search_col).min(char_count),
+                                anchor_col.max(ui.global_search_col).min(char_count),
+                            )
+                        } else {
+                            (
+                                ui.global_search_col.min(char_count),
+                                ui.global_search_col.min(char_count),
+                            )
+                        }
+                    } else {
+                        (
+                            ui.global_search_col.min(char_count),
+                            ui.global_search_col.min(char_count),
+                        )
+                    };
 
-            let mut new_chars = chars;
-            new_chars.drain(start..end);
+                let mut new_chars = chars;
+                new_chars.drain(start..end);
 
-            let insert_chars: Vec<char> = s.chars().filter(|c| !c.is_control()).collect();
-            let insert_len = insert_chars.len();
-            for (offset, c) in insert_chars.into_iter().enumerate() {
-                new_chars.insert(start + offset, c);
+                let insert_chars: Vec<char> = s.chars().filter(|c| !c.is_control()).collect();
+                let insert_len = insert_chars.len();
+                for (offset, c) in insert_chars.into_iter().enumerate() {
+                    new_chars.insert(start + offset, c);
+                }
+
+                let new_content: String = new_chars.into_iter().collect();
+                ui.global_search_col = start + insert_len;
+                ui.global_search_selection_anchor = None;
+                sync_file_changes(ui, state, path.clone(), *line_idx, new_content);
+                window.request_redraw();
             }
-
-            let new_content: String = new_chars.into_iter().collect();
-            ui.global_search_col = start + insert_len;
-            ui.global_search_selection_anchor = None;
-            sync_file_changes(ui, state, path, line_idx, new_content);
+            true
+        }
+        Action::SaveFile => {
+            let paths_to_save: Vec<_> = ui.unsaved_project_search_files.iter().cloned().collect();
+            for path in paths_to_save {
+                if let Some(lines) = ui.project_search_file_cache.get(&path) {
+                    let joined = lines.join("\n");
+                    if let Err(e) = std::fs::write(&path, joined) {
+                        log::error!("Failed to save file {:?}: {:?}", path, e);
+                    } else {
+                        let abs_target_path =
+                            crate::editor::get_absolute_path(&path.to_string_lossy());
+                        for tab in &mut state.tabs {
+                            if let Some(ref tab_path) = tab.path
+                                && crate::editor::get_absolute_path(tab_path) == abs_target_path
+                            {
+                                tab.buffer.mark_saved();
+                            }
+                        }
+                        for pane in &mut state.inactive_panes {
+                            for tab in &mut pane.tabs {
+                                if let Some(ref tab_path) = tab.path
+                                    && crate::editor::get_absolute_path(tab_path) == abs_target_path
+                                {
+                                    tab.buffer.mark_saved();
+                                }
+                            }
+                        }
+                        ui.unsaved_project_search_files.remove(&path);
+                        ui.update_git_diff(Some(&path.to_string_lossy()));
+                        ui.update_git_file_blame(Some(&path.to_string_lossy()));
+                        ui.update_git_statuses();
+                    }
+                }
+            }
+            ui.invalidate_search_render_items();
             window.request_redraw();
             true
         }
         Action::Escape => {
             ui.global_search_selection_anchor = None;
+            window.request_redraw();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn handle_project_search_focused_action(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &mut Arc<Window>,
+    action: crate::editor::actions::Action,
+) -> bool {
+    use crate::editor::actions::Action;
+    match action {
+        Action::Copy => {
+            let val = if ui.global_search_focus_replace {
+                &ui.global_replace_query
+            } else {
+                &ui.global_search_query
+            };
+            if !val.is_empty() {
+                state.copy_to_clipboard(val.clone());
+            }
+            true
+        }
+        Action::Cut => {
+            let val = if ui.global_search_focus_replace {
+                let v = ui.global_replace_query.clone();
+                ui.global_replace_query.clear();
+                v
+            } else {
+                let v = ui.global_search_query.clone();
+                ui.global_search_query.clear();
+                ui.global_search_selected = 0;
+                v
+            };
+            if !val.is_empty() {
+                state.copy_to_clipboard(val);
+            }
+            window.request_redraw();
+            true
+        }
+        Action::Paste => {
+            let pasted = state.paste_from_clipboard();
+            if !pasted.is_empty() {
+                let clean_paste: String = pasted
+                    .chars()
+                    .filter(|c| *c != '\n' && *c != '\r')
+                    .collect();
+                if ui.global_search_focus_replace {
+                    ui.global_replace_query.push_str(&clean_paste);
+                } else {
+                    ui.global_search_query.push_str(&clean_paste);
+                    ui.global_search_selected = 0;
+                }
+                window.request_redraw();
+            }
+            true
+        }
+        Action::SelectAll => true,
+        Action::DeleteLeft => {
+            if ui.global_search_focus_replace {
+                ui.global_replace_query.pop();
+            } else {
+                ui.global_search_query.pop();
+                ui.global_search_selected = 0;
+            }
             window.request_redraw();
             true
         }
@@ -2515,12 +2932,16 @@ pub fn handle_project_search_keyboard(
             return false;
         }
 
-        if !ui.global_search_focused
-            && handle_project_search_action(
+        if ui.global_search_focused {
+            if handle_project_search_focused_action(ui, state, window, action.clone()) {
+                return true;
+            }
+        } else {
+            if handle_project_search_action(
                 ui, state, window, elwt, gpu, atlas, font_bytes, action, shift,
-            )
-        {
-            return true;
+            ) {
+                return true;
+            }
         }
     }
 
@@ -2534,6 +2955,7 @@ pub fn handle_project_search_keyboard(
             atlas,
             font_bytes,
             logical_key,
+            ctrl,
             alt,
         );
     } else {
@@ -2562,6 +2984,7 @@ fn handle_project_search_focused_input(
     atlas: &mut FontAtlas,
     font_bytes: &[u8],
     logical_key: &Key,
+    ctrl: bool,
     alt: bool,
 ) {
     match logical_key {
@@ -2620,19 +3043,21 @@ fn handle_project_search_focused_input(
             window.request_redraw();
         }
         Key::Character(text) => {
-            for c in text.chars() {
-                if !c.is_control() {
-                    if ui.global_search_focus_replace {
-                        ui.global_replace_query.push(c);
-                    } else {
-                        ui.global_search_query.push(c);
+            if !ctrl && !alt {
+                for c in text.chars() {
+                    if !c.is_control() {
+                        if ui.global_search_focus_replace {
+                            ui.global_replace_query.push(c);
+                        } else {
+                            ui.global_search_query.push(c);
+                        }
                     }
                 }
+                if !ui.global_search_focus_replace {
+                    ui.global_search_selected = 0;
+                }
+                window.request_redraw();
             }
-            if !ui.global_search_focus_replace {
-                ui.global_search_selected = 0;
-            }
-            window.request_redraw();
         }
         _ => {}
     }

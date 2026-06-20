@@ -148,9 +148,89 @@ pub fn draw_project_search(
                     format!(" {}/", parent_dir)
                 };
 
-                // Draw File Name (start at 30.0 to lay next to collapse chevron)
-                let name_x = text_area_x + 30.0;
+                let is_modified = ui.unsaved_project_search_files.contains(path);
+                let mut name_x = text_area_x + 30.0;
+                if is_modified {
+                    let dot_size = (ui.ui_font_size * 0.55).round().max(7.0);
+                    let dot_x = text_area_x + 30.0;
+                    let dot_y = (item_y + (item_height - dot_size) / 2.0).round();
+                    ui.push_icon(
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        "circle",
+                        dot_x,
+                        dot_y,
+                        ui.config.theme.tab_text,
+                        dot_size,
+                    );
+                    name_x += dot_size + 6.0;
+                }
+
                 let name_len = file_name.chars().count();
+                let header_text = if parent_dir.is_empty() {
+                    file_name.to_string()
+                } else {
+                    format!("{} {}/", file_name, parent_dir)
+                };
+                let text_len = header_text.chars().count();
+
+                // Render selection background for FileHeader if selection spans across this row
+                if let Some((anchor_row, anchor_col)) = ui.global_search_selection_anchor
+                    && (anchor_row, anchor_col)
+                        != (ui.global_search_cursor_row, ui.global_search_col)
+                {
+                    let (start_row, start_col, end_row, end_col) =
+                        if anchor_row < ui.global_search_cursor_row {
+                            (
+                                anchor_row,
+                                anchor_col,
+                                ui.global_search_cursor_row,
+                                ui.global_search_col,
+                            )
+                        } else if anchor_row > ui.global_search_cursor_row {
+                            (
+                                ui.global_search_cursor_row,
+                                ui.global_search_col,
+                                anchor_row,
+                                anchor_col,
+                            )
+                        } else if anchor_col < ui.global_search_col {
+                            (anchor_row, anchor_col, anchor_row, ui.global_search_col)
+                        } else {
+                            (anchor_row, ui.global_search_col, anchor_row, anchor_col)
+                        };
+
+                    let (sel_start_col, sel_end_col) = if idx > start_row && idx < end_row {
+                        (0, text_len)
+                    } else if idx == start_row && idx == end_row {
+                        (start_col.min(text_len), end_col.min(text_len))
+                    } else if idx == start_row {
+                        (start_col.min(text_len), text_len)
+                    } else if idx == end_row {
+                        (0, end_col.min(text_len))
+                    } else {
+                        (0, 0)
+                    };
+
+                    if sel_start_col < sel_end_col {
+                        let sel_x = name_x + sel_start_col as f32 * ui.buffer_char_width;
+                        let sel_w = (sel_end_col - sel_start_col) as f32 * ui.buffer_char_width;
+                        ui.push_quad(
+                            vertices,
+                            indices,
+                            sel_x,
+                            item_y,
+                            sel_w,
+                            item_height,
+                            white_uv,
+                            ui.config.theme.selection_bg,
+                        );
+                    }
+                }
+
+                // Draw File Name
                 ui.push_str(
                     vertices,
                     indices,
@@ -266,6 +346,35 @@ pub fn draw_project_search(
                         ui.ui_char_width,
                     );
                 }
+
+                // Draw cursor if cursor is on this row
+                if idx == ui.global_search_cursor_row && !ui.global_search_focused {
+                    let cursor_col_clamped = ui.global_search_col.min(text_len);
+                    let cursor_x = name_x + cursor_col_clamped as f32 * ui.buffer_char_width;
+                    let mut cursor_ctx = crate::machkit::UiContext {
+                        vertices,
+                        indices,
+                        atlas,
+                        queue,
+                        mouse_x: 0.0,
+                        mouse_y: 0.0,
+                        theme: &ui.config.theme,
+                        white_uv,
+                        ui_font_size: ui.ui_font_size,
+                        ui_char_width: ui.ui_char_width,
+                        ui_font_ascent: ui.ui_font_ascent,
+                        ui_line_height: ui.ui_line_height,
+                        buffer_font_size: ui.buffer_font_size,
+                        buffer_font_ascent: ui.buffer_font_ascent,
+                        buffer_line_height: ui.buffer_line_height,
+                    };
+                    crate::machkit::Cursor::new().draw(
+                        &mut cursor_ctx,
+                        cursor_x,
+                        item_y + 2.0,
+                        item_height - 4.0,
+                    );
+                }
             }
             SearchRenderItem::CodeLine {
                 line_idx,
@@ -316,27 +425,60 @@ pub fn draw_project_search(
                 // Draw code content
                 let snippet_x = text_area_x + 60.0;
                 let display_content = content.replace('\t', "    ");
+                let text_len = display_content.chars().count();
 
-                if is_selected
-                    && let Some(anchor) = ui.global_search_selection_anchor
-                    && anchor != ui.global_search_col
+                // Render selection background for CodeLine if selection spans across this row
+                if let Some((anchor_row, anchor_col)) = ui.global_search_selection_anchor
+                    && (anchor_row, anchor_col)
+                        != (ui.global_search_cursor_row, ui.global_search_col)
                 {
-                    let start_col = anchor.min(ui.global_search_col);
-                    let end_col = anchor.max(ui.global_search_col);
-                    let start_char = display_content.chars().take(start_col).count();
-                    let end_char = display_content.chars().take(end_col).count();
-                    let sel_x = snippet_x + start_char as f32 * ui.buffer_char_width;
-                    let sel_w = (end_char - start_char) as f32 * ui.buffer_char_width;
-                    ui.push_quad(
-                        vertices,
-                        indices,
-                        sel_x,
-                        item_y,
-                        sel_w,
-                        item_height,
-                        white_uv,
-                        ui.config.theme.selection_bg,
-                    );
+                    let (start_row, start_col, end_row, end_col) =
+                        if anchor_row < ui.global_search_cursor_row {
+                            (
+                                anchor_row,
+                                anchor_col,
+                                ui.global_search_cursor_row,
+                                ui.global_search_col,
+                            )
+                        } else if anchor_row > ui.global_search_cursor_row {
+                            (
+                                ui.global_search_cursor_row,
+                                ui.global_search_col,
+                                anchor_row,
+                                anchor_col,
+                            )
+                        } else if anchor_col < ui.global_search_col {
+                            (anchor_row, anchor_col, anchor_row, ui.global_search_col)
+                        } else {
+                            (anchor_row, ui.global_search_col, anchor_row, anchor_col)
+                        };
+
+                    let (sel_start_col, sel_end_col) = if idx > start_row && idx < end_row {
+                        (0, text_len)
+                    } else if idx == start_row && idx == end_row {
+                        (start_col.min(text_len), end_col.min(text_len))
+                    } else if idx == start_row {
+                        (start_col.min(text_len), text_len)
+                    } else if idx == end_row {
+                        (0, end_col.min(text_len))
+                    } else {
+                        (0, 0)
+                    };
+
+                    if sel_start_col < sel_end_col {
+                        let sel_x = snippet_x + sel_start_col as f32 * ui.buffer_char_width;
+                        let sel_w = (sel_end_col - sel_start_col) as f32 * ui.buffer_char_width;
+                        ui.push_quad(
+                            vertices,
+                            indices,
+                            sel_x,
+                            item_y,
+                            sel_w,
+                            item_height,
+                            white_uv,
+                            ui.config.theme.selection_bg,
+                        );
+                    }
                 }
 
                 ui.push_str(
@@ -356,9 +498,8 @@ pub fn draw_project_search(
                     ui.buffer_char_width,
                 );
 
-                if is_selected && !ui.global_search_focused {
-                    let cursor_col_clamped =
-                        ui.global_search_col.min(display_content.chars().count());
+                if idx == ui.global_search_cursor_row && !ui.global_search_focused {
+                    let cursor_col_clamped = ui.global_search_col.min(text_len);
                     let cursor_x = snippet_x + cursor_col_clamped as f32 * ui.buffer_char_width;
                     let mut cursor_ctx = crate::machkit::UiContext {
                         vertices,

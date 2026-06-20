@@ -170,6 +170,9 @@ pub fn handle_action(
                 log::error!("Failed to save file: {:?}", e);
             } else {
                 active_tab.buffer.mark_saved();
+                let path_buf = std::path::PathBuf::from(&path_to_save);
+                ui.unsaved_project_search_files.remove(&path_buf);
+                ui.invalidate_search_render_items();
                 ui.rebuild_tree();
                 ui.update_git_diff(Some(&path_to_save));
                 ui.update_git_file_blame(Some(&path_to_save));
