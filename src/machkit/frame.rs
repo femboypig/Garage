@@ -594,15 +594,15 @@ impl UiState {
         let is_project_search = active_file_path == Some("search://project");
         if is_project_search {
             if self.global_show_replace {
-                self.breadcrumb_height = 64.0;
+                self.breadcrumb_height = 84.0;
             } else {
-                self.breadcrumb_height = 34.0;
+                self.breadcrumb_height = 48.0;
             }
         } else if self.show_search_panel {
             if self.show_replace {
-                self.breadcrumb_height = 84.0;
+                self.breadcrumb_height = 108.0;
             } else {
-                self.breadcrumb_height = 52.0;
+                self.breadcrumb_height = 68.0;
             }
         } else {
             self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
