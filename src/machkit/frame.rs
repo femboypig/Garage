@@ -248,6 +248,7 @@ impl UiState {
     pub fn run_global_search(&mut self, query: String) {
         self.project_search_file_cache.clear();
         self.invalidate_search_render_items();
+        self.last_global_search_selected = None;
         if query.is_empty() {
             self.global_search_results.clear();
             self.global_search_selected = 0;
@@ -640,6 +641,7 @@ impl UiState {
             self.global_search_results = results;
             self.project_search_file_cache.extend(file_cache);
             self.invalidate_search_render_items();
+            self.last_global_search_selected = None;
             self.is_searching_globally = false;
         }
 

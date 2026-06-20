@@ -271,8 +271,8 @@ pub fn update_cursor_icon(window: &Window, ui: &mut UiState, state: &AppState) {
                     let list_y = pane_top + ui.tabbar_height + ui.breadcrumb_height;
                     let item_height = ui.buffer_line_height;
                     let render_items = crate::machkit::components::editor::project_search::build_search_render_items(ui);
-                    let item_idx = ui.global_search_scroll
-                        + ((mouse_y - list_y) / item_height).floor() as usize;
+                    let item_idx =
+                        ui.scroll_y + ((mouse_y - list_y) / item_height).floor() as usize;
                     if item_idx < render_items.len() {
                         match &render_items[item_idx] {
                             crate::machkit::SearchRenderItem::FileHeader { .. } => {
@@ -2904,14 +2904,13 @@ fn handle_project_search_click(
     text_area_x: f32,
     text_viewport_w: f32,
 ) -> bool {
-    ui.global_search_focused = true;
     let list_y = editor_top;
     let item_height = ui.buffer_line_height;
     if state.mouse_y < list_y {
+        ui.global_search_focused = true;
         return true;
     }
-    let clicked_idx =
-        ((state.mouse_y - list_y) / item_height).floor() as usize + ui.global_search_scroll;
+    let clicked_idx = ((state.mouse_y - list_y) / item_height).floor() as usize + ui.scroll_y;
     let render_items =
         crate::machkit::components::editor::project_search::build_search_render_items(ui);
     if clicked_idx >= render_items.len() {
@@ -2919,6 +2918,7 @@ fn handle_project_search_click(
     }
     match &render_items[clicked_idx] {
         crate::machkit::SearchRenderItem::FileHeader { path } => {
+            ui.global_search_focused = true;
             handle_project_search_header_click(
                 ui,
                 state,
@@ -2935,6 +2935,7 @@ fn handle_project_search_click(
         crate::machkit::SearchRenderItem::CodeLine {
             path,
             line_idx,
+            content,
             result_idx,
             is_first_in_range,
             is_last_in_range,
@@ -2942,6 +2943,7 @@ fn handle_project_search_click(
             end_line_of_range,
             ..
         } => {
+            ui.global_search_focused = false;
             handle_project_search_code_click(
                 ui,
                 state,
@@ -2952,6 +2954,7 @@ fn handle_project_search_click(
                 font_bytes,
                 path,
                 *line_idx,
+                content,
                 *result_idx,
                 *is_first_in_range,
                 *is_last_in_range,
@@ -3019,12 +3022,13 @@ fn handle_project_search_code_click(
     ui: &mut UiState,
     state: &mut AppState,
     window: &mut Arc<Window>,
-    elwt: &EventLoopWindowTarget<()>,
-    gpu: &mut Option<GpuContext>,
-    atlas: &mut FontAtlas,
-    font_bytes: &[u8],
+    _elwt: &EventLoopWindowTarget<()>,
+    _gpu: &mut Option<GpuContext>,
+    _atlas: &mut FontAtlas,
+    _font_bytes: &[u8],
     path: &std::path::PathBuf,
     line_idx: usize,
+    content: &str,
     result_idx: Option<usize>,
     is_first_in_range: bool,
     is_last_in_range: bool,
@@ -3060,20 +3064,37 @@ fn handle_project_search_code_click(
             ui.invalidate_search_render_items();
         }
     } else {
-        // Open the file at this line
-        if let Some(res_idx) = result_idx {
-            ui.global_search_selected = res_idx;
+        // Select the clicked match, or find the nearest match in the same file if a context line is clicked
+        let mut target_res_idx = result_idx;
+        if target_res_idx.is_none() {
+            let mut min_diff = usize::MAX;
+            for (idx, (p, l, _)) in ui.global_search_results.iter().enumerate() {
+                if p == path {
+                    let diff = line_idx.abs_diff(*l);
+                    if diff < min_diff {
+                        min_diff = diff;
+                        target_res_idx = Some(idx);
+                    }
+                }
+            }
         }
-        crate::app::handler::handle_action(
-            ui,
-            state,
-            UiAction::OpenFileAt(path.clone(), line_idx),
-            window,
-            elwt,
-            gpu,
-            atlas,
-            font_bytes,
-        );
+        if let Some(res_idx) = target_res_idx {
+            ui.global_search_selected = res_idx;
+            ui.last_global_search_selected = Some(res_idx);
+        }
+        // Set focus to the results list (so typing/editing works)
+        ui.global_search_focused = false;
+        // Position the cursor at the clicked column
+        let snippet_x = text_area_x + 60.0;
+        let col_idx = if state.mouse_x >= snippet_x {
+            let raw = ((state.mouse_x - snippet_x) / ui.buffer_char_width).round() as usize;
+            let display_content = content.replace('\t', "    ");
+            let char_count = display_content.chars().count();
+            raw.min(char_count)
+        } else {
+            0
+        };
+        ui.global_search_col = col_idx;
     }
     window.request_redraw();
 }

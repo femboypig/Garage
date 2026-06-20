@@ -92,6 +92,7 @@ pub struct UiState {
     pub global_search_query: String,
     pub global_search_results: Vec<(std::path::PathBuf, usize, String)>,
     pub global_search_selected: usize,
+    pub last_global_search_selected: Option<usize>,
     pub global_search_scroll: usize,
     pub global_search_rx: Option<
         std::sync::mpsc::Receiver<(
@@ -300,6 +301,7 @@ impl UiState {
             global_search_query: String::new(),
             global_search_results: Vec::new(),
             global_search_selected: 0,
+            last_global_search_selected: None,
             global_search_scroll: 0,
             global_search_rx: Some(global_search_rx),
             global_search_tx,

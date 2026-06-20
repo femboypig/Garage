@@ -66,13 +66,17 @@ pub fn draw_project_search(
         })
         .unwrap_or(0);
 
-    // Scroll selection into view
-    if max_visible_items > 0 {
-        if selected_render_idx < ui.scroll_y {
-            ui.scroll_y = selected_render_idx;
-        } else if selected_render_idx >= ui.scroll_y + max_visible_items {
-            ui.scroll_y = selected_render_idx + 1 - max_visible_items;
+    // Scroll selection into view only if the selection changed
+    let selection_changed = ui.last_global_search_selected != Some(ui.global_search_selected);
+    if selection_changed {
+        if max_visible_items > 0 {
+            if selected_render_idx < ui.scroll_y {
+                ui.scroll_y = selected_render_idx;
+            } else if selected_render_idx >= ui.scroll_y + max_visible_items {
+                ui.scroll_y = selected_render_idx + 1 - max_visible_items;
+            }
         }
+        ui.last_global_search_selected = Some(ui.global_search_selected);
     }
     let max_scroll = render_items.len().saturating_sub(max_visible_items);
     ui.scroll_y = ui.scroll_y.min(max_scroll);

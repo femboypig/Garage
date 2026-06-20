@@ -2390,16 +2390,18 @@ fn handle_project_search_result_input(
             window.request_redraw();
         }
         Key::Named(NamedKey::Enter) => {
-            handle_action(
-                ui,
-                state,
-                UiAction::OpenFileAt(path.clone(), line_idx),
-                window,
-                elwt,
-                gpu,
-                atlas,
-                font_bytes,
-            );
+            if alt {
+                handle_action(
+                    ui,
+                    state,
+                    UiAction::OpenFileAt(path.clone(), line_idx),
+                    window,
+                    elwt,
+                    gpu,
+                    atlas,
+                    font_bytes,
+                );
+            }
             window.request_redraw();
         }
         Key::Named(NamedKey::Backspace) => {
