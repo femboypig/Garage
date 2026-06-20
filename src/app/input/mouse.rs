@@ -1160,6 +1160,27 @@ fn handle_drag_selection(
     w_width: f32,
     window_height: f32,
 ) {
+    if state.tabs[state.active_tab_idx].path.as_deref() == Some("search://project") {
+        let results_len = ui.global_search_results.len();
+        if ui.global_search_selected < results_len {
+            let current_content = ui.global_search_results[ui.global_search_selected]
+                .2
+                .clone();
+            let display_content = current_content.replace('\t', "    ");
+            let char_count = display_content.chars().count();
+            let text_area_x = ui.sidebar_width;
+            let snippet_x = text_area_x + 60.0;
+            let col_idx = if state.mouse_x >= snippet_x {
+                let raw = ((state.mouse_x - snippet_x) / ui.buffer_char_width).round() as usize;
+                raw.min(char_count)
+            } else {
+                0
+            };
+            ui.global_search_col = col_idx;
+        }
+        return;
+    }
+
     let is_diagnostics = state.tabs[state.active_tab_idx]
         .path
         .as_deref()
@@ -2929,6 +2950,7 @@ fn handle_project_search_click(
     let item_height = ui.buffer_line_height;
     if state.mouse_y < list_y {
         ui.global_search_focused = true;
+        ui.global_search_selection_anchor = None;
         return true;
     }
     let clicked_idx = ((state.mouse_y - list_y) / item_height).floor() as usize + ui.scroll_y;
@@ -3034,6 +3056,7 @@ fn handle_project_search_header_click(
         }
         ui.invalidate_search_render_items();
     }
+    ui.global_search_selection_anchor = None;
     window.request_redraw();
 }
 
@@ -3115,7 +3138,17 @@ fn handle_project_search_code_click(
         } else {
             0
         };
+
+        let old_col = ui.global_search_col;
         ui.global_search_col = col_idx;
+        if state.modifiers.shift_key() {
+            if ui.global_search_selection_anchor.is_none() {
+                ui.global_search_selection_anchor = Some(old_col);
+            }
+        } else {
+            ui.global_search_selection_anchor = Some(col_idx);
+        }
+        state.is_dragging = true;
     }
     window.request_redraw();
 }

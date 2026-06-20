@@ -2196,6 +2196,291 @@ fn sync_file_changes(
     });
 }
 
+fn handle_project_search_action(
+    ui: &mut UiState,
+    state: &mut AppState,
+    window: &mut Arc<Window>,
+    _elwt: &EventLoopWindowTarget<()>,
+    _gpu: &mut Option<GpuContext>,
+    _atlas: &mut FontAtlas,
+    _font_bytes: &[u8],
+    action: crate::editor::actions::Action,
+    _shift_key: bool,
+) -> bool {
+    use crate::editor::actions::Action;
+    let results_len = ui.global_search_results.len();
+    if ui.global_search_selected >= results_len {
+        return false;
+    }
+    let (path, line_idx, current_content) =
+        ui.global_search_results[ui.global_search_selected].clone();
+    let char_count = current_content.chars().count();
+
+    // Helper to update selection anchor
+    let update_selection = |ui: &mut UiState, select: bool, prev_col: usize| {
+        if select {
+            if ui.global_search_selection_anchor.is_none() {
+                ui.global_search_selection_anchor = Some(prev_col);
+            }
+        } else {
+            ui.global_search_selection_anchor = None;
+        }
+    };
+
+    match action {
+        Action::MoveLeft { select, word } => {
+            let prev_col = ui.global_search_col;
+            update_selection(ui, select, prev_col);
+            if word {
+                let line_chars: Vec<char> = current_content.chars().collect();
+                let mut idx = ui.global_search_col.min(char_count);
+                while idx > 0 && idx - 1 < line_chars.len() && line_chars[idx - 1].is_whitespace() {
+                    idx -= 1;
+                }
+                if idx > 0 && idx - 1 < line_chars.len() {
+                    let start_is_alphanumeric = line_chars[idx - 1].is_alphanumeric();
+                    while idx > 0
+                        && idx - 1 < line_chars.len()
+                        && line_chars[idx - 1].is_alphanumeric() == start_is_alphanumeric
+                        && !line_chars[idx - 1].is_whitespace()
+                    {
+                        idx -= 1;
+                    }
+                }
+                ui.global_search_col = idx;
+            } else if ui.global_search_col > 0 {
+                ui.global_search_col -= 1;
+            }
+            window.request_redraw();
+            true
+        }
+        Action::MoveRight { select, word } => {
+            let prev_col = ui.global_search_col;
+            update_selection(ui, select, prev_col);
+            if word {
+                let line_chars: Vec<char> = current_content.chars().collect();
+                let mut idx = ui.global_search_col;
+                while idx < char_count && idx < line_chars.len() && line_chars[idx].is_whitespace()
+                {
+                    idx += 1;
+                }
+                if idx < char_count && idx < line_chars.len() {
+                    let start_is_alphanumeric = line_chars[idx].is_alphanumeric();
+                    while idx < char_count
+                        && idx < line_chars.len()
+                        && line_chars[idx].is_alphanumeric() == start_is_alphanumeric
+                        && !line_chars[idx].is_whitespace()
+                    {
+                        idx += 1;
+                    }
+                }
+                ui.global_search_col = idx;
+            } else {
+                ui.global_search_col = (ui.global_search_col + 1).min(char_count);
+            }
+            window.request_redraw();
+            true
+        }
+        Action::MoveUp { select } => {
+            let prev_col = ui.global_search_col;
+            update_selection(ui, select, prev_col);
+            let items_count = ui.global_search_results.len();
+            if items_count > 0 {
+                ui.global_search_selected =
+                    (ui.global_search_selected + items_count - 1) % items_count;
+                let new_content = &ui.global_search_results[ui.global_search_selected].2;
+                ui.global_search_col = ui.global_search_col.min(new_content.chars().count());
+                if !select {
+                    ui.global_search_selection_anchor = None;
+                }
+            }
+            window.request_redraw();
+            true
+        }
+        Action::MoveDown { select } => {
+            let prev_col = ui.global_search_col;
+            update_selection(ui, select, prev_col);
+            let items_count = ui.global_search_results.len();
+            if items_count > 0 {
+                ui.global_search_selected = (ui.global_search_selected + 1) % items_count;
+                let new_content = &ui.global_search_results[ui.global_search_selected].2;
+                ui.global_search_col = ui.global_search_col.min(new_content.chars().count());
+                if !select {
+                    ui.global_search_selection_anchor = None;
+                }
+            }
+            window.request_redraw();
+            true
+        }
+        Action::MoveToLineStart { select } => {
+            let prev_col = ui.global_search_col;
+            update_selection(ui, select, prev_col);
+            ui.global_search_col = 0;
+            window.request_redraw();
+            true
+        }
+        Action::MoveToLineEnd { select } => {
+            let prev_col = ui.global_search_col;
+            update_selection(ui, select, prev_col);
+            ui.global_search_col = char_count;
+            window.request_redraw();
+            true
+        }
+        Action::SelectAll => {
+            ui.global_search_selection_anchor = Some(0);
+            ui.global_search_col = char_count;
+            window.request_redraw();
+            true
+        }
+        Action::Copy => {
+            if let Some(anchor) = ui.global_search_selection_anchor {
+                let start = anchor.min(ui.global_search_col).min(char_count);
+                let end = anchor.max(ui.global_search_col).min(char_count);
+                if start != end {
+                    let chars: Vec<char> = current_content.chars().collect();
+                    let selected_str: String = chars[start..end].iter().collect();
+                    state.copy_to_clipboard(selected_str);
+                }
+            }
+            true
+        }
+        Action::Cut => {
+            if let Some(anchor) = ui.global_search_selection_anchor {
+                let start = anchor.min(ui.global_search_col).min(char_count);
+                let end = anchor.max(ui.global_search_col).min(char_count);
+                if start != end {
+                    let chars: Vec<char> = current_content.chars().collect();
+                    let selected_str: String = chars[start..end].iter().collect();
+                    state.copy_to_clipboard(selected_str);
+
+                    let mut new_chars = chars;
+                    new_chars.drain(start..end);
+                    let new_content: String = new_chars.into_iter().collect();
+                    ui.global_search_col = start;
+                    ui.global_search_selection_anchor = None;
+                    sync_file_changes(ui, state, path, line_idx, new_content);
+                    window.request_redraw();
+                }
+            }
+            true
+        }
+        Action::Paste => {
+            let pasted = state.paste_from_clipboard();
+            if !pasted.is_empty() {
+                let chars: Vec<char> = current_content.chars().collect();
+                let start = if let Some(anchor) = ui.global_search_selection_anchor {
+                    anchor.min(ui.global_search_col).min(char_count)
+                } else {
+                    ui.global_search_col.min(char_count)
+                };
+                let end = if let Some(anchor) = ui.global_search_selection_anchor {
+                    anchor.max(ui.global_search_col).min(char_count)
+                } else {
+                    ui.global_search_col.min(char_count)
+                };
+
+                let mut new_chars = chars;
+                new_chars.drain(start..end);
+
+                let paste_chars: Vec<char> = pasted
+                    .chars()
+                    .filter(|c| *c != '\n' && *c != '\r')
+                    .collect();
+                let paste_len = paste_chars.len();
+                for (offset, c) in paste_chars.into_iter().enumerate() {
+                    new_chars.insert(start + offset, c);
+                }
+
+                let new_content: String = new_chars.into_iter().collect();
+                ui.global_search_col = start + paste_len;
+                ui.global_search_selection_anchor = None;
+                sync_file_changes(ui, state, path, line_idx, new_content);
+                window.request_redraw();
+            }
+            true
+        }
+        Action::DeleteLeft => {
+            let chars: Vec<char> = current_content.chars().collect();
+            if let Some(anchor) = ui.global_search_selection_anchor
+                && anchor != ui.global_search_col
+            {
+                let start = anchor.min(ui.global_search_col).min(char_count);
+                let end = anchor.max(ui.global_search_col).min(char_count);
+                let mut new_chars = chars;
+                new_chars.drain(start..end);
+                let new_content: String = new_chars.into_iter().collect();
+                ui.global_search_col = start;
+                ui.global_search_selection_anchor = None;
+                sync_file_changes(ui, state, path, line_idx, new_content);
+            } else if ui.global_search_col > 0 {
+                let new_content = remove_char_at(&current_content, ui.global_search_col - 1);
+                ui.global_search_col -= 1;
+                ui.global_search_selection_anchor = None;
+                sync_file_changes(ui, state, path, line_idx, new_content);
+            }
+            window.request_redraw();
+            true
+        }
+        Action::DeleteRight => {
+            let chars: Vec<char> = current_content.chars().collect();
+            if let Some(anchor) = ui.global_search_selection_anchor
+                && anchor != ui.global_search_col
+            {
+                let start = anchor.min(ui.global_search_col).min(char_count);
+                let end = anchor.max(ui.global_search_col).min(char_count);
+                let mut new_chars = chars;
+                new_chars.drain(start..end);
+                let new_content: String = new_chars.into_iter().collect();
+                ui.global_search_col = start;
+                ui.global_search_selection_anchor = None;
+                sync_file_changes(ui, state, path, line_idx, new_content);
+            } else if ui.global_search_col < char_count {
+                let new_content = remove_char_at(&current_content, ui.global_search_col);
+                ui.global_search_selection_anchor = None;
+                sync_file_changes(ui, state, path, line_idx, new_content);
+            }
+            window.request_redraw();
+            true
+        }
+        Action::InsertNewLine => true,
+        Action::InsertChar(s) => {
+            let chars: Vec<char> = current_content.chars().collect();
+            let start = if let Some(anchor) = ui.global_search_selection_anchor {
+                anchor.min(ui.global_search_col).min(char_count)
+            } else {
+                ui.global_search_col.min(char_count)
+            };
+            let end = if let Some(anchor) = ui.global_search_selection_anchor {
+                anchor.max(ui.global_search_col).min(char_count)
+            } else {
+                ui.global_search_col.min(char_count)
+            };
+
+            let mut new_chars = chars;
+            new_chars.drain(start..end);
+
+            let insert_chars: Vec<char> = s.chars().filter(|c| !c.is_control()).collect();
+            let insert_len = insert_chars.len();
+            for (offset, c) in insert_chars.into_iter().enumerate() {
+                new_chars.insert(start + offset, c);
+            }
+
+            let new_content: String = new_chars.into_iter().collect();
+            ui.global_search_col = start + insert_len;
+            ui.global_search_selection_anchor = None;
+            sync_file_changes(ui, state, path, line_idx, new_content);
+            window.request_redraw();
+            true
+        }
+        Action::Escape => {
+            ui.global_search_selection_anchor = None;
+            window.request_redraw();
+            true
+        }
+        _ => false,
+    }
+}
+
 pub fn handle_project_search_keyboard(
     ui: &mut UiState,
     state: &mut AppState,
@@ -2225,9 +2510,18 @@ pub fn handle_project_search_keyboard(
         shift,
         alt,
         &["Editor", "Workspace"],
-    ) && is_workspace_global_action(&action)
-    {
-        return false;
+    ) {
+        if is_workspace_global_action(&action) {
+            return false;
+        }
+
+        if !ui.global_search_focused
+            && handle_project_search_action(
+                ui, state, window, elwt, gpu, atlas, font_bytes, action, shift,
+            )
+        {
+            return true;
+        }
     }
 
     if ui.global_search_focused {

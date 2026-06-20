@@ -317,6 +317,28 @@ pub fn draw_project_search(
                 let snippet_x = text_area_x + 60.0;
                 let display_content = content.replace('\t', "    ");
 
+                if is_selected
+                    && let Some(anchor) = ui.global_search_selection_anchor
+                    && anchor != ui.global_search_col
+                {
+                    let start_col = anchor.min(ui.global_search_col);
+                    let end_col = anchor.max(ui.global_search_col);
+                    let start_char = display_content.chars().take(start_col).count();
+                    let end_char = display_content.chars().take(end_col).count();
+                    let sel_x = snippet_x + start_char as f32 * ui.buffer_char_width;
+                    let sel_w = (end_char - start_char) as f32 * ui.buffer_char_width;
+                    ui.push_quad(
+                        vertices,
+                        indices,
+                        sel_x,
+                        item_y,
+                        sel_w,
+                        item_height,
+                        white_uv,
+                        ui.config.theme.selection_bg,
+                    );
+                }
+
                 ui.push_str(
                     vertices,
                     indices,
