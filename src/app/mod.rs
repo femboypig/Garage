@@ -498,6 +498,10 @@ pub fn run_editor(
                             },
                         );
 
+                        // Sync active tab scroll offsets back from ui_ref after drawing
+                        state.tabs[state.active_tab_idx].scroll_x = ui_ref.scroll_x;
+                        state.tabs[state.active_tab_idx].scroll_y = ui_ref.scroll_y;
+
                         // Update cursor icon when screen redraws
                         input::update_cursor_icon(
                             &window,

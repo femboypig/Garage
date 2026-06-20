@@ -1681,11 +1681,20 @@ pub fn handle_mouse_input(
                                         if state.active_tab_idx < state.tabs.len() {
                                             let (m_line, m_col) =
                                                 ui.search_matches[ui.active_search_match_idx];
-                                            state.tabs[state.active_tab_idx].cursor.line = m_line;
-                                            state.tabs[state.active_tab_idx].cursor.col = m_col;
-                                            state.tabs[state.active_tab_idx]
-                                                .cursor
-                                                .clear_selection();
+                                            let active_tab = &mut state.tabs[state.active_tab_idx];
+                                            active_tab.cursor.line = m_line;
+                                            active_tab.cursor.col = m_col;
+                                            active_tab.cursor.clear_selection();
+
+                                            let size = window.inner_size();
+                                            ui.scroll_to_cursor(
+                                                &active_tab.cursor,
+                                                active_tab.buffer.len(),
+                                                size.width as f32,
+                                                size.height as f32,
+                                            );
+                                            active_tab.scroll_y = ui.scroll_y;
+                                            active_tab.scroll_x = ui.scroll_x;
                                         }
                                     }
                                 }
@@ -1734,11 +1743,20 @@ pub fn handle_mouse_input(
                                         if state.active_tab_idx < state.tabs.len() {
                                             let (m_line, m_col) =
                                                 ui.search_matches[ui.active_search_match_idx];
-                                            state.tabs[state.active_tab_idx].cursor.line = m_line;
-                                            state.tabs[state.active_tab_idx].cursor.col = m_col;
-                                            state.tabs[state.active_tab_idx]
-                                                .cursor
-                                                .clear_selection();
+                                            let active_tab = &mut state.tabs[state.active_tab_idx];
+                                            active_tab.cursor.line = m_line;
+                                            active_tab.cursor.col = m_col;
+                                            active_tab.cursor.clear_selection();
+
+                                            let size = window.inner_size();
+                                            ui.scroll_to_cursor(
+                                                &active_tab.cursor,
+                                                active_tab.buffer.len(),
+                                                size.width as f32,
+                                                size.height as f32,
+                                            );
+                                            active_tab.scroll_y = ui.scroll_y;
+                                            active_tab.scroll_x = ui.scroll_x;
                                         }
                                     }
                                 }
