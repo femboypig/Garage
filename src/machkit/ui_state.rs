@@ -569,10 +569,11 @@ impl UiState {
 
         let visible_cols = (text_viewport_w / self.buffer_char_width).floor() as usize;
         if visible_cols > 0 {
-            if cursor.col < self.scroll_x {
-                self.scroll_x = cursor.col;
-            } else if cursor.col >= self.scroll_x + visible_cols {
-                self.scroll_x = cursor.col - visible_cols + 1;
+            let margin = 10.min(visible_cols / 2);
+            if cursor.col < self.scroll_x + margin {
+                self.scroll_x = cursor.col.saturating_sub(margin);
+            } else if cursor.col >= self.scroll_x + visible_cols - margin {
+                self.scroll_x = (cursor.col + margin + 1).saturating_sub(visible_cols);
             }
         }
     }
