@@ -95,16 +95,16 @@ pub fn draw_breadcrumbs(
         };
 
         let count_w = if is_local { 70.0f32 } else { 75.0f32 };
-        let btn_prev_w = 24.0f32;
-        let btn_next_w = 24.0f32;
-        let close_btn_w = 24.0f32;
+        let btn_prev_w = 32.0f32;
+        let btn_next_w = 32.0f32;
+        let close_btn_w = 32.0f32;
 
-        let btn_rep_toggle_w = if is_local { 0.0f32 } else { 24.0f32 };
-        let btn_filter_w = if is_local { 0.0f32 } else { 24.0f32 };
+        let btn_rep_toggle_w = if is_local { 0.0f32 } else { 32.0f32 };
+        let btn_filter_w = if is_local { 0.0f32 } else { 32.0f32 };
 
-        let input_h = 26.0f32;
+        let input_h = 32.0f32;
         let (input_y_1, input_y_2) = if is_local {
-            let path_h = 20.0f32;
+            let path_h = 24.0f32;
             let remaining_h = bar_h - path_h;
             let row_h = if show_replace {
                 remaining_h / 2.0
@@ -137,7 +137,7 @@ pub fn draw_breadcrumbs(
             (rep_toggle_x, filter_x, count_x)
         };
 
-        let toggle_btn_w = 24.0f32;
+        let toggle_btn_w = 32.0f32;
         let toggle_btn_x = bar_x + 10.0;
         let input_start_x = toggle_btn_x + toggle_btn_w + 6.0;
         let input_find_w = (count_x - 10.0 - input_start_x).max(50.0);
@@ -182,7 +182,7 @@ pub fn draw_breadcrumbs(
         } else {
             "Search in project..."
         };
-        let opt_btn_w = 22.0f32;
+        let opt_btn_w = 26.0f32;
         let options_w = 3.0 * opt_btn_w + 10.0;
 
         crate::machkit::Input::new()
@@ -194,8 +194,8 @@ pub fn draw_breadcrumbs(
             .draw(&mut ctx, input_start_x, input_y_1, input_find_w, input_h);
 
         // Option buttons inside Find Input
-        let opt_y = input_y_1 + 2.0;
-        let opt_h = input_h - 4.0;
+        let opt_y = input_y_1 + 3.0;
+        let opt_h = input_h - 6.0;
         let opt_regex_x = input_start_x + input_find_w - 5.0 - opt_btn_w;
         let opt_word_x = opt_regex_x - 2.0 - opt_btn_w;
         let opt_case_x = opt_word_x - 2.0 - opt_btn_w;
