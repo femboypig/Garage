@@ -92,6 +92,7 @@ pub struct UiState {
     pub global_search_query: String,
     pub global_search_results: Vec<(std::path::PathBuf, usize, String)>,
     pub global_search_selected: usize,
+    pub last_global_search_selected: Option<usize>,
     pub global_search_scroll: usize,
     pub global_search_rx: Option<
         std::sync::mpsc::Receiver<(
@@ -162,6 +163,7 @@ pub struct UiState {
     pub search_focused: bool,
     pub global_search_focused: bool,
     pub global_search_col: usize,
+    pub global_search_selection_anchor: Option<usize>,
     pub last_frame_time: Option<std::time::Instant>,
     pub current_fps: f32,
     pub experimental: bool,
@@ -300,6 +302,7 @@ impl UiState {
             global_search_query: String::new(),
             global_search_results: Vec::new(),
             global_search_selected: 0,
+            last_global_search_selected: None,
             global_search_scroll: 0,
             global_search_rx: Some(global_search_rx),
             global_search_tx,
@@ -351,6 +354,7 @@ impl UiState {
             search_focused: false,
             global_search_focused: false,
             global_search_col: 0,
+            global_search_selection_anchor: None,
             last_frame_time: None,
             current_fps: 0.0,
             experimental,
@@ -567,10 +571,11 @@ impl UiState {
 
         let visible_cols = (text_viewport_w / self.buffer_char_width).floor() as usize;
         if visible_cols > 0 {
-            if cursor.col < self.scroll_x {
-                self.scroll_x = cursor.col;
-            } else if cursor.col >= self.scroll_x + visible_cols {
-                self.scroll_x = cursor.col - visible_cols + 1;
+            let margin = 10.min(visible_cols / 2);
+            if cursor.col < self.scroll_x + margin {
+                self.scroll_x = cursor.col.saturating_sub(margin);
+            } else if cursor.col >= self.scroll_x + visible_cols - margin {
+                self.scroll_x = (cursor.col + margin + 1).saturating_sub(visible_cols);
             }
         }
     }

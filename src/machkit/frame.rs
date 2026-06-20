@@ -248,6 +248,7 @@ impl UiState {
     pub fn run_global_search(&mut self, query: String) {
         self.project_search_file_cache.clear();
         self.invalidate_search_render_items();
+        self.last_global_search_selected = None;
         if query.is_empty() {
             self.global_search_results.clear();
             self.global_search_selected = 0;
@@ -640,6 +641,7 @@ impl UiState {
             self.global_search_results = results;
             self.project_search_file_cache.extend(file_cache);
             self.invalidate_search_render_items();
+            self.last_global_search_selected = None;
             self.is_searching_globally = false;
         }
 
@@ -713,6 +715,9 @@ impl UiState {
         // --- 3. Draw Editor Tabbar, Breadcrumbs, Text Area, Gutter, Scrollbars & Minimap ---
         let sidebar_original = self.sidebar_width;
 
+        let mut final_active_scroll_x = self.scroll_x;
+        let mut final_active_scroll_y = self.scroll_y;
+
         if inactive_panes.is_empty() {
             crate::machkit::components::editor_view::draw_editor_view(
                 self,
@@ -734,6 +739,8 @@ impl UiState {
                 self.tab_scroll_x,
                 true,
             );
+            final_active_scroll_x = self.scroll_x;
+            final_active_scroll_y = self.scroll_y;
         } else if is_split_horizontal {
             let editor_area_height = status_y - main_y;
             let pane_height = (editor_area_height / 2.0).round();
@@ -811,6 +818,11 @@ impl UiState {
                 p0_scroll_x,
                 active_pane_idx == 0,
             );
+
+            if active_pane_idx == 0 {
+                final_active_scroll_x = self.scroll_x;
+                final_active_scroll_y = self.scroll_y;
+            }
 
             self.scroll_x = orig_scroll_x;
             self.scroll_y = orig_scroll_y;
@@ -892,6 +904,11 @@ impl UiState {
                 p1_scroll_x,
                 active_pane_idx == 1,
             );
+
+            if active_pane_idx == 1 {
+                final_active_scroll_x = self.scroll_x;
+                final_active_scroll_y = self.scroll_y;
+            }
 
             self.scroll_x = orig_scroll_x;
             self.scroll_y = orig_scroll_y;
@@ -990,6 +1007,11 @@ impl UiState {
                 active_pane_idx == 0,
             );
 
+            if active_pane_idx == 0 {
+                final_active_scroll_x = self.scroll_x;
+                final_active_scroll_y = self.scroll_y;
+            }
+
             self.scroll_x = orig_scroll_x;
             self.scroll_y = orig_scroll_y;
 
@@ -1070,6 +1092,11 @@ impl UiState {
                 active_pane_idx == 1,
             );
 
+            if active_pane_idx == 1 {
+                final_active_scroll_x = self.scroll_x;
+                final_active_scroll_y = self.scroll_y;
+            }
+
             self.scroll_x = orig_scroll_x;
             self.scroll_y = orig_scroll_y;
 
@@ -1089,6 +1116,9 @@ impl UiState {
             // Restore sidebar_width
             self.sidebar_width = sidebar_original;
         }
+
+        self.scroll_x = final_active_scroll_x;
+        self.scroll_y = final_active_scroll_y;
 
         // --- 4.5. Draw Bottom Dock ---
         crate::machkit::components::dock::draw_dock(

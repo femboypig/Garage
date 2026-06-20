@@ -91,6 +91,10 @@ pub fn draw_editor_view(
             }
         }
         (count.max(1), visible_lines)
+    } else if is_project_search {
+        let render_items =
+            crate::machkit::components::editor::project_search::build_search_render_items(ui);
+        (render_items.len(), visible_lines)
     } else {
         (buffer.len(), visible_lines)
     };

@@ -66,13 +66,17 @@ pub fn draw_project_search(
         })
         .unwrap_or(0);
 
-    // Scroll selection into view
-    if max_visible_items > 0 {
-        if selected_render_idx < ui.scroll_y {
-            ui.scroll_y = selected_render_idx;
-        } else if selected_render_idx >= ui.scroll_y + max_visible_items {
-            ui.scroll_y = selected_render_idx + 1 - max_visible_items;
+    // Scroll selection into view only if the selection changed
+    let selection_changed = ui.last_global_search_selected != Some(ui.global_search_selected);
+    if selection_changed {
+        if max_visible_items > 0 {
+            if selected_render_idx < ui.scroll_y {
+                ui.scroll_y = selected_render_idx;
+            } else if selected_render_idx >= ui.scroll_y + max_visible_items {
+                ui.scroll_y = selected_render_idx + 1 - max_visible_items;
+            }
         }
+        ui.last_global_search_selected = Some(ui.global_search_selected);
     }
     let max_scroll = render_items.len().saturating_sub(max_visible_items);
     ui.scroll_y = ui.scroll_y.min(max_scroll);
@@ -312,6 +316,28 @@ pub fn draw_project_search(
                 // Draw code content
                 let snippet_x = text_area_x + 60.0;
                 let display_content = content.replace('\t', "    ");
+
+                if is_selected
+                    && let Some(anchor) = ui.global_search_selection_anchor
+                    && anchor != ui.global_search_col
+                {
+                    let start_col = anchor.min(ui.global_search_col);
+                    let end_col = anchor.max(ui.global_search_col);
+                    let start_char = display_content.chars().take(start_col).count();
+                    let end_char = display_content.chars().take(end_col).count();
+                    let sel_x = snippet_x + start_char as f32 * ui.buffer_char_width;
+                    let sel_w = (end_char - start_char) as f32 * ui.buffer_char_width;
+                    ui.push_quad(
+                        vertices,
+                        indices,
+                        sel_x,
+                        item_y,
+                        sel_w,
+                        item_height,
+                        white_uv,
+                        ui.config.theme.selection_bg,
+                    );
+                }
 
                 ui.push_str(
                     vertices,

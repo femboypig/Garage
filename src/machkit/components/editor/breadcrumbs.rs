@@ -94,7 +94,32 @@ pub fn draw_breadcrumbs(
             ui.global_show_replace
         };
 
-        let count_w = if is_local { 70.0f32 } else { 75.0f32 };
+        let count_str = if is_local {
+            if ui.search_matches.is_empty() {
+                "0 of 0".to_string()
+            } else {
+                format!(
+                    "{} of {}",
+                    ui.active_search_match_idx + 1,
+                    ui.search_matches.len()
+                )
+            }
+        } else {
+            if ui.global_search_results.is_empty() {
+                if ui.is_searching_globally {
+                    "Searching...".to_string()
+                } else {
+                    "0/0".to_string()
+                }
+            } else {
+                format!(
+                    "{}/{}",
+                    ui.global_search_selected + 1,
+                    ui.global_search_results.len()
+                )
+            }
+        };
+        let count_w = count_str.chars().count() as f32 * ctx.ui_char_width;
         let btn_prev_w = 32.0f32;
         let btn_next_w = 32.0f32;
         let close_btn_w = 32.0f32;
@@ -222,31 +247,6 @@ pub fn draw_breadcrumbs(
             .draw(&mut ctx, opt_regex_x, opt_y, opt_btn_w, opt_h);
 
         // 2. Match counts
-        let count_str = if is_local {
-            if ui.search_matches.is_empty() {
-                "0 of 0".to_string()
-            } else {
-                format!(
-                    "{} of {}",
-                    ui.active_search_match_idx + 1,
-                    ui.search_matches.len()
-                )
-            }
-        } else {
-            if ui.global_search_results.is_empty() {
-                if ui.is_searching_globally {
-                    "Searching...".to_string()
-                } else {
-                    "0/0".to_string()
-                }
-            } else {
-                format!(
-                    "{}/{}",
-                    ui.global_search_selected + 1,
-                    ui.global_search_results.len()
-                )
-            }
-        };
         let count_text_len = count_str.chars().count() as f32;
         let count_text_x = count_x + ((count_w - count_text_len * ctx.ui_char_width) / 2.0).round();
         ctx.push_str(
