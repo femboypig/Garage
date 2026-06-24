@@ -2736,10 +2736,14 @@ fn handle_sidebar_input_modal_click(
     if ui.active_modal != Some(crate::machkit::ModalType::SidebarInput) {
         return false;
     }
-    let modal_w = 400.0f32;
-    let modal_h = 150.0f32;
-    let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
-    let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
+    let modal_rect = ui.modal_rect(
+        crate::machkit::ModalType::SidebarInput,
+        size.width as f32,
+        size.height as f32,
+    );
+    let modal_x = modal_rect.x;
+    let modal_y = modal_rect.y;
+    let modal_w = modal_rect.w;
 
     let title_y = modal_y + 20.0;
     let input_y = title_y + ui.ui_line_height + 15.0;
@@ -2780,11 +2784,7 @@ fn handle_sidebar_input_modal_click(
     }
 
     // Click outside modal dismisses it
-    let clicked_outside = state.mouse_x < modal_x
-        || state.mouse_x > modal_x + modal_w
-        || state.mouse_y < modal_y
-        || state.mouse_y > modal_y + modal_h;
-    if clicked_outside {
+    if !modal_rect.contains(state.mouse_x, state.mouse_y) {
         ui.close_modal();
         window.request_redraw();
     }
