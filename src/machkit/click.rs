@@ -383,7 +383,7 @@ impl UiState {
             let idx = ((my - list_y) / item_height).floor() as usize + self.command_palette_scroll;
             if idx < filtered.len() {
                 let cmd = filtered[idx];
-                self.active_modal = None;
+                self.close_modal();
                 let active_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
                 return Some(self.execute_command(cmd, buffer, cursor, active_path));
             }
@@ -429,8 +429,10 @@ impl UiState {
             let idx = ((my - list_y) / item_height).floor() as usize + self.global_search_scroll;
             if idx < results_len {
                 let (path, line_idx, _) = &self.global_search_results[idx];
-                self.active_modal = None;
-                return Some(UiAction::OpenFileAt(path.clone(), *line_idx));
+                let path = path.clone();
+                let line_idx = *line_idx;
+                self.close_modal();
+                return Some(UiAction::OpenFileAt(path, line_idx));
             }
         }
         Some(UiAction::None)
@@ -457,7 +459,7 @@ impl UiState {
             // Check Save button
             let save_x = start_btn_x;
             if mx >= save_x && mx <= save_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
-                self.active_modal = None;
+                self.close_modal();
                 self.tab_to_close = None;
                 return Some(UiAction::SaveAndCloseTab(tab_idx));
             }
@@ -466,7 +468,7 @@ impl UiState {
             let dont_save_x = start_btn_x + btn_w + spacing;
             if mx >= dont_save_x && mx <= dont_save_x + btn_w && my >= btn_y && my <= btn_y + btn_h
             {
-                self.active_modal = None;
+                self.close_modal();
                 self.tab_to_close = None;
                 return Some(UiAction::ForceCloseTab(tab_idx));
             }
@@ -474,14 +476,14 @@ impl UiState {
             // Check Cancel button
             let cancel_x = start_btn_x + 2.0 * (btn_w + spacing);
             if mx >= cancel_x && mx <= cancel_x + btn_w && my >= btn_y && my <= btn_y + btn_h {
-                self.active_modal = None;
+                self.close_modal();
                 self.tab_to_close = None;
                 return Some(UiAction::CloseModal);
             }
         }
 
         if clicked_outside {
-            self.active_modal = None;
+            self.close_modal();
             self.tab_to_close = None;
             return Some(UiAction::CloseModal);
         }
@@ -564,7 +566,7 @@ impl UiState {
             && my <= btn_y + btn_h;
 
         if (inside_close_btn || clicked_outside) && modal != ModalType::UnsavedChanges {
-            self.active_modal = None;
+            self.close_modal();
             return UiAction::CloseModal;
         }
 
@@ -840,31 +842,22 @@ impl UiState {
 
             // Check if Language was clicked
             if mx >= lang_left && mx < lang_right {
+                self.open_modal(ModalType::CommandPalette);
                 self.command_palette_mode = CommandPaletteMode::Languages;
-                self.command_palette_query = String::new();
-                self.command_palette_selected = 0;
-                self.command_palette_scroll = 0;
-                self.active_modal = Some(ModalType::CommandPalette);
                 return UiAction::None;
             }
 
             // Check if Encoding was clicked
             if mx >= enc_left && mx < enc_right {
+                self.open_modal(ModalType::CommandPalette);
                 self.command_palette_mode = CommandPaletteMode::Encodings;
-                self.command_palette_query = String::new();
-                self.command_palette_selected = 0;
-                self.command_palette_scroll = 0;
-                self.active_modal = Some(ModalType::CommandPalette);
                 return UiAction::None;
             }
 
             // Check if Line Ending was clicked
             if mx >= le_left && mx < le_right {
+                self.open_modal(ModalType::CommandPalette);
                 self.command_palette_mode = CommandPaletteMode::LineEndings;
-                self.command_palette_query = String::new();
-                self.command_palette_selected = 0;
-                self.command_palette_scroll = 0;
-                self.active_modal = Some(ModalType::CommandPalette);
                 return UiAction::None;
             }
         }
