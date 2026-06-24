@@ -17,7 +17,7 @@ pub use input::Input;
 pub use scrollbar::Scrollbar;
 
 pub use types::{
-    FileNode, FrameInput, GitDiffHunk, MenuType, ModalType, SearchRenderItem, UiAction,
+    FileNode, FrameInput, GitDiffHunk, MenuType, ModalType, Rect, SearchRenderItem, UiAction,
     SidebarInputMode,
 };
 pub use ui_state::{CommandPaletteMode, UiState};
