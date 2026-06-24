@@ -56,6 +56,48 @@ pub enum ModalType {
     GlobalSearch,
 }
 
+impl ModalType {
+    pub fn width(self, ui_char_width: f32) -> f32 {
+        match self {
+            Self::Settings => (45.0 * ui_char_width).max(500.0).round(),
+            Self::About => 520.0,
+            Self::CommandPalette => (50.0 * ui_char_width).max(500.0).round(),
+            Self::UnsavedChanges => 520.0,
+            Self::SidebarInput => 400.0,
+            Self::GlobalSearch => 650.0,
+        }
+    }
+
+    pub fn height(
+        self,
+        ui_line_height: f32,
+        filtered_commands_len: usize,
+        global_results_len: usize,
+    ) -> f32 {
+        match self {
+            Self::Settings => {
+                let row_height = (ui_line_height * 2.2).round();
+                (row_height * 8.2).max(430.0).round()
+            }
+            Self::About => 190.0,
+            Self::CommandPalette => {
+                let item_height = (ui_line_height * 1.6).round().max(26.0);
+                let visible_items = filtered_commands_len.min(10);
+                let header_h = 15.0 + ui_line_height + 15.0 + 1.0;
+                (header_h + visible_items as f32 * item_height).round()
+            }
+            Self::UnsavedChanges => 200.0,
+            Self::SidebarInput => 150.0,
+            Self::GlobalSearch => {
+                let item_height = (ui_line_height * 1.6).round().max(26.0);
+                let count = global_results_len.min(10).max(1);
+                let header_h = 15.0 + ui_line_height + 15.0 + 1.0;
+                (header_h + count as f32 * item_height).round()
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SidebarInputMode {
     NewFile,
