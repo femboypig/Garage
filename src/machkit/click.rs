@@ -501,17 +501,20 @@ impl UiState {
         modal: ModalType,
         active_tab_idx: usize,
     ) -> UiAction {
-        let modal_w = modal.width(self.ui_char_width);
-        let modal_h = modal.height(
+        let modal_rect = modal.rect(
+            width,
+            height,
+            self.ui_char_width,
             self.ui_line_height,
             self.get_filtered_commands().len(),
             self.global_search_results.len(),
         );
-        let modal_x = ((width - modal_w) / 2.0).round();
-        let modal_y = ((height - modal_h) / 2.0).round();
+        let modal_x = modal_rect.x;
+        let modal_y = modal_rect.y;
+        let modal_w = modal_rect.w;
+        let modal_h = modal_rect.h;
 
-        let clicked_outside =
-            mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h;
+        let clicked_outside = !modal_rect.contains(mx, my);
 
         // Delegate to helpers
         if modal == ModalType::Settings {
