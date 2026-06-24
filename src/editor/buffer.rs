@@ -1,6 +1,6 @@
-use std::fs::File;
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn is_binary_file(bytes: &[u8]) -> bool {
     let check_len = bytes.len().min(8192);
@@ -36,6 +36,33 @@ fn is_binary_file(bytes: &[u8]) -> bool {
     }
 
     false
+}
+
+fn temp_save_path(path: &Path) -> io::Result<PathBuf> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing file name"))?
+        .to_string_lossy();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+
+    Ok(parent.join(format!(
+        ".{}.{}.{}.tmp",
+        file_name,
+        std::process::id(),
+        stamp
+    )))
+}
+
+fn sync_parent_dir(path: &Path) {
+    if let Some(parent) = path.parent()
+        && let Ok(dir) = File::open(parent)
+    {
+        let _ = dir.sync_all();
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -197,18 +224,46 @@ impl Buffer {
 
     /// Save the buffer contents to a file.
     pub fn save_file<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
-        let mut file = File::create(path)?;
-        let le_bytes: &[u8] = if self.line_ending == "CRLF" {
-            b"\r\n"
-        } else {
-            b"\n"
-        };
-        for (i, line) in self.lines.iter().enumerate() {
-            file.write_all(line.as_bytes())?;
-            if i < self.lines.len() - 1 {
-                file.write_all(le_bytes)?;
+        let path = path.as_ref();
+        let tmp_path = temp_save_path(path)?;
+        let existing_permissions = fs::metadata(path).ok().map(|m| m.permissions());
+
+        let write_result = (|| {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&tmp_path)?;
+
+            if let Some(permissions) = existing_permissions {
+                file.set_permissions(permissions)?;
             }
+
+            let le_bytes: &[u8] = if self.line_ending == "CRLF" {
+                b"\r\n"
+            } else {
+                b"\n"
+            };
+            for (i, line) in self.lines.iter().enumerate() {
+                file.write_all(line.as_bytes())?;
+                if i < self.lines.len() - 1 {
+                    file.write_all(le_bytes)?;
+                }
+            }
+            file.sync_all()?;
+            Ok::<(), io::Error>(())
+        })();
+
+        if let Err(err) = write_result {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(err);
         }
+
+        if let Err(err) = fs::rename(&tmp_path, path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(err);
+        }
+
+        sync_parent_dir(path);
         Ok(())
     }
 
