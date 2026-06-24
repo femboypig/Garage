@@ -265,6 +265,7 @@ impl UiState {
         let is_regex = self.global_search_regex;
 
         std::thread::spawn(move || {
+            const MAX_SEARCH_FILE_BYTES: u64 = 2 * 1024 * 1024;
             let mut results = Vec::new();
             let mut file_cache = std::collections::HashMap::new();
 
@@ -295,6 +296,13 @@ impl UiState {
                         && entry.file_type().is_some_and(|t| t.is_file())
                     {
                         let path = entry.path().to_path_buf();
+                        if entry
+                            .metadata()
+                            .map(|m| m.len() > MAX_SEARCH_FILE_BYTES)
+                            .unwrap_or(true)
+                        {
+                            continue;
+                        }
                         if let Ok(content) = std::fs::read_to_string(&path) {
                             let mut has_match = false;
                             let lines: Vec<String> =
