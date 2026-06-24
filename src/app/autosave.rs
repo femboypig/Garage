@@ -2,8 +2,9 @@ use crate::app::state::{AppState, Tab};
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::PathBuf;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TabSession {
@@ -40,6 +41,60 @@ pub fn get_autosave_path(path: Option<&str>, tab_idx: usize) -> PathBuf {
     }
 }
 
+fn temp_write_path(path: &Path) -> io::Result<PathBuf> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing file name"))?
+        .to_string_lossy();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+
+    Ok(parent.join(format!(
+        ".{}.{}.{}.tmp",
+        file_name,
+        std::process::id(),
+        stamp
+    )))
+}
+
+fn sync_parent_dir(path: &Path) {
+    if let Some(parent) = path.parent()
+        && let Ok(dir) = File::open(parent)
+    {
+        let _ = dir.sync_all();
+    }
+}
+
+fn write_atomic(path: &Path, content: &str) -> io::Result<()> {
+    let tmp_path = temp_write_path(path)?;
+
+    let write_result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        Ok::<(), io::Error>(())
+    })();
+
+    if let Err(err) = write_result {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(err);
+    }
+
+    if let Err(err) = fs::rename(&tmp_path, path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(err);
+    }
+
+    sync_parent_dir(path);
+    Ok(())
+}
+
 pub fn delete_autosave(path: Option<&str>, tab_idx: usize) {
     let path_buf = get_autosave_path(path, tab_idx);
     if path_buf.exists() {
@@ -52,11 +107,7 @@ pub fn save_session_and_dirty_buffers(state: &AppState) {
     let config_dir = PathBuf::from(home).join(".config").join("garage");
     let session_path = config_dir.join("session.json");
 
-    // Ensure directories exist
     let autosave_dir = get_autosave_dir();
-    if autosave_dir.exists() {
-        let _ = fs::remove_dir_all(&autosave_dir);
-    }
     let _ = fs::create_dir_all(&autosave_dir);
     let _ = fs::create_dir_all(&config_dir);
 
@@ -70,7 +121,7 @@ pub fn save_session_and_dirty_buffers(state: &AppState) {
         let autosave_file = get_autosave_path(tab.path.as_deref(), i);
         if tab.buffer.is_modified {
             let content = tab.buffer.lines().join("\n");
-            let _ = fs::write(autosave_file, content);
+            let _ = write_atomic(&autosave_file, &content);
         } else {
             if autosave_file.exists() {
                 let _ = fs::remove_file(autosave_file);
@@ -101,7 +152,7 @@ pub fn save_session_and_dirty_buffers(state: &AppState) {
     };
 
     if let Ok(json_str) = serde_json::to_string_pretty(&session_state) {
-        let _ = fs::write(session_path, json_str);
+        let _ = write_atomic(&session_path, &json_str);
     }
 }
 
