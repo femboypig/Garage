@@ -478,13 +478,10 @@ fn cursor_icon_for_modal(
     mx: f32,
     my: f32,
 ) -> bool {
-    let modal_rect = modal.rect(
+    let modal_rect = ui.modal_rect(
+        modal,
         size.width as f32,
         size.height as f32,
-        ui.ui_char_width,
-        ui.ui_line_height,
-        ui.get_filtered_commands().len(),
-        ui.global_search_results.len(),
     );
     let modal_x = modal_rect.x;
     let modal_y = modal_rect.y;
@@ -530,13 +527,10 @@ fn check_modal_pointer(
     mx: f32,
     my: f32,
 ) -> bool {
-    let modal_rect = modal.rect(
+    let modal_rect = ui.modal_rect(
+        modal,
         size.width as f32,
         size.height as f32,
-        ui.ui_char_width,
-        ui.ui_line_height,
-        ui.get_filtered_commands().len(),
-        ui.global_search_results.len(),
     );
     let modal_x = modal_rect.x;
     let modal_y = modal_rect.y;
