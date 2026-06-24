@@ -583,40 +583,16 @@ fn check_modal_pointer(
 
 /// Returns the modal width for a given modal type.
 fn compute_modal_w(ui: &UiState, modal: crate::machkit::ModalType) -> f32 {
-    match modal {
-        crate::machkit::ModalType::Settings => (45.0 * ui.ui_char_width).max(500.0).round(),
-        crate::machkit::ModalType::About => 520.0,
-        crate::machkit::ModalType::CommandPalette => (50.0 * ui.ui_char_width).max(500.0).round(),
-        crate::machkit::ModalType::UnsavedChanges => 520.0,
-        crate::machkit::ModalType::SidebarInput => 400.0,
-        crate::machkit::ModalType::GlobalSearch => 650.0,
-    }
+    modal.width(ui.ui_char_width)
 }
 
 /// Returns the modal height for a given modal type.
 fn compute_modal_h(ui: &UiState, modal: crate::machkit::ModalType) -> f32 {
-    match modal {
-        crate::machkit::ModalType::Settings => {
-            let row_height = (ui.ui_line_height * 2.2).round();
-            (row_height * 8.2).max(430.0).round()
-        }
-        crate::machkit::ModalType::About => 190.0,
-        crate::machkit::ModalType::CommandPalette => {
-            let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
-            let filtered_len = ui.get_filtered_commands().len();
-            let visible_items = filtered_len.min(10);
-            let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
-            (header_h + visible_items as f32 * item_height).round()
-        }
-        crate::machkit::ModalType::UnsavedChanges => 200.0,
-        crate::machkit::ModalType::SidebarInput => 150.0,
-        crate::machkit::ModalType::GlobalSearch => {
-            let item_height = (ui.ui_line_height * 1.6).round().max(26.0);
-            let count = ui.global_search_results.len().min(10).max(1);
-            let header_h = 15.0 + ui.ui_line_height + 15.0 + 1.0;
-            (header_h + count as f32 * item_height).round()
-        }
-    }
+    modal.height(
+        ui.ui_line_height,
+        ui.get_filtered_commands().len(),
+        ui.global_search_results.len(),
+    )
 }
 
 /// Check Settings modal pointer areas.
