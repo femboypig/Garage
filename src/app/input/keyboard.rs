@@ -136,7 +136,7 @@ pub fn handle_keyboard_input(
     // 3. Delegate to modal handler (Escape key behavior for other modals)
     if ui.active_modal.is_some() {
         if let Key::Named(NamedKey::Escape) = &logical_key {
-            ui.active_modal = None;
+            ui.close_modal();
             window.request_redraw();
         }
         return;
@@ -223,9 +223,7 @@ fn handle_workspace_action_for_terminal(
             true
         }
         crate::editor::actions::Action::CommandPalette => {
-            ui.active_modal = Some(crate::machkit::ModalType::CommandPalette);
-            ui.command_palette_query.clear();
-            ui.command_palette_selected = 0;
+            ui.open_modal(crate::machkit::ModalType::CommandPalette);
             window.request_redraw();
             true
         }
@@ -379,9 +377,7 @@ fn handle_search_panel_action(
             true
         }
         crate::editor::actions::Action::CommandPalette => {
-            ui.active_modal = Some(crate::machkit::ModalType::CommandPalette);
-            ui.command_palette_query.clear();
-            ui.command_palette_selected = 0;
+            ui.open_modal(crate::machkit::ModalType::CommandPalette);
             window.request_redraw();
             true
         }
@@ -462,7 +458,7 @@ fn handle_search_panel_enter(
 fn handle_sidebar_input(ui: &mut UiState, window: &mut Arc<Window>, logical_key: &Key) {
     match logical_key {
         Key::Named(NamedKey::Escape) => {
-            ui.active_modal = None;
+            ui.close_modal();
             window.request_redraw();
         }
         Key::Named(NamedKey::Enter) => {
@@ -688,7 +684,7 @@ pub fn handle_command_palette_input(
     if let Some(crate::machkit::ModalType::CommandPalette) = ui.active_modal {
         match logical_key {
             Key::Named(NamedKey::Escape) => {
-                ui.active_modal = None;
+                ui.close_modal();
                 ui.command_palette_mode = crate::machkit::CommandPaletteMode::Commands;
                 window.request_redraw();
             }
@@ -711,7 +707,7 @@ pub fn handle_command_palette_input(
                 let filtered = ui.get_filtered_commands();
                 if ui.command_palette_selected < filtered.len() {
                     let cmd = filtered[ui.command_palette_selected];
-                    ui.active_modal = None;
+                    ui.close_modal();
 
                     let action_res = {
                         let active_tab = &mut state.tabs[state.active_tab_idx];
@@ -762,7 +758,7 @@ pub fn handle_global_search_input(
     if let Some(crate::machkit::ModalType::GlobalSearch) = ui.active_modal {
         match logical_key {
             Key::Named(NamedKey::Escape) => {
-                ui.active_modal = None;
+                ui.close_modal();
                 window.request_redraw();
             }
             Key::Named(NamedKey::ArrowDown) => {
@@ -790,7 +786,7 @@ pub fn handle_global_search_input(
                     if ui.global_search_selected < results_len {
                         let (path, line_idx, _) =
                             &ui.global_search_results[ui.global_search_selected];
-                        ui.active_modal = None;
+                        ui.close_modal();
                         handle_action(
                             ui,
                             state,
@@ -1265,9 +1261,7 @@ fn handle_editor_action(
             ui.update_buffer_font_size(&atlas.font, new_size);
         }
         Action::CommandPalette => {
-            ui.active_modal = Some(crate::machkit::ModalType::CommandPalette);
-            ui.command_palette_query.clear();
-            ui.command_palette_selected = 0;
+            ui.open_modal(crate::machkit::ModalType::CommandPalette);
         }
         Action::GlobalSearch => {
             handle_action(
