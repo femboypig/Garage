@@ -1,4 +1,3 @@
-use std::path::{Component, Path};
 use std::sync::Arc;
 use std::time::Instant;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
@@ -6,6 +5,7 @@ use winit::event_loop::EventLoopWindowTarget;
 use winit::window::Window;
 
 use crate::app::handler::handle_action;
+use crate::app::input::sidebar_ops::apply_sidebar_input;
 use crate::app::state::AppState;
 use crate::machkit::{SidebarInputMode, UiAction, UiState};
 use crate::renderer::atlas::FontAtlas;
@@ -2811,50 +2811,8 @@ fn handle_sidebar_input_modal_click(
     {
         let target = ui.sidebar_input_target.clone();
         let val = ui.sidebar_input_value.clone();
-        if is_safe_sidebar_name(&val) {
-            match ui.sidebar_input_mode {
-                Some(SidebarInputMode::NewFile) => {
-                    let parent = if target.is_dir() {
-                        target.clone()
-                    } else {
-                        target
-                            .parent()
-                            .map(|p| p.to_path_buf())
-                            .unwrap_or_else(|| std::path::PathBuf::from("."))
-                    };
-                    let _ = std::fs::File::create(parent.join(&val));
-                }
-                Some(SidebarInputMode::NewFolder) => {
-                    let parent = if target.is_dir() {
-                        target.clone()
-                    } else {
-                        target
-                            .parent()
-                            .map(|p| p.to_path_buf())
-                            .unwrap_or_else(|| std::path::PathBuf::from("."))
-                    };
-                    let _ = std::fs::create_dir_all(parent.join(&val));
-                }
-                Some(SidebarInputMode::Rename) => {
-                    if let Some(parent) = target.parent() {
-                        let _ = std::fs::rename(&target, parent.join(&val));
-                    }
-                }
-                Some(SidebarInputMode::Delete) => {
-                    let expected = target
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default();
-                    if val == expected {
-                        if target.is_dir() {
-                            let _ = std::fs::remove_dir_all(&target);
-                        } else {
-                            let _ = std::fs::remove_file(&target);
-                        }
-                    }
-                }
-                _ => {}
-            }
+        if let Some(mode) = ui.sidebar_input_mode {
+            apply_sidebar_input(mode, &target, &val);
         }
         ui.active_modal = None;
         ui.sidebar_input_mode = None;
@@ -2873,11 +2831,6 @@ fn handle_sidebar_input_modal_click(
         window.request_redraw();
     }
     true
-}
-
-fn is_safe_sidebar_name(name: &str) -> bool {
-    let mut components = Path::new(name).components();
-    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 /// Handles minimap click. Returns true if the click was consumed.
