@@ -5,7 +5,7 @@ use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 
 use super::types::{
-    FileNode, GitDiffHunk, MenuType, ModalType, SearchRenderItem, SidebarInputMode,
+    FileNode, GitDiffHunk, MenuType, ModalType, Rect, SearchRenderItem, SidebarInputMode,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -174,6 +174,34 @@ pub struct UiState {
 }
 
 impl UiState {
+    pub fn modal_rect(&self, modal: ModalType, viewport_width: f32, viewport_height: f32) -> Rect {
+        modal.rect(
+            viewport_width,
+            viewport_height,
+            self.ui_char_width,
+            self.ui_line_height,
+            self.get_filtered_commands().len(),
+            self.global_search_results.len(),
+        )
+    }
+
+    pub fn open_sidebar_input(
+        &mut self,
+        mode: SidebarInputMode,
+        target_path: PathBuf,
+        input_value: String,
+    ) {
+        self.active_modal = Some(ModalType::SidebarInput);
+        self.sidebar_input_mode = Some(mode);
+        self.sidebar_input_target = target_path;
+        self.sidebar_input_value = input_value;
+    }
+
+    pub fn close_modal(&mut self) {
+        self.active_modal = None;
+        self.sidebar_input_mode = None;
+    }
+
     pub fn new(
         atlas: &mut FontAtlas,
         _queue: &wgpu::Queue,
