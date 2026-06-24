@@ -249,18 +249,16 @@ pub fn handle_action(
             }
         }
         UiAction::ShowSettings => {
-            ui.active_modal = Some(crate::machkit::ModalType::Settings);
+            ui.open_modal(crate::machkit::ModalType::Settings);
         }
         UiAction::ShowAbout => {
-            ui.active_modal = Some(crate::machkit::ModalType::About);
+            ui.open_modal(crate::machkit::ModalType::About);
         }
         UiAction::ShowCommandPalette => {
-            ui.active_modal = Some(crate::machkit::ModalType::CommandPalette);
-            ui.command_palette_query.clear();
-            ui.command_palette_selected = 0;
+            ui.open_modal(crate::machkit::ModalType::CommandPalette);
         }
         UiAction::CloseModal => {
-            ui.active_modal = None;
+            ui.close_modal();
         }
         UiAction::ChangeBufferFontSize(delta) => {
             let new_size = (ui.buffer_font_size + delta).clamp(8.0, 36.0);
@@ -345,7 +343,7 @@ pub fn handle_action(
                 ui.selected_file = old_selected;
                 ui.sidebar_width = old_sidebar_w;
                 ui.target_sidebar_width = old_target_sidebar_w;
-                ui.active_modal = Some(crate::machkit::ModalType::Settings);
+                ui.open_modal(crate::machkit::ModalType::Settings);
                 ui.rebuild_tree();
             }
             *gpu = Some(new_gpu);
@@ -386,7 +384,7 @@ pub fn handle_action(
 
             if state.tabs[idx].buffer.is_modified {
                 ui.tab_to_close = Some(idx);
-                ui.active_modal = Some(crate::machkit::ModalType::UnsavedChanges);
+                ui.open_modal(crate::machkit::ModalType::UnsavedChanges);
             } else {
                 state.tabs.remove(idx);
                 if state.tabs.is_empty() {
@@ -466,7 +464,7 @@ pub fn handle_action(
                 ui.selected_file = None;
             }
             ui.tab_to_close = None;
-            ui.active_modal = None;
+            ui.close_modal();
             let tab_paths: Vec<Option<String>> =
                 state.tabs.iter().map(|t| t.path.clone()).collect();
             let size = window.inner_size();
@@ -527,7 +525,7 @@ pub fn handle_action(
                 ui.selected_file = None;
             }
             ui.tab_to_close = None;
-            ui.active_modal = None;
+            ui.close_modal();
             ui.rebuild_tree();
             let tab_paths: Vec<Option<String>> =
                 state.tabs.iter().map(|t| t.path.clone()).collect();
