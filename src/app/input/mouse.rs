@@ -7,7 +7,7 @@ use winit::window::Window;
 
 use crate::app::handler::handle_action;
 use crate::app::state::AppState;
-use crate::machkit::{UiAction, UiState};
+use crate::machkit::{SidebarInputMode, UiAction, UiState};
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::GpuContext;
 
@@ -2725,43 +2725,52 @@ fn handle_sidebar_context_menu_click(
         match idx {
             0 => {
                 // New File
-                ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
-                ui.sidebar_input_type = "new_file".to_string();
-                ui.sidebar_input_target = target_path;
-                ui.sidebar_input_value.clear();
+                open_sidebar_input(ui, SidebarInputMode::NewFile, target_path, String::new());
             }
             1 => {
                 // New Folder
-                ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
-                ui.sidebar_input_type = "new_folder".to_string();
-                ui.sidebar_input_target = target_path;
-                ui.sidebar_input_value.clear();
+                open_sidebar_input(ui, SidebarInputMode::NewFolder, target_path, String::new());
             }
             2 => {
                 // Rename
-                ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
-                ui.sidebar_input_type = "rename".to_string();
-                ui.sidebar_input_value = target_path
+                let input_value = target_path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
-                ui.sidebar_input_target = target_path;
+                open_sidebar_input(ui, SidebarInputMode::Rename, target_path, input_value);
             }
             3 => {
                 // Delete
-                ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
-                ui.sidebar_input_type = "delete".to_string();
-                ui.sidebar_input_value = target_path
+                let input_value = target_path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
-                ui.sidebar_input_target = target_path;
+                open_sidebar_input(ui, SidebarInputMode::Delete, target_path, input_value);
             }
             _ => {}
         }
     }
     window.request_redraw();
     true
+}
+
+fn open_sidebar_input(
+    ui: &mut UiState,
+    mode: SidebarInputMode,
+    target_path: std::path::PathBuf,
+    input_value: String,
+) {
+    ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
+    ui.sidebar_input_mode = Some(mode);
+    ui.sidebar_input_type = match mode {
+        SidebarInputMode::NewFile => "new_file",
+        SidebarInputMode::NewFolder => "new_folder",
+        SidebarInputMode::Rename => "rename",
+        SidebarInputMode::Delete => "delete",
+    }
+    .to_string();
+    ui.sidebar_input_target = target_path;
+    ui.sidebar_input_value = input_value;
 }
 
 /// Handles a left-click while the SidebarInput modal (file/folder creation) is active.
@@ -2810,8 +2819,8 @@ fn handle_sidebar_input_modal_click(
         let target = ui.sidebar_input_target.clone();
         let val = ui.sidebar_input_value.clone();
         if is_safe_sidebar_name(&val) {
-            match ui.sidebar_input_type.as_str() {
-                "new_file" => {
+            match ui.sidebar_input_mode {
+                Some(SidebarInputMode::NewFile) => {
                     let parent = if target.is_dir() {
                         target.clone()
                     } else {
@@ -2822,7 +2831,7 @@ fn handle_sidebar_input_modal_click(
                     };
                     let _ = std::fs::File::create(parent.join(&val));
                 }
-                "new_folder" => {
+                Some(SidebarInputMode::NewFolder) => {
                     let parent = if target.is_dir() {
                         target.clone()
                     } else {
@@ -2833,12 +2842,12 @@ fn handle_sidebar_input_modal_click(
                     };
                     let _ = std::fs::create_dir_all(parent.join(&val));
                 }
-                "rename" => {
+                Some(SidebarInputMode::Rename) => {
                     if let Some(parent) = target.parent() {
                         let _ = std::fs::rename(&target, parent.join(&val));
                     }
                 }
-                "delete" => {
+                Some(SidebarInputMode::Delete) => {
                     let expected = target
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
@@ -2855,6 +2864,7 @@ fn handle_sidebar_input_modal_click(
             }
         }
         ui.active_modal = None;
+        ui.sidebar_input_mode = None;
         ui.rebuild_tree();
         window.request_redraw();
         return true;
