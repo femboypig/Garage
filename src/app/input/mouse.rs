@@ -1,3 +1,4 @@
+use std::path::{Component, Path};
 use std::sync::Arc;
 use std::time::Instant;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
@@ -2807,7 +2808,7 @@ fn handle_sidebar_input_modal_click(
     {
         let target = ui.sidebar_input_target.clone();
         let val = ui.sidebar_input_value.clone();
-        if !val.is_empty() {
+        if is_safe_sidebar_name(&val) {
             match ui.sidebar_input_type.as_str() {
                 "new_file" => {
                     let parent = if target.is_dir() {
@@ -2855,6 +2856,11 @@ fn handle_sidebar_input_modal_click(
         window.request_redraw();
     }
     true
+}
+
+fn is_safe_sidebar_name(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 /// Handles minimap click. Returns true if the click was consumed.
