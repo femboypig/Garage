@@ -2762,13 +2762,6 @@ fn open_sidebar_input(
 ) {
     ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
     ui.sidebar_input_mode = Some(mode);
-    ui.sidebar_input_type = match mode {
-        SidebarInputMode::NewFile => "new_file",
-        SidebarInputMode::NewFolder => "new_folder",
-        SidebarInputMode::Rename => "rename",
-        SidebarInputMode::Delete => "delete",
-    }
-    .to_string();
     ui.sidebar_input_target = target_path;
     ui.sidebar_input_value = input_value;
 }
