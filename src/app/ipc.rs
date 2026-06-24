@@ -17,28 +17,43 @@ mod unix_impl {
     use super::*;
     use std::fs;
     use std::io::{Read, Write};
+    use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::{Path, PathBuf};
     use std::thread;
 
+    fn ensure_private_dir(path: &Path) {
+        let _ = fs::create_dir_all(path);
+        if let Ok(metadata) = fs::symlink_metadata(path)
+            && metadata.file_type().is_dir()
+        {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o700);
+            let _ = fs::set_permissions(path, perms);
+        }
+    }
+
     fn get_secure_runtime_dir() -> PathBuf {
         if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
             let path = PathBuf::from(runtime_dir).join("garage");
-            let _ = fs::create_dir_all(&path);
+            ensure_private_dir(&path);
             path
         } else {
             let user = std::env::var("USER").unwrap_or_else(|_| "default".to_string());
             let path = PathBuf::from("/tmp").join(format!("garage-runtime-{}", user));
-            let _ = fs::create_dir_all(&path);
-            // Set directory permissions to 700 (user-only read/write/execute)
-            if let Ok(metadata) = fs::metadata(&path) {
-                let mut perms = metadata.permissions();
-                use std::os::unix::fs::PermissionsExt;
-                perms.set_mode(0o700);
-                let _ = fs::set_permissions(&path, perms);
-            }
+            ensure_private_dir(&path);
             path
         }
+    }
+
+    fn normalize_ipc_path(data: &str) -> Option<String> {
+        let file_path = data.trim();
+        if file_path.is_empty() || file_path.chars().any(|c| c.is_control()) {
+            return None;
+        }
+
+        let path = PathBuf::from(file_path).canonicalize().ok()?;
+        Some(path.to_string_lossy().into_owned())
     }
 
     fn active_windows_file_path() -> PathBuf {
@@ -104,6 +119,11 @@ mod unix_impl {
             Ok(l) => l,
             Err(_) => return socket_path,
         };
+        if let Ok(metadata) = fs::symlink_metadata(&socket_path) {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o600);
+            let _ = fs::set_permissions(&socket_path, perms);
+        }
 
         let socket_path_clone = socket_path.clone();
         thread::spawn(move || {
@@ -111,9 +131,7 @@ mod unix_impl {
                 let mut data = String::new();
                 // Avoid DoS/OOM by limiting maximum path reading size to 4KB
                 if stream.take(4096).read_to_string(&mut data).is_ok() {
-                    let file_path = data.trim().to_string();
-                    // Basic sanity check to avoid empty or control character injected paths
-                    if !file_path.is_empty() && file_path.chars().all(|c| !c.is_control()) {
+                    if let Some(file_path) = normalize_ipc_path(&data) {
                         if let Ok(mut pending) = pending_open_files.lock() {
                             pending.push(file_path);
                         }
@@ -191,6 +209,7 @@ mod unix_impl {
     pub fn try_drop_to_other_window(global_x: i32, global_y: i32, file_path: &str) -> bool {
         let list = load_active_windows();
         let current_pid = std::process::id();
+        let runtime_dir = get_secure_runtime_dir();
 
         for w in list {
             if w.pid == current_pid {
@@ -201,8 +220,12 @@ mod unix_impl {
             let inside_y = global_y >= w.y && global_y < w.y + w.height as i32;
 
             if inside_x && inside_y {
+                let socket_path = PathBuf::from(&w.socket_path);
+                if !socket_path.starts_with(&runtime_dir) {
+                    continue;
+                }
                 // Attempt to connect to other window's IPC socket and send the path
-                if let Ok(mut stream) = UnixStream::connect(&w.socket_path)
+                if let Ok(mut stream) = UnixStream::connect(&socket_path)
                     && stream.write_all(file_path.as_bytes()).is_ok()
                 {
                     return true;
