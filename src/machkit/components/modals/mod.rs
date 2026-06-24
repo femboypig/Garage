@@ -42,14 +42,7 @@ pub fn draw_modals(
             white_uv,
             [0.0, 0.0, 0.0, 0.4],
         );
-        let modal_rect = modal.rect(
-            width,
-            height,
-            ui.ui_char_width,
-            ui.ui_line_height,
-            ui.get_filtered_commands().len(),
-            ui.global_search_results.len(),
-        );
+        let modal_rect = ui.modal_rect(modal, width, height);
         let modal_x = modal_rect.x;
         let modal_y = modal_rect.y;
         let modal_w = modal_rect.w;
