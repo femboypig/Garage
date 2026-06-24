@@ -10,7 +10,7 @@ use crate::app::input::mouse::update_cursor_icon;
 use crate::app::state::AppState;
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
-use crate::machkit::{UiAction, UiState};
+use crate::machkit::{SidebarInputMode, UiAction, UiState};
 use crate::renderer::atlas::FontAtlas;
 use crate::renderer::wgpu::GpuContext;
 
@@ -490,8 +490,8 @@ fn handle_sidebar_input_confirm(ui: &mut UiState) {
     let target = &ui.sidebar_input_target;
     let val = &ui.sidebar_input_value;
     if is_safe_sidebar_name(val) {
-        match ui.sidebar_input_type.as_str() {
-            "new_file" => {
+        match ui.sidebar_input_mode {
+            Some(SidebarInputMode::NewFile) => {
                 let parent = if target.is_dir() {
                     target.clone()
                 } else {
@@ -503,7 +503,7 @@ fn handle_sidebar_input_confirm(ui: &mut UiState) {
                 let new_path = parent.join(val);
                 let _ = std::fs::File::create(new_path);
             }
-            "new_folder" => {
+            Some(SidebarInputMode::NewFolder) => {
                 let parent = if target.is_dir() {
                     target.clone()
                 } else {
@@ -515,16 +515,30 @@ fn handle_sidebar_input_confirm(ui: &mut UiState) {
                 let new_path = parent.join(val);
                 let _ = std::fs::create_dir_all(new_path);
             }
-            "rename" => {
+            Some(SidebarInputMode::Rename) => {
                 if let Some(parent) = target.parent() {
                     let new_path = parent.join(val);
                     let _ = std::fs::rename(target, new_path);
+                }
+            }
+            Some(SidebarInputMode::Delete) => {
+                let expected = target
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if val == &expected {
+                    if target.is_dir() {
+                        let _ = std::fs::remove_dir_all(target);
+                    } else {
+                        let _ = std::fs::remove_file(target);
+                    }
                 }
             }
             _ => {}
         }
     }
     ui.active_modal = None;
+    ui.sidebar_input_mode = None;
     ui.rebuild_tree();
 }
 
