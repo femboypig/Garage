@@ -56,6 +56,25 @@ pub enum ModalType {
     GlobalSearch,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SidebarInputMode {
+    NewFile,
+    NewFolder,
+    Rename,
+    Delete,
+}
+
+impl SidebarInputMode {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::NewFile => "New File",
+            Self::NewFolder => "New Folder",
+            Self::Rename => "Rename",
+            Self::Delete => "Confirm Delete",
+        }
+    }
+}
+
 pub struct FileNode {
     pub path: PathBuf,
     pub name: String,
