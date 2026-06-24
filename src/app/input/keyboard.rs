@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::{Component, Path};
 use std::sync::Arc;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{Key, NamedKey, PhysicalKey};
@@ -488,7 +489,7 @@ fn handle_sidebar_input(ui: &mut UiState, window: &mut Arc<Window>, logical_key:
 fn handle_sidebar_input_confirm(ui: &mut UiState) {
     let target = &ui.sidebar_input_target;
     let val = &ui.sidebar_input_value;
-    if !val.is_empty() {
+    if is_safe_sidebar_name(val) {
         match ui.sidebar_input_type.as_str() {
             "new_file" => {
                 let parent = if target.is_dir() {
@@ -525,6 +526,11 @@ fn handle_sidebar_input_confirm(ui: &mut UiState) {
     }
     ui.active_modal = None;
     ui.rebuild_tree();
+}
+
+fn is_safe_sidebar_name(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 /// Handles pane split action, shared across multiple contexts.
