@@ -2749,12 +2749,13 @@ fn handle_sidebar_context_menu_click(
             }
             3 => {
                 // Delete
-                if target_path.is_dir() {
-                    let _ = std::fs::remove_dir_all(&target_path);
-                } else {
-                    let _ = std::fs::remove_file(&target_path);
-                }
-                ui.rebuild_tree();
+                ui.active_modal = Some(crate::machkit::ModalType::SidebarInput);
+                ui.sidebar_input_type = "delete".to_string();
+                ui.sidebar_input_value = target_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                ui.sidebar_input_target = target_path;
             }
             _ => {}
         }
@@ -2835,6 +2836,19 @@ fn handle_sidebar_input_modal_click(
                 "rename" => {
                     if let Some(parent) = target.parent() {
                         let _ = std::fs::rename(&target, parent.join(&val));
+                    }
+                }
+                "delete" => {
+                    let expected = target
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    if val == expected {
+                        if target.is_dir() {
+                            let _ = std::fs::remove_dir_all(&target);
+                        } else {
+                            let _ = std::fs::remove_file(&target);
+                        }
                     }
                 }
                 _ => {}
