@@ -187,13 +187,10 @@ impl UiState {
 
     pub fn open_modal(&mut self, modal: ModalType) {
         self.active_modal = Some(modal);
-        match modal {
-            ModalType::CommandPalette => {
-                self.command_palette_query.clear();
-                self.command_palette_selected = 0;
-                self.command_palette_scroll = 0;
-            }
-            _ => {}
+        if modal == ModalType::CommandPalette {
+            self.command_palette_query.clear();
+            self.command_palette_selected = 0;
+            self.command_palette_scroll = 0;
         }
     }
 
