@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use crate::editor::cursor::Cursor;
 use crate::renderer::atlas::FontAtlas;
 
-use super::types::{FileNode, GitDiffHunk, MenuType, ModalType, SearchRenderItem};
+use super::types::{
+    FileNode, GitDiffHunk, MenuType, ModalType, SearchRenderItem, SidebarInputMode,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommandPaletteMode {
@@ -134,6 +136,7 @@ pub struct UiState {
     pub diagnostics_changed: bool,
     pub synced_revisions: std::collections::HashMap<String, usize>,
     pub keymap: crate::editor::keymap::Keymap,
+    pub sidebar_input_mode: Option<SidebarInputMode>,
     pub sidebar_input_type: String,
     pub sidebar_input_target: std::path::PathBuf,
     pub sidebar_input_value: String,
@@ -331,6 +334,7 @@ impl UiState {
             diagnostics_changed: true,
             synced_revisions: std::collections::HashMap::new(),
             keymap: crate::editor::keymap::Keymap::load(),
+            sidebar_input_mode: None,
             sidebar_input_type: String::new(),
             sidebar_input_target: std::path::PathBuf::new(),
             sidebar_input_value: String::new(),
