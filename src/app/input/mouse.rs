@@ -478,12 +478,19 @@ fn cursor_icon_for_modal(
     mx: f32,
     my: f32,
 ) -> bool {
-    let modal_w = compute_modal_w(ui, modal);
-    let modal_h = compute_modal_h(ui, modal);
-    let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
-    let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
+    let modal_rect = modal.rect(
+        size.width as f32,
+        size.height as f32,
+        ui.ui_char_width,
+        ui.ui_line_height,
+        ui.get_filtered_commands().len(),
+        ui.global_search_results.len(),
+    );
+    let modal_x = modal_rect.x;
+    let modal_y = modal_rect.y;
+    let modal_w = modal_rect.w;
 
-    if mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h {
+    if !modal_rect.contains(mx, my) {
         return false;
     }
 
@@ -523,12 +530,20 @@ fn check_modal_pointer(
     mx: f32,
     my: f32,
 ) -> bool {
-    let modal_w = compute_modal_w(ui, modal);
-    let modal_h = compute_modal_h(ui, modal);
-    let modal_x = ((size.width as f32 - modal_w) / 2.0).round();
-    let modal_y = ((size.height as f32 - modal_h) / 2.0).round();
+    let modal_rect = modal.rect(
+        size.width as f32,
+        size.height as f32,
+        ui.ui_char_width,
+        ui.ui_line_height,
+        ui.get_filtered_commands().len(),
+        ui.global_search_results.len(),
+    );
+    let modal_x = modal_rect.x;
+    let modal_y = modal_rect.y;
+    let modal_w = modal_rect.w;
+    let modal_h = modal_rect.h;
 
-    if mx < modal_x || mx > modal_x + modal_w || my < modal_y || my > modal_y + modal_h {
+    if !modal_rect.contains(mx, my) {
         return false;
     }
 
@@ -579,20 +594,6 @@ fn check_modal_pointer(
                     && my <= btn_y + btn_h)
         }
     }
-}
-
-/// Returns the modal width for a given modal type.
-fn compute_modal_w(ui: &UiState, modal: crate::machkit::ModalType) -> f32 {
-    modal.width(ui.ui_char_width)
-}
-
-/// Returns the modal height for a given modal type.
-fn compute_modal_h(ui: &UiState, modal: crate::machkit::ModalType) -> f32 {
-    modal.height(
-        ui.ui_line_height,
-        ui.get_filtered_commands().len(),
-        ui.global_search_results.len(),
-    )
 }
 
 /// Check Settings modal pointer areas.
