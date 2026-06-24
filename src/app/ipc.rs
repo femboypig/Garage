@@ -130,13 +130,13 @@ mod unix_impl {
             for stream in listener.incoming().flatten() {
                 let mut data = String::new();
                 // Avoid DoS/OOM by limiting maximum path reading size to 4KB
-                if stream.take(4096).read_to_string(&mut data).is_ok() {
-                    if let Some(file_path) = normalize_ipc_path(&data) {
-                        if let Ok(mut pending) = pending_open_files.lock() {
-                            pending.push(file_path);
-                        }
-                        let _ = proxy.send_event(());
+                if stream.take(4096).read_to_string(&mut data).is_ok()
+                    && let Some(file_path) = normalize_ipc_path(&data)
+                {
+                    if let Ok(mut pending) = pending_open_files.lock() {
+                        pending.push(file_path);
                     }
+                    let _ = proxy.send_event(());
                 }
             }
             let _ = fs::remove_file(&socket_path_clone);
