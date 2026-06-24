@@ -501,36 +501,12 @@ impl UiState {
         modal: ModalType,
         active_tab_idx: usize,
     ) -> UiAction {
-        let modal_w = match modal {
-            ModalType::Settings => (45.0 * self.ui_char_width).max(500.0).round(),
-            ModalType::About => 520.0,
-            ModalType::CommandPalette => (50.0 * self.ui_char_width).max(500.0).round(),
-            ModalType::UnsavedChanges => 520.0,
-            ModalType::SidebarInput => 400.0,
-            ModalType::GlobalSearch => 650.0,
-        };
-        let modal_h = match modal {
-            ModalType::Settings => {
-                let row_height = (self.ui_line_height * 2.2).round();
-                (row_height * 8.2).max(430.0).round()
-            }
-            ModalType::About => 190.0,
-            ModalType::CommandPalette => {
-                let item_height = (self.ui_line_height * 1.6).round().max(26.0);
-                let filtered_len = self.get_filtered_commands().len();
-                let visible_items = filtered_len.min(10);
-                let header_h = 15.0 + self.ui_line_height + 15.0 + 1.0;
-                (header_h + visible_items as f32 * item_height).round()
-            }
-            ModalType::UnsavedChanges => 200.0,
-            ModalType::SidebarInput => 150.0,
-            ModalType::GlobalSearch => {
-                let item_height = (self.ui_line_height * 1.6).round().max(26.0);
-                let count = self.global_search_results.len().min(10).max(1);
-                let header_h = 15.0 + self.ui_line_height + 15.0 + 1.0;
-                (header_h + count as f32 * item_height).round()
-            }
-        };
+        let modal_w = modal.width(self.ui_char_width);
+        let modal_h = modal.height(
+            self.ui_line_height,
+            self.get_filtered_commands().len(),
+            self.global_search_results.len(),
+        );
         let modal_x = ((width - modal_w) / 2.0).round();
         let modal_y = ((height - modal_h) / 2.0).round();
 
