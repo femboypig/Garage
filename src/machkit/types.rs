@@ -1,5 +1,32 @@
 use std::path::PathBuf;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+impl Rect {
+    pub fn new(x: f32, y: f32, w: f32, h: f32) -> Self {
+        Self { x, y, w, h }
+    }
+
+    pub fn centered_in(width: f32, height: f32, w: f32, h: f32) -> Self {
+        Self {
+            x: ((width - w) / 2.0).round(),
+            y: ((height - h) / 2.0).round(),
+            w,
+            h,
+        }
+    }
+
+    pub fn contains(self, x: f32, y: f32) -> bool {
+        x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiAction {
     OpenFile(PathBuf),
@@ -95,6 +122,20 @@ impl ModalType {
                 (header_h + count as f32 * item_height).round()
             }
         }
+    }
+
+    pub fn rect(
+        self,
+        viewport_width: f32,
+        viewport_height: f32,
+        ui_char_width: f32,
+        ui_line_height: f32,
+        filtered_commands_len: usize,
+        global_results_len: usize,
+    ) -> Rect {
+        let w = self.width(ui_char_width);
+        let h = self.height(ui_line_height, filtered_commands_len, global_results_len);
+        Rect::centered_in(viewport_width, viewport_height, w, h)
     }
 }
 
