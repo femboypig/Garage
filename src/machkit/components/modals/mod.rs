@@ -193,6 +193,7 @@ pub fn draw_modals(
                     "new_file" => "New File",
                     "new_folder" => "New Folder",
                     "rename" => "Rename",
+                    "delete" => "Confirm Delete",
                     _ => "Input",
                 };
 
