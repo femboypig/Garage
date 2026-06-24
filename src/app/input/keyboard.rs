@@ -786,11 +786,13 @@ pub fn handle_global_search_input(
                     if ui.global_search_selected < results_len {
                         let (path, line_idx, _) =
                             &ui.global_search_results[ui.global_search_selected];
+                        let path = path.clone();
+                        let line_idx = *line_idx;
                         ui.close_modal();
                         handle_action(
                             ui,
                             state,
-                            UiAction::OpenFileAt(path.clone(), *line_idx),
+                            UiAction::OpenFileAt(path, line_idx),
                             window,
                             elwt,
                             gpu,
