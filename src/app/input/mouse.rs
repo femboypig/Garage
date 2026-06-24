@@ -2757,7 +2757,7 @@ fn handle_sidebar_input_modal_click(
         && state.mouse_y >= btn_y
         && state.mouse_y <= btn_y + btn_h
     {
-        ui.active_modal = None;
+        ui.close_modal();
         window.request_redraw();
         return true;
     }
@@ -2773,8 +2773,7 @@ fn handle_sidebar_input_modal_click(
         if let Some(mode) = ui.sidebar_input_mode {
             apply_sidebar_input(mode, &target, &val);
         }
-        ui.active_modal = None;
-        ui.sidebar_input_mode = None;
+        ui.close_modal();
         ui.rebuild_tree();
         window.request_redraw();
         return true;
@@ -2786,7 +2785,7 @@ fn handle_sidebar_input_modal_click(
         || state.mouse_y < modal_y
         || state.mouse_y > modal_y + modal_h;
     if clicked_outside {
-        ui.active_modal = None;
+        ui.close_modal();
         window.request_redraw();
     }
     true
