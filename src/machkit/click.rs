@@ -501,14 +501,7 @@ impl UiState {
         modal: ModalType,
         active_tab_idx: usize,
     ) -> UiAction {
-        let modal_rect = modal.rect(
-            width,
-            height,
-            self.ui_char_width,
-            self.ui_line_height,
-            self.get_filtered_commands().len(),
-            self.global_search_results.len(),
-        );
+        let modal_rect = self.modal_rect(modal, width, height);
         let modal_x = modal_rect.x;
         let modal_y = modal_rect.y;
         let modal_w = modal_rect.w;
