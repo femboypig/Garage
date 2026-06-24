@@ -189,13 +189,10 @@ pub fn draw_modals(
                     buffer_line_height: ui.buffer_line_height,
                 };
 
-                let title = match ui.sidebar_input_type.as_str() {
-                    "new_file" => "New File",
-                    "new_folder" => "New Folder",
-                    "rename" => "Rename",
-                    "delete" => "Confirm Delete",
-                    _ => "Input",
-                };
+                let title = ui
+                    .sidebar_input_mode
+                    .map(|mode| mode.title())
+                    .unwrap_or("Input");
 
                 let title_y = modal_y + 20.0;
                 ctx.push_str(
