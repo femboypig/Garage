@@ -25,7 +25,8 @@ pub mod terminal;
 fn main() {
     experiments::startup::record_start_time();
 
-    // Direct driver/hardware optimizations for Intel/Mesa/NVIDIA
+    // Direct driver/hardware optimizations for Intel/Mesa/NVIDIA (Linux only)
+    #[cfg(target_os = "linux")]
     unsafe {
         std::env::set_var("MESA_NO_ERROR", "1"); // Skip driver-level error checks for performance
         std::env::set_var("mesa_glthread", "true"); // Threaded GL pipeline execution
