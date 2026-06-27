@@ -67,17 +67,17 @@ pub fn run_editor(
         .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
         .with_visible(false); // Keep hidden on startup to prevent visual flashing and WM latency
 
-    // On macOS: hide the native titlebar but keep the traffic-light buttons
-    // (close/minimize/zoom). The full window area becomes our content view so
-    // our custom titlebar covers it entirely.
+    // On macOS: make the native titlebar transparent and extend content under it
+    // so our custom titlebar renders in that zone, while macOS still renders the
+    // traffic-light buttons (close/minimize/zoom) on top.
+    // NOTE: with_titlebar_hidden(true) removes traffic lights entirely — don't use it.
     #[cfg(target_os = "macos")]
     {
         builder = builder
-            .with_decorations(true)          // keep traffic lights
-            .with_titlebar_hidden(true)       // but hide the native title bar strip
-            .with_title_hidden(true)          // suppress the title text string
-            .with_fullsize_content_view(true) // extend content under the title-bar area
-            .with_titlebar_transparent(true); // blend our bg into that zone
+            .with_decorations(true)           // keep OS chrome (traffic lights)
+            .with_titlebar_transparent(true)  // transparent titlebar strip — our bg shows through
+            .with_title_hidden(true)          // hide the title text, keep the buttons
+            .with_fullsize_content_view(true); // content fills entire window incl. titlebar zone
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -295,14 +295,31 @@ pub fn run_editor(
     let (watcher_tx, watcher_rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
     let proxy_for_watcher = event_loop.create_proxy();
 
+    // Debounce watcher proxy calls: instead of send_event on every fs event (which
+    // can be hundreds/sec during a cargo build or git operation), we use a shared
+    // AtomicBool flag. The watcher sets the flag; a lightweight debounce thread
+    // checks it every 80 ms and fires at most one proxy wake-up per interval.
+    let watcher_pending = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let watcher_pending_w = watcher_pending.clone();
+    let proxy_debounce = proxy_for_watcher.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        if watcher_pending_w.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            let _ = proxy_debounce.send_event(());
+        }
+    });
+
     // Spawn file watcher setup in a background thread to prevent disk/kernel API blocking the main thread
     let (watcher_keepalive_tx, watcher_keepalive_rx) =
         std::sync::mpsc::channel::<Option<notify::RecommendedWatcher>>();
+    let watcher_pending_setup = watcher_pending.clone();
     std::thread::spawn(move || {
+        let watcher_pending_inner = watcher_pending_setup.clone();
         let mut watcher =
             match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
                 if watcher_tx.send(res).is_ok() {
-                    let _ = proxy_for_watcher.send_event(());
+                    // Set flag; the debounce thread will fire one proxy event per 80ms window.
+                    watcher_pending_inner.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             }) {
                 Ok(w) => Some(w),
@@ -314,8 +331,11 @@ pub fn run_editor(
 
         if let Some(ref mut w) = watcher {
             use notify::Watcher;
-            if let Err(e) = w.watch(std::path::Path::new("."), notify::RecursiveMode::Recursive) {
-                log::warn!("Failed to watch current directory: {:?}", e);
+            // Exclude build artifacts and .git internals to avoid noise from
+            // cargo builds and git operations flooding the event queue.
+            let _ = w.watch(std::path::Path::new("."), notify::RecursiveMode::Recursive);
+            for skip in &["./target", "./.git"] {
+                let _ = w.unwatch(std::path::Path::new(skip));
             }
         }
         let _ = watcher_keepalive_tx.send(watcher);
