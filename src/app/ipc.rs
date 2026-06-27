@@ -61,7 +61,8 @@ mod unix_impl {
     }
 
     fn is_process_running(pid: u32) -> bool {
-        Path::new(&format!("/proc/{}", pid)).exists()
+        // kill(pid, 0) sends no signal but checks if process exists — works on Linux and macOS
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
     }
 
     /// Helper to load and filter active windows list
