@@ -42,6 +42,7 @@ pub fn run_editor(
     let initial_backends = match config.backend.as_str() {
         "Vulkan" => Some(wgpu::Backends::VULKAN),
         "OpenGL" => Some(wgpu::Backends::GL),
+        "Metal" => Some(wgpu::Backends::METAL),
         _ => None,
     };
     let instance_backends = initial_backends.unwrap_or(wgpu::Backends::all());
@@ -111,6 +112,7 @@ pub fn run_editor(
         let actual_backend_str = match gpu.backend {
             wgpu::Backend::Vulkan => "Vulkan",
             wgpu::Backend::Gl => "OpenGL",
+            wgpu::Backend::Metal => "Metal",
             _ => "Vulkan",
         };
         let mut saved_config = config_clone;
