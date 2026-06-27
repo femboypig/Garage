@@ -11,6 +11,9 @@ use winit::{
     window::WindowBuilder,
 };
 
+#[cfg(target_os = "macos")]
+use winit::platform::macos::WindowBuilderExtMacOS;
+
 use crate::editor::buffer::Buffer;
 use crate::editor::cursor::Cursor;
 use crate::machkit::{FrameInput, UiState};
@@ -57,15 +60,31 @@ pub fn run_editor(
     }));
 
     // 4. Build the window with visibility initially FALSE
-    let window = Arc::new(
-        WindowBuilder::new()
-            .with_title("Garage")
-            .with_decorations(true)
-            .with_transparent(true)
-            .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
-            .with_visible(false) // Keep hidden on startup to prevent visual flashing and WM latency
-            .build(&event_loop)?,
-    );
+    #[allow(unused_mut)]
+    let mut builder = WindowBuilder::new()
+        .with_title("Garage")
+        .with_transparent(true)
+        .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
+        .with_visible(false); // Keep hidden on startup to prevent visual flashing and WM latency
+
+    // On macOS: hide the native titlebar but keep the traffic-light buttons
+    // (close/minimize/zoom). The full window area becomes our content view so
+    // our custom titlebar covers it entirely.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .with_decorations(true)          // keep traffic lights
+            .with_titlebar_hidden(true)       // but hide the native title bar strip
+            .with_title_hidden(true)          // suppress the title text string
+            .with_fullsize_content_view(true) // extend content under the title-bar area
+            .with_titlebar_transparent(true); // blend our bg into that zone
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.with_decorations(true);
+    }
+
+    let window = Arc::new(builder.build(&event_loop)?);
     crate::experiments::startup::record_step("Window Creation");
 
     // 5. Create Surface on main thread (fast, ~1ms)
@@ -311,7 +330,10 @@ pub fn run_editor(
                 watcher = w;
             }
         if !first_frame_rendered {
-            elwt.set_control_flow(ControlFlow::Poll);
+            // Use WaitUntil with a short timeout instead of Poll to avoid
+            // spinning 100% CPU while the GPU init background thread works.
+            let wake = std::time::Instant::now() + std::time::Duration::from_millis(8);
+            elwt.set_control_flow(ControlFlow::WaitUntil(wake));
         } else {
             elwt.set_control_flow(ControlFlow::Wait);
         }
@@ -670,11 +692,11 @@ pub fn run_editor(
                             }
                         }
 
-                    // Periodic auto-save (every 2 seconds)
+                    // Periodic auto-save (every 2 seconds) — silent background write,
+                    // no redraw needed since the visual state hasn't changed.
                     if last_autosave.elapsed() >= std::time::Duration::from_secs(2) {
                         autosave::save_session_and_dirty_buffers(&state);
                         last_autosave = std::time::Instant::now();
-                        window.request_redraw();
                     }
 
                     // Drain file watcher events
@@ -748,8 +770,16 @@ pub fn run_editor(
                         window.request_redraw();
                     }
 
-                    // Throttled git branch, status and diff check (every 1 second)
-                    if ui_ref.last_branch_check.is_none() || ui_ref.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(1) {
+                    // Throttled git branch, status and diff check (every 3 seconds on macOS
+                    // to reduce wake-ups; every 1 second on other platforms).
+                    let git_interval = if cfg!(target_os = "macos") {
+                        std::time::Duration::from_secs(3)
+                    } else {
+                        std::time::Duration::from_secs(1)
+                    };
+                    if ui_ref.last_branch_check.is_none() || ui_ref.last_branch_check.unwrap().elapsed() > git_interval {
+                        let old_branch = ui_ref.git_branch.clone();
+                        let old_statuses = ui_ref.git_statuses.clone();
                         if ui_ref.config.show_git_branch {
                             ui_ref.update_git_branch();
                         }
@@ -759,7 +789,10 @@ pub fn run_editor(
                                 ui_ref.update_git_diff(Some(file_path));
                             }
                         ui_ref.last_branch_check = Some(std::time::Instant::now());
-                        window.request_redraw();
+                        // Only request a redraw if git data actually changed
+                        if ui_ref.git_branch != old_branch || ui_ref.git_statuses != old_statuses {
+                            window.request_redraw();
+                        }
                     }
 
                     if state.active_tab_idx < state.tabs.len()
