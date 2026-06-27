@@ -10,6 +10,7 @@ dependencies = [
  "env_logger",
  "fontdue",
  "ignore",
+ "libc",
  "log",
  "notify",
  "pollster",
