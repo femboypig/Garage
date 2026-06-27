@@ -126,7 +126,7 @@ pub struct AppConfig {
     pub ui_font_size: f32,
     pub buffer_font_size: f32,
     pub sidebar_width: f32,
-    pub backend: String, // "Vulkan" or "OpenGL"
+    pub backend: String, // "Vulkan", "OpenGL", or "Metal"
     pub theme: Theme,
     #[serde(default = "default_true")]
     pub show_git_blame: bool,
@@ -144,7 +144,7 @@ impl Default for AppConfig {
             ui_font_size: 11.0,
             buffer_font_size: 13.0,
             sidebar_width: 200.0,
-            backend: "Vulkan".to_string(),
+            backend: if cfg!(target_os = "macos") { "Metal" } else { "Vulkan" }.to_string(),
             theme: Theme::default(),
             show_git_blame: true,
             show_git_branch: true,
@@ -167,8 +167,14 @@ impl AppConfig {
         let path = Self::config_path();
         if path.exists()
             && let Ok(content) = fs::read_to_string(&path)
-            && let Ok(config) = serde_json::from_str::<AppConfig>(&content)
+            && let Ok(mut config) = serde_json::from_str::<AppConfig>(&content)
         {
+            // Correct stale backend saved from another platform
+            #[cfg(target_os = "macos")]
+            if config.backend == "Vulkan" || config.backend == "OpenGL" {
+                config.backend = "Metal".to_string();
+                let _ = config.save();
+            }
             return config;
         }
 
