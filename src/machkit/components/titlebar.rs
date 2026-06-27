@@ -46,8 +46,13 @@ pub fn draw_titlebar(
         ("View", MenuType::View),
     ];
 
+    // On macOS the traffic-light buttons (close/minimize/zoom) are rendered by
+    // the OS inside our content view because we use fullsize_content_view + titlebar_hidden.
+    // Reserve ~80 logical px so our menu items don't overlap them.
+    let menu_start_x: f32 = if cfg!(target_os = "macos") { 80.0 } else { 0.0 };
+
     let mut menu_positions = Vec::new();
-    let mut current_x = 0.0;
+    let mut current_x = menu_start_x;
     for (i, (label, menu_type)) in menu_items_raw.iter().enumerate() {
         let label_len = label.chars().count() as f32;
         let text_w = label_len * ui.ui_char_width;
