@@ -208,5 +208,6 @@ pub struct FrameInput<'a> {
     pub active_terminal_idx: usize,
     pub terminal_focus: bool,
     pub is_window_maximized: bool,
+    pub is_fullscreen: bool,
     pub tab_scroll_x: f32,
 }
