@@ -67,9 +67,7 @@ impl UiState {
     ) -> Option<UiAction> {
         // 1. Check Titlebar Menu Clicks (Contiguous adjacent layout)
         if my < self.titlebar_height {
-            // On macOS the native traffic-light buttons occupy x≈[0..70].
-            // Clicks in that zone should fall through to the OS; don't let
-            // menu item logic intercept them.
+            log::info!("handle_menu_click: click inside titlebar area (my={my:.1} < height={:.1}), mx={mx:.1}", self.titlebar_height);
             let menu_start_x: f32 = if cfg!(target_os = "macos") { 80.0 } else { 0.0 };
 
             let menu_items_raw = [
@@ -87,16 +85,19 @@ impl UiState {
                 let item_w = text_w + left_pad + right_pad;
                 let x_min = current_x;
                 let x_max = current_x + item_w;
+                log::info!("  menu item {}: x_min={:.1}, x_max={:.1}", label, x_min, x_max);
                 if mx >= x_min && mx < x_max {
                     self.active_menu = if self.active_menu == Some(*menu_type) {
                         None
                     } else {
                         Some(*menu_type)
                     };
+                    log::info!("    -> MATCH! active_menu={:?}", self.active_menu);
                     return Some(UiAction::None);
                 }
                 current_x = x_max;
             }
+            log::info!("    -> NO MATCH. Closing active menu.");
             self.active_menu = None;
             return Some(UiAction::None);
         }
