@@ -2230,7 +2230,8 @@ pub fn handle_mouse_input(
 
             // Check if click is on custom titlebar drag zone (CSD)
             let menu_items = ["Garage", "File", "Edit", "Selection", "View"];
-            let mut menu_width = 0.0f32;
+            let menu_start_x: f32 = if cfg!(target_os = "macos") { 80.0 } else { 0.0 };
+            let mut menu_width = menu_start_x;
             for (i, label) in menu_items.iter().enumerate() {
                 let label_len = label.chars().count() as f32;
                 let text_w = label_len * ui.ui_char_width;
