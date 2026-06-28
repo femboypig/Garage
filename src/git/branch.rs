@@ -15,6 +15,8 @@ pub fn update_git_branch(tx: Sender<String>, proxy: EventLoopProxy<()>) {
             let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if !branch.is_empty() {
                 let _ = tx.send(branch);
+                // Wake the event loop so AboutToWait can drain the channel.
+                // UserEvent no longer blindly redraws; it just schedules a drain.
                 let _ = proxy.send_event(());
             }
         }
