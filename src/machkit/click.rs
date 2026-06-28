@@ -67,6 +67,11 @@ impl UiState {
     ) -> Option<UiAction> {
         // 1. Check Titlebar Menu Clicks (Contiguous adjacent layout)
         if my < self.titlebar_height {
+            // On macOS the native traffic-light buttons occupy x≈[0..70].
+            // Clicks in that zone should fall through to the OS; don't let
+            // menu item logic intercept them.
+            let menu_start_x: f32 = if cfg!(target_os = "macos") { 80.0 } else { 0.0 };
+
             let menu_items_raw = [
                 ("Garage", MenuType::Garage),
                 ("File", MenuType::File),
@@ -74,7 +79,7 @@ impl UiState {
                 ("Selection", MenuType::Selection),
                 ("View", MenuType::View),
             ];
-            let mut current_x = 0.0;
+            let mut current_x = menu_start_x;
             for (i, (label, menu_type)) in menu_items_raw.iter().enumerate() {
                 let label_len = label.chars().count() as f32;
                 let text_w = label_len * self.ui_char_width;
