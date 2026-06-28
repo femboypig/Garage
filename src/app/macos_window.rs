@@ -8,27 +8,6 @@ unsafe fn ns_string(s: &str) -> *mut objc::runtime::Object {
     msg_send![class!(NSString), stringWithUTF8String: c_str.as_ptr()]
 }
 
-/// Set the dock/application icon on macOS using NSImage.
-#[allow(dead_code)]
-pub fn set_dock_icon(path: &str) {
-    unsafe {
-        use objc::runtime::Object;
-        use objc::{msg_send, sel, sel_impl, class};
-
-        let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
-        if ns_app.is_null() {
-            return;
-        }
-
-        let icon_path_str = ns_string(path);
-        let image: *mut Object = msg_send![class!(NSImage), alloc];
-        let image: *mut Object = msg_send![image, initWithContentsOfFile: icon_path_str];
-        if !image.is_null() {
-            let _: () = msg_send![ns_app, setApplicationIconImage: image];
-            let _: () = msg_send![image, release];
-        }
-    }
-}
 
 /// Set the inset (position) of the native traffic-light buttons so they are
 /// centred vertically in our custom (taller-than-standard) titlebar, and
