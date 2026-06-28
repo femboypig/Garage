@@ -33,7 +33,7 @@ pub fn draw_dropdown(
         ("Selection", MenuType::Selection),
         ("View", MenuType::View),
     ];
-    let menu_start_x: f32 = if cfg!(target_os = "macos") { 80.0 } else { 0.0 };
+    let menu_start_x: f32 = if cfg!(target_os = "macos") && !ui.is_fullscreen { 80.0 } else { 0.0 };
     let mut menu_x = menu_start_x;
     let mut current_x = menu_start_x;
     for (i, (label, m_type)) in menu_items_raw.iter().enumerate() {
