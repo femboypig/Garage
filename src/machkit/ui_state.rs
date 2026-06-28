@@ -33,6 +33,7 @@ pub struct UiState {
 
     // Layout Sizes
     pub titlebar_height: f32,
+    pub is_fullscreen: bool,
     pub status_height: f32,
     pub sidebar_width: f32,
     pub target_sidebar_width: f32,
@@ -297,6 +298,7 @@ impl UiState {
             tab_scroll_x: 0.0,
             tab_scroll_is_dragging: false,
             titlebar_height,
+            is_fullscreen: false,
             status_height,
             sidebar_width: config.sidebar_width,
             target_sidebar_width: config.sidebar_width,
