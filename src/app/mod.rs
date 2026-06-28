@@ -906,6 +906,7 @@ pub fn run_editor(
     Ok(())
 }
 
+#[cfg(not(target_os = "macos"))]
 fn load_window_icon(path_str: &str) -> Option<winit::window::Icon> {
     let file = std::fs::File::open(path_str).ok()?;
     let decoder = png::Decoder::new(file);
