@@ -584,6 +584,12 @@ pub fn run_editor(
                                 active_terminal_idx: state.active_terminal_idx,
                                 terminal_focus: state.terminal_focus,
                                 is_window_maximized: window.is_maximized(),
+                                is_fullscreen: {
+                                    #[cfg(target_os = "macos")]
+                                    { macos_window::is_fullscreen(&window) }
+                                    #[cfg(not(target_os = "macos"))]
+                                    { window.fullscreen().is_some() }
+                                },
                                 tab_scroll_x: state.tab_scroll_x,
                             },
                         );
