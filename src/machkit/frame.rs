@@ -682,9 +682,11 @@ impl UiState {
             active_terminal_idx,
             terminal_focus,
             is_window_maximized: _is_window_maximized,
+            is_fullscreen,
             tab_scroll_x,
         } = input;
 
+        self.is_fullscreen = is_fullscreen;
         self.tab_scroll_x = tab_scroll_x;
         self.active_dock_tab = active_terminal_idx;
 
