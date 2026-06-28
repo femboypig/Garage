@@ -42,26 +42,25 @@ pub fn center_traffic_lights(
             return;
         }
 
-        // We shift the container view of standard buttons so they all move together
-        // and AppKit's standard layout constraints don't fight us.
+        // We shift the container view of standard buttons so they all move together.
         let close_button: *mut Object = msg_send![ns_window, standardWindowButton: 0];
         if !close_button.is_null() {
             let container: *mut Object = msg_send![close_button, superview];
             if !container.is_null() {
                 let mut frame: NSRect = msg_send![container, frame];
                 
-                // Get window height in logical pixels.
-                let scale_factor = window.scale_factor();
-                let inner_size = window.inner_size().to_logical::<f64>(scale_factor);
-                
-                // In macOS Cocoa coordinates, Y is 0 at the bottom.
-                // By default, the top of the container touches the top of the window frame:
-                // frame.origin.y = window_height - frame.size.height.
-                // To shift it down, we subtract shift_y from this baseline.
-                // Using an absolute value instead of self-subtraction prevents the buttons from "running away" down the screen.
-                frame.origin.y = inner_size.height - frame.size.height - shift_y;
-                
-                let _: () = msg_send![container, setFrame: frame];
+                // Get the frame of the container's superview (NSThemeFrame).
+                // Its height represents the total height of the window including the titlebar area.
+                let superview: *mut Object = msg_send![container, superview];
+                if !superview.is_null() {
+                    let superview_frame: NSRect = msg_send![superview, frame];
+                    
+                    // Cocoa coordinates Y=0 is at the bottom.
+                    // Position the container relative to the top of its superview (NSThemeFrame).
+                    frame.origin.y = superview_frame.size.height - frame.size.height - shift_y;
+                    
+                    let _: () = msg_send![container, setFrame: frame];
+                }
             }
         }
     }
