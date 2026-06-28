@@ -38,6 +38,7 @@ pub fn draw_titlebar(
         ui.config.theme.titlebar_border,
     );
 
+    // ── Menu items ────────────────────────────────────────────────────────
     let menu_items_raw = [
         ("Garage", MenuType::Garage),
         ("File", MenuType::File),
@@ -46,9 +47,9 @@ pub fn draw_titlebar(
         ("View", MenuType::View),
     ];
 
-    // On macOS the traffic-light buttons (close/minimize/zoom) are rendered by
-    // the OS inside our content view because we use fullsize_content_view + titlebar_hidden.
-    // Reserve ~80 logical px so our menu items don't overlap them.
+    // On macOS the native traffic-light buttons (close/minimize/zoom) are
+    // rendered by AppKit at x≈[8..70]. We start our menu items at x=80
+    // so they never overlap the buttons.
     let menu_start_x: f32 = if cfg!(target_os = "macos") { 80.0 } else { 0.0 };
 
     let mut menu_positions = Vec::new();
