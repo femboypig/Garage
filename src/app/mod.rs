@@ -71,6 +71,7 @@ pub fn run_editor(
     // instead configure the surface alpha mode at the wgpu level.
     //
     // Linux: keep with_transparent(true) and full decorations as before.
+    #[allow(unused_variables)]
     let icon_path = "/Users/mac/Downloads/Garage-Logo.png";
     #[cfg(not(target_os = "macos"))]
     let icon = load_window_icon(icon_path);
