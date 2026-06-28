@@ -1,15 +1,11 @@
-/// macOS-specific window helpers that require Objective-C runtime calls
-/// not exposed through winit's safe API.
-///
+/// macOS-specific window helpers that require Objective-C runtime calls.
 /// All functions are only compiled on macOS.
 
 /// Set the inset (position) of the native traffic-light buttons so they are
 /// centred vertically in our custom (taller-than-standard) titlebar.
 ///
-/// winit 0.29 does not expose `setTrafficLightsInset:` through its public
-/// API, so we call it directly through the Objective-C runtime.
-///
-/// `titlebar_height_logical` — logical pixels height of our custom titlebar.
+/// We retrieve the buttons via public `standardWindowButton:` API and adjust
+/// their frames, or adjust their container view's frame.
 #[allow(dead_code)]
 pub fn center_traffic_lights(
     window: &winit::window::Window,
@@ -26,12 +22,13 @@ pub fn center_traffic_lights(
         Err(_) => return,
     };
 
-    // Traffic-light circles are 12 logical px in diameter (radius = 6).
-    // We want their vertical centre at titlebar_height / 2.
-    // inset_y is the distance from the TOP of the window to the TOP of each circle.
-    // inset_y = (titlebar_height / 2) - 6
-    let inset_x: f64 = 8.0;
-    let inset_y: f64 = ((titlebar_height_logical / 2.0) - 6.0).max(2.0) as f64;
+    // The standard macOS titlebar height is 22.0.
+    // If our titlebar is taller, we shift the buttons down by half of the difference.
+    let diff = titlebar_height_logical - 22.0;
+    if diff <= 0.0 {
+        return;
+    }
+    let shift_y = (diff / 2.0) as f64;
 
     unsafe {
         use objc::runtime::Object;
@@ -45,28 +42,80 @@ pub fn center_traffic_lights(
             return;
         }
 
-        // setTrafficLightsInset: takes a CGPoint (two f64s on 64-bit).
-        let _: () = msg_send![ns_window, setTrafficLightsInset: CGPoint { x: inset_x, y: inset_y }];
+        // We shift the container view of standard buttons so they all move together
+        // and AppKit's standard layout constraints don't fight us.
+        let close_button: *mut Object = msg_send![ns_window, standardWindowButton: 0];
+        if !close_button.is_null() {
+            let container: *mut Object = msg_send![close_button, superview];
+            if !container.is_null() {
+                let mut frame: NSRect = msg_send![container, frame];
+                
+                // Get window height in logical pixels.
+                let scale_factor = window.scale_factor();
+                let inner_size = window.inner_size().to_logical::<f64>(scale_factor);
+                
+                // In macOS Cocoa coordinates, Y is 0 at the bottom.
+                // By default, the top of the container touches the top of the window frame:
+                // frame.origin.y = window_height - frame.size.height.
+                // To shift it down, we subtract shift_y from this baseline.
+                // Using an absolute value instead of self-subtraction prevents the buttons from "running away" down the screen.
+                frame.origin.y = inner_size.height - frame.size.height - shift_y;
+                
+                let _: () = msg_send![container, setFrame: frame];
+            }
+        }
     }
 }
 
-/// CGPoint matches the C struct layout: { CGFloat x; CGFloat y; }
-/// On 64-bit platforms CGFloat = f64.
 #[repr(C)]
-#[derive(Copy, Clone)]
-struct CGPoint {
-    x: f64,
-    y: f64,
+#[derive(Copy, Clone, Debug)]
+pub struct NSPoint {
+    pub x: f64,
+    pub y: f64,
 }
 
-// Safety: CGPoint is a plain C struct with no pointers.
-unsafe impl objc::Encode for CGPoint {
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct NSSize {
+    pub width: f64,
+    pub height: f64,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct NSRect {
+    pub origin: NSPoint,
+    pub size: NSSize,
+}
+
+unsafe impl objc::Encode for NSPoint {
     fn encode() -> objc::Encoding {
-        // struct layout: two f64 fields.
         let encoding = format!(
             "{{CGPoint={}{}}}",
             f64::encode().as_str(),
             f64::encode().as_str()
+        );
+        unsafe { objc::Encoding::from_str(&encoding) }
+    }
+}
+
+unsafe impl objc::Encode for NSSize {
+    fn encode() -> objc::Encoding {
+        let encoding = format!(
+            "{{CGSize={}{}}}",
+            f64::encode().as_str(),
+            f64::encode().as_str()
+        );
+        unsafe { objc::Encoding::from_str(&encoding) }
+    }
+}
+
+unsafe impl objc::Encode for NSRect {
+    fn encode() -> objc::Encoding {
+        let encoding = format!(
+            "{{CGRect={}{}}}",
+            NSPoint::encode().as_str(),
+            NSSize::encode().as_str()
         );
         unsafe { objc::Encoding::from_str(&encoding) }
     }
