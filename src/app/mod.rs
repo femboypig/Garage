@@ -72,6 +72,7 @@ pub fn run_editor(
     //
     // Linux: keep with_transparent(true) and full decorations as before.
     let icon_path = "/Users/mac/Downloads/Garage-Logo.png";
+    #[cfg(not(target_os = "macos"))]
     let icon = load_window_icon(icon_path);
 
     #[allow(unused_mut)]
