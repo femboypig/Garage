@@ -456,6 +456,10 @@ pub fn run_editor(
                     WindowEvent::Resized(physical_size) => {
                         gpu_ref.resize(physical_size);
                         ipc::update_window_geometry(&window);
+                        #[cfg(target_os = "macos")]
+                        {
+                            macos_window::center_traffic_lights(&window, ui_ref.titlebar_height);
+                        }
                         window.request_redraw();
                     }
                     WindowEvent::Moved(_) => {
@@ -465,10 +469,18 @@ pub fn run_editor(
                     WindowEvent::ScaleFactorChanged { .. } => {
                         let physical_size = window.inner_size();
                         gpu_ref.resize(physical_size);
+                        #[cfg(target_os = "macos")]
+                        {
+                            macos_window::center_traffic_lights(&window, ui_ref.titlebar_height);
+                        }
                         window.request_redraw();
                     }
 
                     WindowEvent::RedrawRequested => {
+                        #[cfg(target_os = "macos")]
+                        {
+                            macos_window::center_traffic_lights(&window, ui_ref.titlebar_height);
+                        }
                         let size = window.inner_size();
                         if ui_ref.show_dock && !state.dock_terminals.is_empty() && !state.is_dragging_sidebar && !state.is_dragging_dock_border {
                             let width_content = size.width as f32 - ui_ref.sidebar_width - 16.0;
