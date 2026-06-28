@@ -60,28 +60,35 @@ pub fn run_editor(
     }));
 
     // 4. Build the window with visibility initially FALSE
+    //
+    // macOS: we want native traffic-light buttons (close/minimize/zoom) with our
+    // custom titlebar rendering underneath them. The key constraint is that
+    // with_transparent(true) sets NSWindow.opaque=NO which breaks AppKit's
+    // compositor layer ordering — the Metal CAMetalLayer ends up above the
+    // NSThemeFrame buttons. So on macOS we do NOT use with_transparent and
+    // instead configure the surface alpha mode at the wgpu level.
+    //
+    // Linux: keep with_transparent(true) and full decorations as before.
     #[allow(unused_mut)]
     let mut builder = WindowBuilder::new()
         .with_title("Garage")
-        .with_transparent(true)
         .with_inner_size(winit::dpi::PhysicalSize::new(1280, 800))
-        .with_visible(false); // Keep hidden on startup to prevent visual flashing and WM latency
+        .with_visible(false);
 
-    // On macOS: make the native titlebar transparent and extend content under it
-    // so our custom titlebar renders in that zone, while macOS still renders the
-    // traffic-light buttons (close/minimize/zoom) on top.
-    // NOTE: with_titlebar_hidden(true) removes traffic lights entirely — don't use it.
     #[cfg(target_os = "macos")]
     {
         builder = builder
-            .with_decorations(true)           // keep OS chrome (traffic lights)
-            .with_titlebar_transparent(true)  // transparent titlebar strip — our bg shows through
-            .with_title_hidden(true)          // hide the title text, keep the buttons
-            .with_fullsize_content_view(true); // content fills entire window incl. titlebar zone
+            .with_decorations(true)            // keep OS chrome → traffic lights visible
+            .with_titlebar_transparent(true)   // titlebar area becomes part of our content
+            .with_fullsize_content_view(true)  // our Metal surface fills the whole window
+            .with_title_hidden(true);          // hide title text, traffic lights stay
+        // Note: no with_transparent(true) on macOS — it breaks AppKit compositing.
     }
     #[cfg(not(target_os = "macos"))]
     {
-        builder = builder.with_decorations(true);
+        builder = builder
+            .with_decorations(true)
+            .with_transparent(true);
     }
 
     let window = Arc::new(builder.build(&event_loop)?);
@@ -364,18 +371,25 @@ pub fn run_editor(
             }
 
             Event::UserEvent(()) => {
-                if let Ok((g, a, mut u)) = init_rx.try_recv() {
+                // Check if GPU initialization just completed.
+                let gpu_just_ready = if let Ok((g, a, mut u)) = init_rx.try_recv() {
                     if let Some(ref path) = state.tabs[0].path {
                         u.selected_file = Some(std::path::PathBuf::from(path));
                     }
                     gpu = Some(g);
                     atlas = Some(a);
                     ui = Some(u);
-                }
+                    true
+                } else {
+                    false
+                };
+
+                // Handle pending IPC file-open requests.
                 let mut files = Vec::new();
                 if let Ok(mut pending) = state.pending_open_files.lock() {
                     files = std::mem::take(&mut *pending);
                 }
+                let had_new_files = !files.is_empty();
                 if gpu.is_some() && ui.is_some() && atlas.is_some() {
                     let ui_ref = ui.as_mut().unwrap();
                     let atlas_ref = atlas.as_mut().unwrap();
@@ -394,7 +408,12 @@ pub fn run_editor(
                         );
                     }
                 }
-                window.request_redraw();
+                // Only redraw for GPU init or new IPC files.
+                // Git/watcher proxy wake-ups are handled by drain_background_channels
+                // in AboutToWait which only redraws when data actually changed.
+                if gpu_just_ready || had_new_files {
+                    window.request_redraw();
+                }
             }
 
             Event::WindowEvent { event, window_id } if window_id == window.id() => {
@@ -790,36 +809,14 @@ pub fn run_editor(
                         window.request_redraw();
                     }
 
-                    // Throttled git branch, status and diff check (every 3 seconds on macOS
-                    // to reduce wake-ups; every 1 second on other platforms).
-                    let git_interval = if cfg!(target_os = "macos") {
-                        std::time::Duration::from_secs(3)
-                    } else {
-                        std::time::Duration::from_secs(1)
-                    };
-                    if ui_ref.last_branch_check.is_none() || ui_ref.last_branch_check.unwrap().elapsed() > git_interval {
-                        let old_branch = ui_ref.git_branch.clone();
-                        let old_statuses = ui_ref.git_statuses.clone();
-                        if ui_ref.config.show_git_branch {
-                            ui_ref.update_git_branch();
-                        }
-                        ui_ref.update_git_statuses();
-                        if state.active_tab_idx < state.tabs.len()
-                            && let Some(ref file_path) = state.tabs[state.active_tab_idx].path {
-                                ui_ref.update_git_diff(Some(file_path));
-                            }
-                        ui_ref.last_branch_check = Some(std::time::Instant::now());
-                        // Only request a redraw if git data actually changed
-                        if ui_ref.git_branch != old_branch || ui_ref.git_statuses != old_statuses {
-                            window.request_redraw();
-                        }
+                    // Drain background git/search channels and schedule periodic polling.
+                    // Returns true only if data actually changed → only then do we redraw.
+                    let tab_paths: Vec<Option<String>> = state.tabs.iter()
+                        .map(|t| t.path.clone())
+                        .collect();
+                    if ui_ref.drain_background_channels(state.active_tab_idx, &tab_paths) {
+                        window.request_redraw();
                     }
-
-                    if state.active_tab_idx < state.tabs.len()
-                        && let Some(ref file_path) = state.tabs[state.active_tab_idx].path
-                            && !ui_ref.git_file_blames.contains_key(file_path) {
-                                ui_ref.update_git_file_blame(Some(file_path));
-                            }
 
                     // Drain Tree scan channel
                     let mut tree_updated = false;
