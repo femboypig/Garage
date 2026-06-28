@@ -49,8 +49,9 @@ pub fn draw_titlebar(
 
     // On macOS the native traffic-light buttons (close/minimize/zoom) are
     // rendered by AppKit at x≈[8..70]. We start our menu items at x=80
-    // so they never overlap the buttons.
-    let menu_start_x: f32 = if cfg!(target_os = "macos") { 80.0 } else { 0.0 };
+    // so they never overlap the buttons. If we are in fullscreen mode,
+    // the buttons are hidden, so we start at x=0.
+    let menu_start_x: f32 = if cfg!(target_os = "macos") && !ui.is_fullscreen { 80.0 } else { 0.0 };
 
     let mut menu_positions = Vec::new();
     let mut current_x = menu_start_x;
