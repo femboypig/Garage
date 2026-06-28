@@ -107,12 +107,11 @@ pub fn run_editor(
 
     let window = Arc::new(builder.build(&event_loop)?);
 
-    // On macOS: vertically center traffic-light buttons in our custom titlebar,
-    // and set the dock icon using standard AppKit tools.
+    // On macOS: vertically center traffic-light buttons in our custom titlebar.
+    // The Dock icon is automatically loaded from the App Bundle's .icns resource.
     #[cfg(target_os = "macos")]
     {
         macos_window::center_traffic_lights(&window, 29.0);
-        macos_window::set_dock_icon(icon_path);
     }
 
     crate::experiments::startup::record_step("Window Creation");
