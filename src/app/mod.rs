@@ -71,6 +71,9 @@ pub fn run_editor(
     // instead configure the surface alpha mode at the wgpu level.
     //
     // Linux: keep with_transparent(true) and full decorations as before.
+    let icon_path = "/Users/mac/Downloads/Garage-Logo.png";
+    let icon = load_window_icon(icon_path);
+
     #[allow(unused_mut)]
     let mut builder = WindowBuilder::new()
         .with_title("Garage")
@@ -97,15 +100,19 @@ pub fn run_editor(
     {
         builder = builder
             .with_decorations(true)
+            .with_window_icon(icon)
             .with_transparent(true);
     }
 
     let window = Arc::new(builder.build(&event_loop)?);
 
-    // On macOS: vertically center traffic-light buttons in our custom titlebar.
-    // The default titlebar_height at font size 13 is ~29 logical px.
+    // On macOS: vertically center traffic-light buttons in our custom titlebar,
+    // and set the dock icon using standard AppKit tools.
     #[cfg(target_os = "macos")]
-    macos_window::center_traffic_lights(&window, 29.0);
+    {
+        macos_window::center_traffic_lights(&window, 29.0);
+        macos_window::set_dock_icon(icon_path);
+    }
 
     crate::experiments::startup::record_step("Window Creation");
 
@@ -896,4 +903,26 @@ pub fn run_editor(
     })?;
 
     Ok(())
+}
+
+fn load_window_icon(path_str: &str) -> Option<winit::window::Icon> {
+    let file = std::fs::File::open(path_str).ok()?;
+    let decoder = png::Decoder::new(file);
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
+        png::ColorType::Rgb => {
+            let mut converted = Vec::with_capacity(info.width as usize * info.height as usize * 4);
+            for chunk in buf[..info.buffer_size()].chunks_exact(3) {
+                converted.extend_from_slice(&[chunk[0], chunk[1], chunk[2], 255]);
+            }
+            converted
+        }
+        _ => return None,
+    };
+
+    winit::window::Icon::from_rgba(rgba, info.width, info.height).ok()
 }
