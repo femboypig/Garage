@@ -693,6 +693,7 @@ pub fn handle_action(
             }
         }
         UiAction::Exit => {
+            crate::app::autosave::save_session_and_dirty_buffers(state);
             elwt.exit();
         }
         UiAction::None => {}
