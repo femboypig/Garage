@@ -68,7 +68,7 @@ impl UiState {
         // 1. Check Titlebar Menu Clicks (Contiguous adjacent layout)
         if my < self.titlebar_height {
             log::info!("handle_menu_click: click inside titlebar area (my={my:.1} < height={:.1}), mx={mx:.1}", self.titlebar_height);
-            let menu_start_x: f32 = if cfg!(target_os = "macos") { 80.0 } else { 0.0 };
+            let menu_start_x: f32 = if cfg!(target_os = "macos") && !self.is_fullscreen { 80.0 } else { 0.0 };
 
             let menu_items_raw = [
                 ("Garage", MenuType::Garage),
@@ -125,7 +125,7 @@ impl UiState {
                 ("Selection", MenuType::Selection),
                 ("View", MenuType::View),
             ];
-            let menu_start_x: f32 = if cfg!(target_os = "macos") { 80.0 } else { 0.0 };
+            let menu_start_x: f32 = if cfg!(target_os = "macos") && !self.is_fullscreen { 80.0 } else { 0.0 };
             let mut menu_x = menu_start_x;
             let mut current_x = menu_start_x;
             for (i, (label, m_type)) in menu_items_raw.iter().enumerate() {
