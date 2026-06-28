@@ -734,6 +734,7 @@ pub fn run_editor(
                         if !focused {
                             autosave::run_autosave_if_needed(ui_ref, &mut state, autosave::AutosaveTrigger::WindowChange);
                         }
+                        window.request_redraw();
                     }
                     _ => {}
                 }
