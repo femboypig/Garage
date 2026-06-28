@@ -3,6 +3,8 @@ pub mod handler;
 pub mod input;
 pub mod ipc;
 pub mod state;
+#[cfg(target_os = "macos")]
+mod macos_window;
 
 use std::sync::Arc;
 use winit::{
@@ -77,6 +79,13 @@ pub fn run_editor(
 
     #[cfg(target_os = "macos")]
     {
+        // Our titlebar_height = (ui_line_height * 1.45).max(25.0).
+        // At default font size 13 that's ~29 logical px. Traffic-light circles
+        // are 12 px diameter; standard macOS puts their centre at y≈11 from the
+        // top of NSThemeFrame. For our taller bar: centre = 29/2 = 14.5, so
+        // inset_y = 14.5 - 6 (radius) = ~8.5. We round to 9.
+        // The actual inset is applied via ObjC runtime in macos_window::center_traffic_lights()
+        // because winit 0.29 does not expose with_traffic_light_inset().
         builder = builder
             .with_decorations(true)            // keep OS chrome → traffic lights visible
             .with_titlebar_transparent(true)   // titlebar area becomes part of our content
@@ -92,6 +101,12 @@ pub fn run_editor(
     }
 
     let window = Arc::new(builder.build(&event_loop)?);
+
+    // On macOS: vertically center traffic-light buttons in our custom titlebar.
+    // The default titlebar_height at font size 13 is ~29 logical px.
+    #[cfg(target_os = "macos")]
+    macos_window::center_traffic_lights(&window, 29.0);
+
     crate::experiments::startup::record_step("Window Creation");
 
     // 5. Create Surface on main thread (fast, ~1ms)
