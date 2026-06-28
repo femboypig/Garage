@@ -245,6 +245,95 @@ impl UiState {
         crate::git::update_git_statuses(self.git_status_tx.clone(), self.event_loop_proxy.clone());
     }
 
+    /// Drain all background channels (git, search, diagnostics) and schedule
+    /// periodic git polling. Returns `true` if any visible data changed, meaning
+    /// the caller should request a redraw. Called from `AboutToWait` so that we
+    /// can update data without necessarily rendering a new frame.
+    pub fn drain_background_channels(
+        &mut self,
+        active_tab_idx: usize,
+        tab_paths: &[Option<String>],
+    ) -> bool {
+        let mut changed = false;
+
+        // Drain git branch channel
+        if let Some(ref rx) = self.git_branch_rx {
+            while let Ok(branch) = rx.try_recv() {
+                if self.git_branch.as_deref() != Some(&branch) {
+                    self.git_branch = Some(branch);
+                    changed = true;
+                }
+            }
+        }
+
+        // Drain git file blame channel
+        if let Some(ref rx) = self.git_blame_file_rx {
+            while let Ok((file, blame_map)) = rx.try_recv() {
+                self.git_file_blames.insert(file, blame_map);
+                changed = true;
+            }
+        }
+
+        // Drain git status channel
+        if let Some(ref rx) = self.git_status_rx {
+            while let Ok(statuses) = rx.try_recv() {
+                if self.git_statuses != statuses {
+                    self.git_statuses = statuses;
+                    changed = true;
+                }
+            }
+        }
+
+        // Drain global search channel
+        if let Some(ref rx) = self.global_search_rx {
+            let mut got_search = None;
+            while let Ok(res) = rx.try_recv() {
+                got_search = Some(res);
+            }
+            if let Some((results, file_cache)) = got_search {
+                self.global_search_results = results;
+                self.project_search_file_cache.extend(file_cache);
+                self.invalidate_search_render_items();
+                self.last_global_search_selected = None;
+                self.is_searching_globally = false;
+                changed = true;
+            }
+        }
+
+        // Drain git diff channel
+        if let Some(ref rx) = self.git_diff_rx {
+            while let Ok((file, hunks)) = rx.try_recv() {
+                self.git_diffs.insert(file, hunks);
+                changed = true;
+            }
+        }
+
+        // Throttled git polling — macOS: every 5 s, Linux/other: every 2 s.
+        let git_interval = if cfg!(target_os = "macos") {
+            std::time::Duration::from_secs(5)
+        } else {
+            std::time::Duration::from_secs(2)
+        };
+        if self.last_branch_check.is_none()
+            || self.last_branch_check.unwrap().elapsed() > git_interval
+        {
+            if self.config.show_git_branch {
+                self.update_git_branch();
+            }
+            self.update_git_statuses();
+            let active_path = tab_paths.get(active_tab_idx).and_then(|p| p.as_deref());
+            if let Some(fp) = active_path {
+                self.update_git_diff(Some(fp));
+                if !self.git_file_blames.contains_key(fp) {
+                    self.update_git_file_blame(Some(fp));
+                }
+            }
+            self.last_branch_check = Some(std::time::Instant::now());
+        }
+
+        changed
+    }
+
     pub fn run_global_search(&mut self, query: String) {
         self.project_search_file_cache.clear();
         self.invalidate_search_render_items();
@@ -616,72 +705,8 @@ impl UiState {
         } else {
             self.breadcrumb_height = (self.ui_line_height * 1.3).round().max(22.0);
         }
-
-        // Drain git branch channel
-        if let Some(ref rx) = self.git_branch_rx {
-            while let Ok(branch) = rx.try_recv() {
-                self.git_branch = Some(branch);
-            }
-        }
-
-        // Drain git file blame channel
-        if let Some(ref rx) = self.git_blame_file_rx {
-            while let Ok((file, blame_map)) = rx.try_recv() {
-                self.git_file_blames.insert(file, blame_map);
-            }
-        }
-
-        // Drain git status channel
-        if let Some(ref rx) = self.git_status_rx {
-            while let Ok(statuses) = rx.try_recv() {
-                self.git_statuses = statuses;
-            }
-        }
-
-        // Drain global search channel
-        let mut got_search = None;
-        if let Some(ref rx) = self.global_search_rx {
-            while let Ok(res) = rx.try_recv() {
-                got_search = Some(res);
-            }
-        }
-        if let Some((results, file_cache)) = got_search {
-            self.global_search_results = results;
-            self.project_search_file_cache.extend(file_cache);
-            self.invalidate_search_render_items();
-            self.last_global_search_selected = None;
-            self.is_searching_globally = false;
-        }
-
-        // Drain git diff channel
-        if let Some(ref rx) = self.git_diff_rx {
-            while let Ok((file, hunks)) = rx.try_recv() {
-                self.git_diffs.insert(file, hunks);
-            }
-        }
-
-        // Throttled git branch, status and diff check (every 1 second)
-        if self.last_branch_check.is_none()
-            || self.last_branch_check.unwrap().elapsed() > std::time::Duration::from_secs(1)
-        {
-            if self.config.show_git_branch {
-                self.update_git_branch();
-            }
-            self.update_git_statuses();
-            if active_tab_idx < tab_paths.len()
-                && let Some(ref file_path) = tab_paths[active_tab_idx]
-            {
-                self.update_git_diff(Some(file_path));
-            }
-            self.last_branch_check = Some(std::time::Instant::now());
-        }
-
-        if active_tab_idx < tab_paths.len()
-            && let Some(ref file_path) = tab_paths[active_tab_idx]
-            && !self.git_file_blames.contains_key(file_path)
-        {
-            self.update_git_file_blame(Some(file_path));
-        }
+        // Drain background channels and schedule git polling.
+        // (Actual drain logic lives in drain_background_channels, called from AboutToWait)
         let main_y = self.titlebar_height;
         let main_height = height - self.titlebar_height - self.status_height;
 
