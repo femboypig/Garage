@@ -2,10 +2,9 @@
 /// All functions are only compiled on macOS.
 
 /// Set the inset (position) of the native traffic-light buttons so they are
-/// centred vertically in our custom (taller-than-standard) titlebar.
-///
-/// We retrieve the buttons via public `standardWindowButton:` API and adjust
-/// their frames, or adjust their container view's frame.
+/// centred vertically in our custom (taller-than-standard) titlebar, and
+/// configure the window background color so AppKit renders correct non-transparent
+/// unfocused button styles.
 #[allow(dead_code)]
 pub fn center_traffic_lights(
     window: &winit::window::Window,
@@ -22,17 +21,9 @@ pub fn center_traffic_lights(
         Err(_) => return,
     };
 
-    // The standard macOS titlebar height is 22.0.
-    // If our titlebar is taller, we shift the buttons down by half of the difference.
-    let diff = titlebar_height_logical - 22.0;
-    if diff <= 0.0 {
-        return;
-    }
-    let shift_y = (diff / 2.0) as f64;
-
     unsafe {
         use objc::runtime::Object;
-        use objc::{msg_send, sel, sel_impl};
+        use objc::{msg_send, sel, sel_impl, class};
 
         let ns_view = ns_view as *mut Object;
 
@@ -42,7 +33,19 @@ pub fn center_traffic_lights(
             return;
         }
 
-        // We shift the container view of standard buttons so they all move together.
+        // 1. Set window background to dark so AppKit uses dark-theme traffic lights
+        // (which are solid grey when unfocused, instead of fading to fully transparent).
+        // #1e1e1e (rgb: 30, 30, 30) matches standard dark mode themes.
+        let color: *mut Object = msg_send![
+            class!(NSColor),
+            colorWithCalibratedRed: 30.0 / 255.0
+            green: 30.0 / 255.0
+            blue: 30.0 / 255.0
+            alpha: 1.0
+        ];
+        let _: () = msg_send![ns_window, setBackgroundColor: color];
+
+        // 2. Center the traffic lights container view vertically.
         let close_button: *mut Object = msg_send![ns_window, standardWindowButton: 0];
         if !close_button.is_null() {
             let container: *mut Object = msg_send![close_button, superview];
@@ -54,10 +57,17 @@ pub fn center_traffic_lights(
                 let superview: *mut Object = msg_send![container, superview];
                 if !superview.is_null() {
                     let superview_frame: NSRect = msg_send![superview, frame];
-                    
-                    // Cocoa coordinates Y=0 is at the bottom.
-                    // Position the container relative to the top of its superview (NSThemeFrame).
-                    frame.origin.y = superview_frame.size.height - frame.size.height - shift_y;
+                    let superview_height = superview_frame.size.height;
+
+                    // Calculate the shift needed to center the container in our custom titlebar.
+                    // Instead of assuming container height is 22.0, we use its actual height dynamically.
+                    let container_h = frame.size.height;
+                    let shift_y = ((titlebar_height_logical - container_h as f32) / 2.0) as f64;
+
+                    // In Cocoa coordinates, Y is 0 at the bottom.
+                    // The baseline for the container to touch the top is superview_height - container_h.
+                    // We subtract shift_y from this baseline to center it.
+                    frame.origin.y = superview_height - container_h - shift_y;
                     
                     let _: () = msg_send![container, setFrame: frame];
                 }
